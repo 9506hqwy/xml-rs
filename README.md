@@ -1,7 +1,6 @@
-# Template for Rust Crate
+# XML for Rust
 
-This repository provides a template for Rust crate.
+## References
 
-## TODO
-
-* Collect test coverage on vscode test running.
+* [Extensible Markup Language (XML) 1.0 (Fifth Edition)](https://www.w3.org/TR/2008/REC-xml-20081126/)
+* [Namespaces in XML 1.0 (Third Edition)](https://www.w3.org/TR/2009/REC-xml-names-20091208/)
