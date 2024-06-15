@@ -1,3 +1,5 @@
+use xml_nom::model::QName;
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -311,21 +313,6 @@ impl<'a> From<(&'a str, Option<&'a str>)> for PI<'a> {
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct PrefixedName<'a> {
-    pub prefix: &'a str,
-    pub local_part: &'a str,
-}
-
-impl<'a> From<(&'a str, &'a str)> for PrefixedName<'a> {
-    fn from(value: (&'a str, &'a str)) -> Self {
-        let (prefix, local_part) = value;
-        PrefixedName { prefix, local_part }
-    }
-}
-
-// -----------------------------------------------------------------------------------------------
-
-#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Prolog<'a> {
     pub declaration_xml: Option<DeclarationXml<'a>>,
     pub heads: Vec<Misc<'a>>,
@@ -355,32 +342,6 @@ impl<'a>
             declaration_doc: tail.as_ref().map(|t| t.0),
             tails: tail.map(|t| t.1).unwrap_or_default(),
         }
-    }
-}
-
-// -----------------------------------------------------------------------------------------------
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum QName<'a> {
-    Prefixed(PrefixedName<'a>),
-    Unprefixed(&'a str),
-}
-
-impl<'a> Default for QName<'a> {
-    fn default() -> Self {
-        QName::Unprefixed("")
-    }
-}
-
-impl<'a> From<PrefixedName<'a>> for QName<'a> {
-    fn from(value: PrefixedName<'a>) -> Self {
-        QName::Prefixed(value)
-    }
-}
-
-impl<'a> From<&'a str> for QName<'a> {
-    fn from(value: &'a str) -> Self {
-        QName::Unprefixed(value)
     }
 }
 

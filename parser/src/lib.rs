@@ -1,6 +1,4 @@
-mod helper;
 mod model;
-mod xmlchar;
 
 use nom::branch::alt;
 use nom::bytes::complete::tag;
@@ -10,6 +8,7 @@ use nom::error::{ErrorKind, ParseError};
 use nom::multi::{many0, many1};
 use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::{AsChar, IResult, InputTakeAtPosition};
+use xml_nom::{helper, ncname, qname, xmlchar};
 
 // -----------------------------------------------------------------------------------------------
 
@@ -814,45 +813,18 @@ fn ns_att_name(input: &str) -> IResult<&str, model::AttributeName<'_>> {
     ))(input)
 }
 
-/// Name - (Char* ':' Char*)
-///
-/// [\[4\] NCName](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-NCName)
-fn ncname(input: &str) -> IResult<&str, &str> {
-    // FIXME: not name
-    xmlchar::name_char_except1(":")(input)
-}
-
-/// PrefixedName | UnprefixedName
-///
-/// [\[7\] QName](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-QName)
-fn qname(input: &str) -> IResult<&str, model::QName<'_>> {
-    alt((
-        map(prefixed_name, model::QName::from),
-        map(ncname, model::QName::from),
-    ))(input)
-}
-
-/// Prefix ':' LocalPart
-///
-/// [\[8\] PrefixedName](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-PrefixedName)
-fn prefixed_name(input: &str) -> IResult<&str, model::PrefixedName> {
-    map(
-        tuple((ncname, preceded(tag(":"), ncname))),
-        model::PrefixedName::from,
-    )(input)
-}
-
 // -----------------------------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use xml_nom::model::QName;
 
     #[test]
     fn test_document() {
         let (rest, ret) = document("<root>></root>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::QName::from("root"), ret.element.name);
+        assert_eq!(QName::from("root"), ret.element.name);
     }
 
     #[test]
@@ -1150,12 +1122,12 @@ mod tests {
     fn test_element() {
         let (rest, ret) = element("<a/>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::Element::from((model::QName::from("a"), vec![])), ret);
+        assert_eq!(model::Element::from((QName::from("a"), vec![])), ret);
 
         let (rest, ret) = element("<a></a>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Element::from((model::QName::from("a"), vec![]))
+            model::Element::from((QName::from("a"), vec![]))
                 .set_content(model::Content::from((Some(""), vec![]))),
             ret
         );
@@ -1165,15 +1137,15 @@ mod tests {
     fn test_stag() {
         let (rest, ret) = stag("<a>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::Element::from((model::QName::from("a"), vec![])), ret);
+        assert_eq!(model::Element::from((QName::from("a"), vec![])), ret);
 
         let (rest, ret) = stag("<a b='c'>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
             model::Element::from((
-                model::QName::from("a"),
+                QName::from("a"),
                 vec![model::Attribute::from((
-                    model::AttributeName::QName(model::QName::Unprefixed("b")),
+                    model::AttributeName::QName(QName::Unprefixed("b")),
                     vec![model::AttributeValue::from("c")]
                 ))]
             )),
@@ -1193,7 +1165,7 @@ mod tests {
             model::Content::from((
                 Some(""),
                 vec![model::ContentCell::from((
-                    model::Contents::from(model::Element::from((model::QName::from("a"), vec![]))),
+                    model::Contents::from(model::Element::from((QName::from("a"), vec![]))),
                     Some("")
                 )),]
             )),
@@ -1206,7 +1178,7 @@ mod tests {
             model::Content::from((
                 Some("a"),
                 vec![model::ContentCell::from((
-                    model::Contents::from(model::Element::from((model::QName::from("a"), vec![]))),
+                    model::Contents::from(model::Element::from((QName::from("a"), vec![]))),
                     Some("")
                 )),]
             )),
@@ -1219,7 +1191,7 @@ mod tests {
             model::Content::from((
                 Some(""),
                 vec![model::ContentCell::from((
-                    model::Contents::from(model::Element::from((model::QName::from("a"), vec![]))),
+                    model::Contents::from(model::Element::from((QName::from("a"), vec![]))),
                     Some("a"),
                 )),]
             )),
@@ -1233,17 +1205,11 @@ mod tests {
                 Some(""),
                 vec![
                     model::ContentCell::from((
-                        model::Contents::from(model::Element::from((
-                            model::QName::from("a"),
-                            vec![]
-                        ))),
+                        model::Contents::from(model::Element::from((QName::from("a"), vec![]))),
                         Some(""),
                     )),
                     model::ContentCell::from((
-                        model::Contents::from(model::Element::from((
-                            model::QName::from("b"),
-                            vec![]
-                        ))),
+                        model::Contents::from(model::Element::from((QName::from("b"), vec![]))),
                         Some(""),
                     )),
                 ]

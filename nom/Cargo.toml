@@ -1,5 +1,5 @@
 [package]
-name = "xml-parser"
+name = "xml-nom"
 keywords = ["xml"]
 # https://crates.io/category_slugs
 categories = ["parsing"]
@@ -13,4 +13,3 @@ license.workspace = true
 
 [dependencies]
 nom = { version="7.1.3", features=["alloc"] }
-xml-nom = { path="../nom" }
