@@ -17,7 +17,7 @@ use nom::{AsChar, IResult, InputTakeAtPosition};
 ///
 /// [\[1\] document](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-document)
 pub fn document(input: &str) -> IResult<&str, model::Document<'_>> {
-    map(tuple((prolog, element, many0(misc))), model::Document::new)(input)
+    map(tuple((prolog, element, many0(misc))), model::Document::from)(input)
 }
 
 /// Recognizes zero or more XML characters.
@@ -113,16 +113,16 @@ fn att_value(input: &str) -> IResult<&str, Vec<model::AttributeValue<'_>>> {
         delimited(
             tag("\""),
             many0(alt((
-                map(xmlchar::char_except1("<&\""), model::AttributeValue::text),
-                map(reference, model::AttributeValue::reference),
+                map(xmlchar::char_except1("<&\""), model::AttributeValue::from),
+                map(reference, model::AttributeValue::from),
             ))),
             tag("\""),
         ),
         delimited(
             tag("'"),
             many0(alt((
-                map(xmlchar::char_except1("<&'"), model::AttributeValue::text),
-                map(reference, model::AttributeValue::reference),
+                map(xmlchar::char_except1("<&'"), model::AttributeValue::from),
+                map(reference, model::AttributeValue::from),
             ))),
             tag("'"),
         ),
@@ -179,7 +179,7 @@ fn comment(input: &str) -> IResult<&str, model::Comment<'_>> {
             recognize(many0(tuple((opt(tag("-")), xmlchar::char_except1("-"))))),
             tag("-->"),
         ),
-        model::Comment::new,
+        model::Comment::from,
     )(input)
 }
 
@@ -196,7 +196,7 @@ fn pi(input: &str) -> IResult<&str, model::PI<'_>> {
             )),
             tag("?>"),
         ),
-        model::PI::new,
+        model::PI::from,
     )(input)
 }
 
@@ -217,7 +217,7 @@ fn cdsect(input: &str) -> IResult<&str, model::CData<'_>> {
             helper::take_until(multichar0, "]]>"), // [20] CData
             tag("]]>"),                            // [21] CDEnd
         ),
-        model::CData::new,
+        model::CData::from,
     )(input)
 }
 
@@ -231,7 +231,7 @@ fn prolog(input: &str) -> IResult<&str, model::Prolog<'_>> {
             many0(misc),
             opt(tuple((doctype_decl, many0(misc)))),
         )),
-        model::Prolog::new,
+        model::Prolog::from,
     )(input)
 }
 
@@ -245,7 +245,7 @@ fn xml_decl(input: &str) -> IResult<&str, model::DeclarationXml<'_>> {
             tuple((version_info, opt(encoding_decl), opt(sd_decl))),
             tuple((multispace0, tag("?>"))),
         ),
-        model::DeclarationXml::new,
+        model::DeclarationXml::from,
     )(input)
 }
 
@@ -281,9 +281,9 @@ pub fn version_num(input: &str) -> IResult<&str, &str> {
 /// [\[27\] Misc](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Misc)
 fn misc(input: &str) -> IResult<&str, model::Misc<'_>> {
     alt((
-        map(comment, model::Misc::comment),
-        map(pi, model::Misc::pi),
-        map(multispace1, model::Misc::whitespace),
+        map(comment, model::Misc::from),
+        map(pi, model::Misc::from),
+        map(multispace1, model::Misc::from),
     ))(input)
 }
 
@@ -387,10 +387,10 @@ fn stag(input: &str) -> IResult<&str, model::Element<'_>> {
 fn attribute(input: &str) -> IResult<&str, model::Attribute<'_>> {
     map(
         tuple((
-            alt((ns_att_name, map(qname, model::AttributeName::qname))),
+            alt((ns_att_name, map(qname, model::AttributeName::from))),
             preceded(eq, att_value),
         )),
-        model::Attribute::new,
+        model::Attribute::from,
     )(input)
 }
 
@@ -415,20 +415,20 @@ fn content(input: &str) -> IResult<&str, model::Content<'_>> {
             opt(char_data),
             many0(tuple((
                 alt((
-                    map(element, model::Contents::element),
-                    map(reference, model::Contents::reference),
-                    map(cdsect, model::Contents::cdata),
-                    map(pi, model::Contents::pi),
-                    map(comment, model::Contents::comment),
+                    map(element, model::Contents::from),
+                    map(reference, model::Contents::from),
+                    map(cdsect, model::Contents::from),
+                    map(pi, model::Contents::from),
+                    map(comment, model::Contents::from),
                 )),
                 opt(char_data),
             ))),
         )),
         |(head, children)| {
-            model::Content::new(
+            model::Content::from((
                 head,
-                children.into_iter().map(model::ContentCell::new).collect(),
-            )
+                children.into_iter().map(model::ContentCell::from).collect(),
+            ))
         },
     )(input)
 }
@@ -809,11 +809,8 @@ fn public_id(input: &str) -> IResult<&str, &str> {
 /// [[1] NSAttName](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-NSAttName)
 fn ns_att_name(input: &str) -> IResult<&str, model::AttributeName<'_>> {
     alt((
-        map(
-            preceded(tag("xmlns:"), ncname),
-            model::AttributeName::namespace,
-        ), // [2] PrefixedAttName
-        map(tag("xmlns"), |_| model::AttributeName::default()), // [3] DefaultAttName
+        map(preceded(tag("xmlns:"), ncname), model::AttributeName::from), // [2] PrefixedAttName
+        map(tag("xmlns"), |_| model::AttributeName::default()),           // [3] DefaultAttName
     ))(input)
 }
 
@@ -830,8 +827,8 @@ fn ncname(input: &str) -> IResult<&str, &str> {
 /// [\[7\] QName](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-QName)
 fn qname(input: &str) -> IResult<&str, model::QName<'_>> {
     alt((
-        map(prefixed_name, model::QName::prefixed),
-        map(ncname, model::QName::unprefixed),
+        map(prefixed_name, model::QName::from),
+        map(ncname, model::QName::from),
     ))(input)
 }
 
@@ -841,7 +838,7 @@ fn qname(input: &str) -> IResult<&str, model::QName<'_>> {
 fn prefixed_name(input: &str) -> IResult<&str, model::PrefixedName> {
     map(
         tuple((ncname, preceded(tag(":"), ncname))),
-        model::PrefixedName::new,
+        model::PrefixedName::from,
     )(input)
 }
 
@@ -855,7 +852,7 @@ mod tests {
     fn test_document() {
         let (rest, ret) = document("<root>></root>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::QName::unprefixed("root"), ret.element.name);
+        assert_eq!(model::QName::from("root"), ret.element.name);
     }
 
     #[test]
@@ -905,7 +902,7 @@ mod tests {
     fn test_att_value() {
         let (rest, ret) = att_value("\"aaa\"").unwrap();
         assert_eq!("", rest);
-        assert_eq!(vec![model::AttributeValue::text("aaa")], ret);
+        assert_eq!(vec![model::AttributeValue::from("aaa")], ret);
 
         let (rest, ret) = att_value("\"&aaa;\"").unwrap();
         assert_eq!("", rest);
@@ -918,7 +915,7 @@ mod tests {
 
         let (rest, ret) = att_value("'aaa'").unwrap();
         assert_eq!("", rest);
-        assert_eq!(vec![model::AttributeValue::text("aaa")], ret);
+        assert_eq!(vec![model::AttributeValue::from("aaa")], ret);
 
         let (rest, ret) = att_value("'&aaa;'").unwrap();
         assert_eq!("", rest);
@@ -980,17 +977,17 @@ mod tests {
         let (rest, ret) = comment("<!-- declarations for <head> & <body> -->").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Comment::new(" declarations for <head> & <body> "),
+            model::Comment::from(" declarations for <head> & <body> "),
             ret
         );
 
         let (rest, ret) = comment("<!---->").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::Comment::new(""), ret);
+        assert_eq!(model::Comment::from(""), ret);
 
         let (rest, ret) = comment("<!---a-->").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::Comment::new("-a"), ret);
+        assert_eq!(model::Comment::from("-a"), ret);
 
         let _err = comment("<!----->").err().unwrap();
     }
@@ -999,15 +996,15 @@ mod tests {
     fn test_pi() {
         let (rest, ret) = pi("<?a?>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::PI::new(("a", None)), ret);
+        assert_eq!(model::PI::from(("a", None)), ret);
 
         let (rest, ret) = pi("<?a b?>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::PI::new(("a", Some("b"))), ret);
+        assert_eq!(model::PI::from(("a", Some("b"))), ret);
 
         let (rest, ret) = pi("<?a b> ?>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::PI::new(("a", Some("b> "))), ret);
+        assert_eq!(model::PI::from(("a", Some("b> "))), ret);
     }
 
     #[test]
@@ -1029,20 +1026,20 @@ mod tests {
 
         let (rest, ret) = cdsect("<![CDATA[aaa]]>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::CData::new("aaa"), ret);
+        assert_eq!(model::CData::from("aaa"), ret);
     }
 
     #[test]
     fn test_prolog() {
         let (rest, ret) = prolog("").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::Prolog::new((None, vec![], None)), ret);
+        assert_eq!(model::Prolog::from((None, vec![], None)), ret);
 
         let (rest, ret) = prolog("<?xml version='1.0'?>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Prolog::new((
-                Some(model::DeclarationXml::new(("1.0", None, None))),
+            model::Prolog::from((
+                Some(model::DeclarationXml::from(("1.0", None, None))),
                 vec![],
                 None
             )),
@@ -1052,9 +1049,9 @@ mod tests {
         let (rest, ret) = prolog("<!-- aaa -->").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Prolog::new((
+            model::Prolog::from((
                 None,
-                vec![model::Misc::Comment(model::Comment::new(" aaa "))],
+                vec![model::Misc::Comment(model::Comment::from(" aaa "))],
                 None
             )),
             ret
@@ -1063,19 +1060,19 @@ mod tests {
         let (rest, ret) = prolog("<!DOCTYPE aaa>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Prolog::new((None, vec![], Some(("<!DOCTYPE aaa>", vec![])))),
+            model::Prolog::from((None, vec![], Some(("<!DOCTYPE aaa>", vec![])))),
             ret
         );
 
         let (rest, ret) = prolog("<!DOCTYPE aaa><!-- aaa -->").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Prolog::new((
+            model::Prolog::from((
                 None,
                 vec![],
                 Some((
                     "<!DOCTYPE aaa>",
-                    vec![model::Misc::Comment(model::Comment::new(" aaa "))]
+                    vec![model::Misc::Comment(model::Comment::from(" aaa "))]
                 ))
             )),
             ret
@@ -1086,22 +1083,22 @@ mod tests {
     fn test_xml_decl() {
         let (rest, ret) = xml_decl("<?xml version='1.0' ?>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::DeclarationXml::new(("1.0", None, None)), ret);
+        assert_eq!(model::DeclarationXml::from(("1.0", None, None)), ret);
 
         let (rest, ret) = xml_decl("<?xml version='1.0' encoding='utf-8'?>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::DeclarationXml::new(("1.0", Some("utf-8"), None)),
+            model::DeclarationXml::from(("1.0", Some("utf-8"), None)),
             ret
         );
 
         let (rest, ret) = xml_decl("<?xml version='1.0' standalone='yes'?>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::DeclarationXml::new(("1.0", None, Some(true))), ret);
+        assert_eq!(model::DeclarationXml::from(("1.0", None, Some(true))), ret);
 
         let (rest, ret) = xml_decl("<?xml version='1.0' standalone='no'?>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::DeclarationXml::new(("1.0", None, Some(false))), ret);
+        assert_eq!(model::DeclarationXml::from(("1.0", None, Some(false))), ret);
     }
 
     #[test]
@@ -1119,15 +1116,15 @@ mod tests {
     fn test_misc() {
         let (rest, ret) = misc("<!-- aaa -->").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::Misc::comment(model::Comment::new(" aaa ")), ret);
+        assert_eq!(model::Misc::from(model::Comment::from(" aaa ")), ret);
 
         let (rest, ret) = misc("<?aaa?>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::Misc::pi(model::PI::new(("aaa", None))), ret);
+        assert_eq!(model::Misc::from(model::PI::from(("aaa", None))), ret);
 
         let (rest, ret) = misc(" ").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::Misc::whitespace(" "), ret);
+        assert_eq!(model::Misc::from(" "), ret);
     }
 
     #[test]
@@ -1153,16 +1150,13 @@ mod tests {
     fn test_element() {
         let (rest, ret) = element("<a/>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(
-            model::Element::from((model::QName::unprefixed("a"), vec![])),
-            ret
-        );
+        assert_eq!(model::Element::from((model::QName::from("a"), vec![])), ret);
 
         let (rest, ret) = element("<a></a>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Element::from((model::QName::unprefixed("a"), vec![]))
-                .set_content(model::Content::new(Some(""), vec![])),
+            model::Element::from((model::QName::from("a"), vec![]))
+                .set_content(model::Content::from((Some(""), vec![]))),
             ret
         );
     }
@@ -1171,19 +1165,16 @@ mod tests {
     fn test_stag() {
         let (rest, ret) = stag("<a>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(
-            model::Element::from((model::QName::unprefixed("a"), vec![])),
-            ret
-        );
+        assert_eq!(model::Element::from((model::QName::from("a"), vec![])), ret);
 
         let (rest, ret) = stag("<a b='c'>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
             model::Element::from((
-                model::QName::unprefixed("a"),
-                vec![model::Attribute::new((
+                model::QName::from("a"),
+                vec![model::Attribute::from((
                     model::AttributeName::QName(model::QName::Unprefixed("b")),
-                    vec![model::AttributeValue::text("c")]
+                    vec![model::AttributeValue::from("c")]
                 ))]
             )),
             ret
@@ -1194,78 +1185,69 @@ mod tests {
     fn test_content() {
         let (rest, ret) = content("a").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::Content::new(Some("a"), vec![]), ret);
+        assert_eq!(model::Content::from((Some("a"), vec![])), ret);
 
         let (rest, ret) = content("<a/>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Content::new(
+            model::Content::from((
                 Some(""),
-                vec![model::ContentCell::new((
-                    model::Contents::element(model::Element::from((
-                        model::QName::unprefixed("a"),
-                        vec![]
-                    ))),
+                vec![model::ContentCell::from((
+                    model::Contents::from(model::Element::from((model::QName::from("a"), vec![]))),
                     Some("")
                 )),]
-            ),
+            )),
             ret
         );
 
         let (rest, ret) = content("a<a/>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Content::new(
+            model::Content::from((
                 Some("a"),
-                vec![model::ContentCell::new((
-                    model::Contents::element(model::Element::from((
-                        model::QName::unprefixed("a"),
-                        vec![]
-                    ))),
+                vec![model::ContentCell::from((
+                    model::Contents::from(model::Element::from((model::QName::from("a"), vec![]))),
                     Some("")
                 )),]
-            ),
+            )),
             ret
         );
 
         let (rest, ret) = content("<a/>a").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Content::new(
+            model::Content::from((
                 Some(""),
-                vec![model::ContentCell::new((
-                    model::Contents::element(model::Element::from((
-                        model::QName::unprefixed("a"),
-                        vec![]
-                    ))),
+                vec![model::ContentCell::from((
+                    model::Contents::from(model::Element::from((model::QName::from("a"), vec![]))),
                     Some("a"),
                 )),]
-            ),
+            )),
             ret
         );
 
         let (rest, ret) = content("<a/><b/>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Content::new(
+            model::Content::from((
                 Some(""),
                 vec![
-                    model::ContentCell::new((
-                        model::Contents::element(model::Element::from((
-                            model::QName::unprefixed("a"),
+                    model::ContentCell::from((
+                        model::Contents::from(model::Element::from((
+                            model::QName::from("a"),
                             vec![]
                         ))),
                         Some(""),
                     )),
-                    model::ContentCell::new((
-                        model::Contents::element(model::Element::from((
-                            model::QName::unprefixed("b"),
+                    model::ContentCell::from((
+                        model::Contents::from(model::Element::from((
+                            model::QName::from("b"),
                             vec![]
                         ))),
                         Some(""),
                     )),
                 ]
-            ),
+            )),
             ret
         );
     }

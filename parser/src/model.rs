@@ -1,13 +1,13 @@
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Attribute<'a> {
     pub name: AttributeName<'a>,
     pub value: Vec<AttributeValue<'a>>,
 }
 
-impl<'a> Attribute<'a> {
-    pub fn new(value: (AttributeName<'a>, Vec<AttributeValue<'a>>)) -> Self {
+impl<'a> From<(AttributeName<'a>, Vec<AttributeValue<'a>>)> for Attribute<'a> {
+    fn from(value: (AttributeName<'a>, Vec<AttributeValue<'a>>)) -> Self {
         let (name, value) = value;
         Attribute { name, value }
     }
@@ -15,95 +15,103 @@ impl<'a> Attribute<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum AttributeName<'a> {
+    #[default]
     DefaultNamespace,
     Namespace(&'a str),
     QName(QName<'a>),
 }
 
-impl<'a> AttributeName<'a> {
-    pub fn default() -> Self {
-        AttributeName::DefaultNamespace
-    }
-
-    pub fn namespace(value: &'a str) -> Self {
+impl<'a> From<&'a str> for AttributeName<'a> {
+    fn from(value: &'a str) -> Self {
         AttributeName::Namespace(value)
     }
+}
 
-    pub fn qname(value: QName<'a>) -> Self {
+impl<'a> From<QName<'a>> for AttributeName<'a> {
+    fn from(value: QName<'a>) -> Self {
         AttributeName::QName(value)
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AttributeValue<'a> {
     Reference(Reference<'a>),
     Text(&'a str),
 }
 
-impl<'a> AttributeValue<'a> {
-    pub fn reference(value: Reference<'a>) -> Self {
+impl<'a> Default for AttributeValue<'a> {
+    fn default() -> Self {
+        AttributeValue::from("")
+    }
+}
+
+impl<'a> From<Reference<'a>> for AttributeValue<'a> {
+    fn from(value: Reference<'a>) -> Self {
         AttributeValue::Reference(value)
     }
+}
 
-    pub fn text(value: &'a str) -> Self {
+impl<'a> From<&'a str> for AttributeValue<'a> {
+    fn from(value: &'a str) -> Self {
         AttributeValue::Text(value)
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct CData<'a> {
     pub value: &'a str,
 }
 
-impl<'a> CData<'a> {
-    pub fn new(value: &'a str) -> Self {
+impl<'a> From<&'a str> for CData<'a> {
+    fn from(value: &'a str) -> Self {
         CData { value }
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Comment<'a> {
     pub value: &'a str,
 }
 
-impl<'a> Comment<'a> {
-    pub fn new(value: &'a str) -> Self {
+impl<'a> From<&'a str> for Comment<'a> {
+    fn from(value: &'a str) -> Self {
         Comment { value }
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Content<'a> {
     pub head: Option<&'a str>,
     pub children: Vec<ContentCell<'a>>,
 }
 
-impl<'a> Content<'a> {
-    pub fn new(head: Option<&'a str>, children: Vec<ContentCell<'a>>) -> Self {
+impl<'a> From<(Option<&'a str>, Vec<ContentCell<'a>>)> for Content<'a> {
+    fn from(value: (Option<&'a str>, Vec<ContentCell<'a>>)) -> Self {
+        let (head, children) = value;
         Content { head, children }
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ContentCell<'a> {
     pub child: Contents<'a>,
     pub tail: Option<&'a str>,
 }
 
-impl<'a> ContentCell<'a> {
-    pub fn new(value: (Contents<'a>, Option<&'a str>)) -> Self {
+impl<'a> From<(Contents<'a>, Option<&'a str>)> for ContentCell<'a> {
+    fn from(value: (Contents<'a>, Option<&'a str>)) -> Self {
         let (child, tail) = value;
         ContentCell { child, tail }
     }
@@ -111,7 +119,7 @@ impl<'a> ContentCell<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Contents<'a> {
     Element(Element<'a>),
     Reference(Reference<'a>),
@@ -120,39 +128,53 @@ pub enum Contents<'a> {
     Comment(Comment<'a>),
 }
 
-impl<'a> Contents<'a> {
-    pub fn element(value: Element<'a>) -> Self {
+impl<'a> Default for Contents<'a> {
+    fn default() -> Self {
+        Contents::from(Comment::default())
+    }
+}
+
+impl<'a> From<Element<'a>> for Contents<'a> {
+    fn from(value: Element<'a>) -> Self {
         Contents::Element(value)
     }
+}
 
-    pub fn reference(value: Reference<'a>) -> Self {
+impl<'a> From<Reference<'a>> for Contents<'a> {
+    fn from(value: Reference<'a>) -> Self {
         Contents::Reference(value)
     }
+}
 
-    pub fn cdata(value: CData<'a>) -> Self {
+impl<'a> From<CData<'a>> for Contents<'a> {
+    fn from(value: CData<'a>) -> Self {
         Contents::CData(value)
     }
+}
 
-    pub fn pi(value: PI<'a>) -> Self {
+impl<'a> From<PI<'a>> for Contents<'a> {
+    fn from(value: PI<'a>) -> Self {
         Contents::PI(value)
     }
+}
 
-    pub fn comment(value: Comment<'a>) -> Self {
+impl<'a> From<Comment<'a>> for Contents<'a> {
+    fn from(value: Comment<'a>) -> Self {
         Contents::Comment(value)
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct DeclarationXml<'a> {
     pub version: &'a str,
     pub encoding: Option<&'a str>,
     pub standalone: Option<bool>,
 }
 
-impl<'a> DeclarationXml<'a> {
-    pub fn new(value: (&'a str, Option<&'a str>, Option<bool>)) -> Self {
+impl<'a> From<(&'a str, Option<&'a str>, Option<bool>)> for DeclarationXml<'a> {
+    fn from(value: (&'a str, Option<&'a str>, Option<bool>)) -> Self {
         let (version, encoding, standalone) = value;
         DeclarationXml {
             version,
@@ -164,15 +186,15 @@ impl<'a> DeclarationXml<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Document<'a> {
     pub prolog: Prolog<'a>,
     pub element: Element<'a>,
     pub miscs: Vec<Misc<'a>>,
 }
 
-impl<'a> Document<'a> {
-    pub fn new(value: (Prolog<'a>, Element<'a>, Vec<Misc<'a>>)) -> Self {
+impl<'a> From<(Prolog<'a>, Element<'a>, Vec<Misc<'a>>)> for Document<'a> {
+    fn from(value: (Prolog<'a>, Element<'a>, Vec<Misc<'a>>)) -> Self {
         let (prolog, element, miscs) = value;
         Document {
             prolog,
@@ -184,15 +206,15 @@ impl<'a> Document<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Element<'a> {
     pub name: QName<'a>,
     pub attributes: Vec<Attribute<'a>>,
     pub content: Option<Content<'a>>,
 }
 
-impl<'a> Element<'a> {
-    pub fn from(value: (QName<'a>, Vec<Attribute<'a>>)) -> Self {
+impl<'a> From<(QName<'a>, Vec<Attribute<'a>>)> for Element<'a> {
+    fn from(value: (QName<'a>, Vec<Attribute<'a>>)) -> Self {
         let (name, attributes) = value;
         Element {
             name,
@@ -200,7 +222,9 @@ impl<'a> Element<'a> {
             content: None,
         }
     }
+}
 
+impl<'a> Element<'a> {
     pub fn set_content(mut self, content: Content<'a>) -> Self {
         self.content = Some(content);
         self
@@ -209,11 +233,17 @@ impl<'a> Element<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum EntityValue<'a> {
     Text(&'a str),
     ParameterEntityReference(&'a str),
     Reference(Reference<'a>),
+}
+
+impl<'a> Default for EntityValue<'a> {
+    fn default() -> Self {
+        EntityValue::Text("")
+    }
 }
 
 impl<'a> EntityValue<'a> {
@@ -232,37 +262,47 @@ impl<'a> EntityValue<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Misc<'a> {
     Comment(Comment<'a>),
     PI(PI<'a>),
     Whitespace(&'a str),
 }
 
-impl<'a> Misc<'a> {
-    pub fn comment(value: Comment<'a>) -> Self {
+impl<'a> Default for Misc<'a> {
+    fn default() -> Self {
+        Misc::from(Comment::default())
+    }
+}
+
+impl<'a> From<Comment<'a>> for Misc<'a> {
+    fn from(value: Comment<'a>) -> Self {
         Misc::Comment(value)
     }
+}
 
-    pub fn pi(value: PI<'a>) -> Self {
+impl<'a> From<PI<'a>> for Misc<'a> {
+    fn from(value: PI<'a>) -> Self {
         Misc::PI(value)
     }
+}
 
-    pub fn whitespace(value: &'a str) -> Self {
+impl<'a> From<&'a str> for Misc<'a> {
+    fn from(value: &'a str) -> Self {
         Misc::Whitespace(value)
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PI<'a> {
     pub target: &'a str,
     pub value: Option<&'a str>,
 }
 
-impl<'a> PI<'a> {
-    pub fn new(value: (&'a str, Option<&'a str>)) -> Self {
+impl<'a> From<(&'a str, Option<&'a str>)> for PI<'a> {
+    fn from(value: (&'a str, Option<&'a str>)) -> Self {
         let (target, value) = value;
         PI { target, value }
     }
@@ -270,14 +310,14 @@ impl<'a> PI<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PrefixedName<'a> {
     pub prefix: &'a str,
     pub local_part: &'a str,
 }
 
-impl<'a> PrefixedName<'a> {
-    pub fn new(value: (&'a str, &'a str)) -> Self {
+impl<'a> From<(&'a str, &'a str)> for PrefixedName<'a> {
+    fn from(value: (&'a str, &'a str)) -> Self {
         let (prefix, local_part) = value;
         PrefixedName { prefix, local_part }
     }
@@ -285,7 +325,7 @@ impl<'a> PrefixedName<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Prolog<'a> {
     pub declaration_xml: Option<DeclarationXml<'a>>,
     pub heads: Vec<Misc<'a>>,
@@ -294,8 +334,14 @@ pub struct Prolog<'a> {
 }
 
 #[allow(clippy::type_complexity)]
-impl<'a> Prolog<'a> {
-    pub fn new(
+impl<'a>
+    From<(
+        Option<DeclarationXml<'a>>,
+        Vec<Misc<'a>>,
+        Option<(&'a str, Vec<Misc<'a>>)>,
+    )> for Prolog<'a>
+{
+    fn from(
         value: (
             Option<DeclarationXml<'a>>,
             Vec<Misc<'a>>,
@@ -314,28 +360,42 @@ impl<'a> Prolog<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum QName<'a> {
     Prefixed(PrefixedName<'a>),
     Unprefixed(&'a str),
 }
 
-impl<'a> QName<'a> {
-    pub fn prefixed(value: PrefixedName<'a>) -> Self {
+impl<'a> Default for QName<'a> {
+    fn default() -> Self {
+        QName::Unprefixed("")
+    }
+}
+
+impl<'a> From<PrefixedName<'a>> for QName<'a> {
+    fn from(value: PrefixedName<'a>) -> Self {
         QName::Prefixed(value)
     }
+}
 
-    pub fn unprefixed(value: &'a str) -> Self {
+impl<'a> From<&'a str> for QName<'a> {
+    fn from(value: &'a str) -> Self {
         QName::Unprefixed(value)
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Reference<'a> {
     Character(&'a str, u32),
     Entity(&'a str),
+}
+
+impl<'a> Default for Reference<'a> {
+    fn default() -> Self {
+        Reference::Character("", 0)
+    }
 }
 
 impl<'a> Reference<'a> {
