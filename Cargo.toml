@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "nom",
   "parser",
+  "xpath",
 ]
 
 [workspace.package]

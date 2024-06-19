@@ -1,0 +1,16 @@
+[package]
+name = "xml-xpath"
+keywords = ["xml"]
+# https://crates.io/category_slugs
+categories = ["parsing"]
+
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+nom = { version="7.1.3", features=["alloc"] }
+xml-nom = { path="../nom" }
