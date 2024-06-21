@@ -4,7 +4,7 @@ use nom::branch::alt;
 use nom::bytes::complete::{tag, take_till};
 use nom::character::complete::{char, digit0, digit1, multispace0};
 use nom::combinator::{map, opt, recognize};
-use nom::multi::many0;
+use nom::multi::{many0, separated_list0, separated_list1};
 use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::IResult;
 use xml_nom::model::QName;
@@ -28,17 +28,18 @@ fn relative_location_path(input: &str) -> IResult<&str, model::RelativeLocationP
         tuple((
             step,
             many0(tuple((
-                delimited(multispace0, alt((tag("//"), tag("/"))), multispace0),
+                delimited(
+                    multispace0,
+                    map(
+                        alt((tag("//"), tag("/"))),
+                        model::LocationPathOperator::from,
+                    ),
+                    multispace0,
+                ),
                 step,
             ))),
         )),
-        |(f, r)| {
-            let r = r
-                .into_iter()
-                .map(|(o, v)| (model::LocationPathOperator::from(o), v))
-                .collect();
-            model::RelativeLocationPath::from((f, r))
-        },
+        model::RelativeLocationPath::from,
     )(input)
 }
 
@@ -186,25 +187,11 @@ fn function_call(input: &str) -> IResult<&str, model::FunctionCall> {
             function_name,
             delimited(
                 tuple((multispace0, char('('), multispace0)),
-                opt(tuple((
-                    argument,
-                    many0(preceded(
-                        tuple((multispace0, char(','), multispace0)),
-                        argument,
-                    )),
-                ))),
+                separated_list0(tuple((multispace0, char(','), multispace0)), argument),
                 tuple((multispace0, char(')'))),
             ),
         )),
-        |(name, args)| {
-            let args = args
-                .map(|(f, mut r)| {
-                    r.insert(0, f);
-                    r
-                })
-                .unwrap_or_default();
-            model::FunctionCall::from((name, args))
-        },
+        model::FunctionCall::from,
     )(input)
 }
 
@@ -220,13 +207,7 @@ fn argument(input: &str) -> IResult<&str, model::Argument> {
 /// [\[18\] UnionExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-UnionExpr)
 fn union_expr(input: &str) -> IResult<&str, model::UnionExpr> {
     map(
-        tuple((
-            path_expr,
-            many0(preceded(
-                tuple((multispace0, tag("|"), multispace0)),
-                path_expr,
-            )),
-        )),
+        separated_list1(tuple((multispace0, tag("|"), multispace0)), path_expr),
         model::UnionExpr::from,
     )(input)
 }
@@ -250,25 +231,31 @@ fn path_expr(input: &str) -> IResult<&str, model::PathExpr> {
         map(
             tuple((
                 filter_expr,
-                delimited(multispace0, alt((tag("//"), tag("/"))), multispace0),
+                delimited(
+                    multispace0,
+                    map(
+                        alt((tag("//"), tag("/"))),
+                        model::LocationPathOperator::from,
+                    ),
+                    multispace0,
+                ),
                 relative_location_path,
             )),
-            |(filter, op, path)| {
-                model::PathExpr::from((
-                    Some((Some(filter), model::LocationPathOperator::from(op))),
-                    path,
-                ))
-            },
+            |(filter, op, path)| model::PathExpr::from((Some((Some(filter), op)), path)),
         ),
         map(filter_expr, model::PathExpr::from),
         map(
             tuple((
-                terminated(alt((tag("//"), tag("/"))), multispace0),
+                terminated(
+                    map(
+                        alt((tag("//"), tag("/"))),
+                        model::LocationPathOperator::from,
+                    ),
+                    multispace0,
+                ),
                 relative_location_path,
             )),
-            |(op, path)| {
-                model::PathExpr::from((Some((None, model::LocationPathOperator::from(op))), path))
-            },
+            |(op, path)| model::PathExpr::from((Some((None, op)), path)),
         ),
         map(filter_expr, model::PathExpr::from),
         map(relative_location_path, model::PathExpr::from),
@@ -291,13 +278,7 @@ fn filter_expr(input: &str) -> IResult<&str, model::FilterExpr> {
 /// [\[21\] OrExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-OrExpr)
 fn or_expr(input: &str) -> IResult<&str, model::OrExpr> {
     map(
-        tuple((
-            and_expr,
-            many0(preceded(
-                tuple((multispace0, tag("or"), multispace0)),
-                and_expr,
-            )),
-        )),
+        separated_list1(tuple((multispace0, tag("or"), multispace0)), and_expr),
         model::OrExpr::from,
     )(input)
 }
@@ -307,13 +288,7 @@ fn or_expr(input: &str) -> IResult<&str, model::OrExpr> {
 /// [\[22\] AndExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-AndExpr)
 fn and_expr(input: &str) -> IResult<&str, model::AndExpr> {
     map(
-        tuple((
-            equality_expr,
-            many0(preceded(
-                tuple((multispace0, tag("and"), multispace0)),
-                equality_expr,
-            )),
-        )),
+        separated_list1(tuple((multispace0, tag("and"), multispace0)), equality_expr),
         model::AndExpr::from,
     )(input)
 }
@@ -326,17 +301,15 @@ fn equality_expr(input: &str) -> IResult<&str, model::EqualityExpr> {
         tuple((
             relation_expr,
             many0(tuple((
-                delimited(multispace0, alt((tag("="), tag("!="))), multispace0),
+                delimited(
+                    multispace0,
+                    map(alt((tag("="), tag("!="))), model::EqualityOperator::from),
+                    multispace0,
+                ),
                 relation_expr,
             ))),
         )),
-        |(f, r)| {
-            let r = r
-                .into_iter()
-                .map(|(o, v)| (model::EqualityOperator::from(o), v))
-                .collect();
-            model::EqualityExpr::from((f, r))
-        },
+        model::EqualityExpr::from,
     )(input)
 }
 
@@ -352,19 +325,16 @@ fn relation_expr(input: &str) -> IResult<&str, model::RelationalExpr> {
             many0(tuple((
                 delimited(
                     multispace0,
-                    alt((tag("<="), tag(">="), tag("<"), tag(">"))),
+                    map(
+                        alt((tag("<="), tag(">="), tag("<"), tag(">"))),
+                        model::RelationalOperator::from,
+                    ),
                     multispace0,
                 ),
                 additive_expr,
             ))),
         )),
-        |(f, r)| {
-            let r = r
-                .into_iter()
-                .map(|(o, v)| (model::RelationalOperator::from(o), v))
-                .collect();
-            model::RelationalExpr::from((f, r))
-        },
+        model::RelationalExpr::from,
     )(input)
 }
 
@@ -376,17 +346,15 @@ fn additive_expr(input: &str) -> IResult<&str, model::AdditiveExpr> {
         tuple((
             multiplicative_expr,
             many0(tuple((
-                delimited(multispace0, alt((tag("+"), tag("-"))), multispace0),
+                delimited(
+                    multispace0,
+                    map(alt((tag("+"), tag("-"))), model::AdditiveOperator::from),
+                    multispace0,
+                ),
                 multiplicative_expr,
             ))),
         )),
-        |(f, r)| {
-            let r = r
-                .into_iter()
-                .map(|(o, v)| (model::AdditiveOperator::from(o), v))
-                .collect();
-            model::AdditiveExpr::from((f, r))
-        },
+        model::AdditiveExpr::from,
     )(input)
 }
 
@@ -403,19 +371,16 @@ fn multiplicative_expr(input: &str) -> IResult<&str, model::MultiplicativeExpr> 
             many0(tuple((
                 delimited(
                     multispace0,
-                    alt((tag("*"), tag("div"), tag("mod"))),
+                    map(
+                        alt((tag("*"), tag("div"), tag("mod"))),
+                        model::MultiplicativeOperator::from,
+                    ),
                     multispace0,
                 ),
                 unary_expr,
             ))),
         )),
-        |(f, r)| {
-            let r = r
-                .into_iter()
-                .map(|(o, v)| (model::MultiplicativeOperator::from(o), v))
-                .collect();
-            model::MultiplicativeExpr::from((f, r))
-        },
+        model::MultiplicativeExpr::from,
     )(input)
 }
 
@@ -566,6 +531,8 @@ mod tests {
             )),
             ret
         );
+
+        let _err = relative_location_path("").err().unwrap();
     }
 
     #[test]
@@ -610,6 +577,8 @@ mod tests {
         let (rest, ret) = step("..").unwrap();
         assert_eq!("", rest);
         assert_eq!(model::Step::Parent, ret);
+
+        let _err = step("").err().unwrap();
     }
 
     #[test]
@@ -685,6 +654,8 @@ mod tests {
         assert_eq!("", rest);
         assert_eq!(model::AxisName::Current, ret);
 
+        let _err = axis_name("").err().unwrap();
+
         let _err = axis_name("unknown").err().unwrap();
     }
 
@@ -709,6 +680,8 @@ mod tests {
         let (rest, ret) = node_test("processing-instruction ( \"a\" )").unwrap();
         assert_eq!("", rest);
         assert_eq!(model::NodeTest::PI("a"), ret);
+
+        let _err = node_test("").err().unwrap();
     }
 
     #[test]
@@ -720,6 +693,8 @@ mod tests {
         let (rest, ret) = predicate("[ . ]").unwrap();
         assert_eq!("", rest);
         assert_eq!(expr_current(), ret);
+
+        let _err = predicate("").err().unwrap();
     }
 
     #[test]
@@ -750,6 +725,8 @@ mod tests {
             model::PrimaryExpr::from(model::FunctionCall::from(QName::from("a"))),
             ret
         );
+
+        let _err = primary_expr("").err().unwrap();
     }
 
     #[test]
@@ -789,6 +766,8 @@ mod tests {
             model::FunctionCall::from((QName::from("a"), vec![expr_current(), expr_current(),])),
             ret
         );
+
+        let _err = function_call("").err().unwrap();
     }
 
     #[test]
@@ -800,26 +779,29 @@ mod tests {
         let (rest, ret) = union_expr(".|.").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::UnionExpr::from((path_expr_current(), vec![path_expr_current()])),
+            model::UnionExpr::from(vec![path_expr_current(), path_expr_current()]),
             ret
         );
 
         let (rest, ret) = union_expr(". | .").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::UnionExpr::from((path_expr_current(), vec![path_expr_current()])),
+            model::UnionExpr::from(vec![path_expr_current(), path_expr_current()]),
             ret
         );
 
         let (rest, ret) = union_expr(". | . | .").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::UnionExpr::from((
+            model::UnionExpr::from(vec![
                 path_expr_current(),
-                vec![path_expr_current(), path_expr_current()]
-            )),
+                path_expr_current(),
+                path_expr_current()
+            ]),
             ret
         );
+
+        let _err = union_expr("").err().unwrap();
     }
 
     #[test]
@@ -884,6 +866,8 @@ mod tests {
             )),
             ret
         );
+
+        let _err = path_expr("").err().unwrap();
     }
 
     #[test]
@@ -908,6 +892,8 @@ mod tests {
             )),
             ret
         );
+
+        let _err = filter_expr("").err().unwrap();
     }
 
     #[test]
@@ -919,26 +905,29 @@ mod tests {
         let (rest, ret) = or_expr(".or.").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::OrExpr::from((and_expr_current(), vec![and_expr_current()])),
+            model::OrExpr::from(vec![and_expr_current(), and_expr_current()]),
             ret
         );
 
         let (rest, ret) = or_expr(". or .").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::OrExpr::from((and_expr_current(), vec![and_expr_current()])),
+            model::OrExpr::from(vec![and_expr_current(), and_expr_current()]),
             ret
         );
 
         let (rest, ret) = or_expr(". or . or .").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::OrExpr::from((
+            model::OrExpr::from(vec![
                 and_expr_current(),
-                vec![and_expr_current(), and_expr_current()]
-            )),
+                and_expr_current(),
+                and_expr_current()
+            ]),
             ret
         );
+
+        let _err = or_expr("").err().unwrap();
     }
 
     #[test]
@@ -950,26 +939,29 @@ mod tests {
         let (rest, ret) = and_expr(".and.").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::AndExpr::from((equal_expr_current(), vec![equal_expr_current()])),
+            model::AndExpr::from(vec![equal_expr_current(), equal_expr_current()]),
             ret
         );
 
         let (rest, ret) = and_expr(". and .").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::AndExpr::from((equal_expr_current(), vec![equal_expr_current()])),
+            model::AndExpr::from(vec![equal_expr_current(), equal_expr_current()]),
             ret
         );
 
         let (rest, ret) = and_expr(". and . and .").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::AndExpr::from((
+            model::AndExpr::from(vec![
                 equal_expr_current(),
-                vec![equal_expr_current(), equal_expr_current()]
-            )),
+                equal_expr_current(),
+                equal_expr_current()
+            ]),
             ret
         );
+
+        let _err = and_expr("").err().unwrap();
     }
 
     #[test]
@@ -1030,6 +1022,8 @@ mod tests {
             )),
             ret
         );
+
+        let _err = equality_expr("").err().unwrap();
     }
 
     #[test]
@@ -1151,6 +1145,8 @@ mod tests {
             )),
             ret
         );
+
+        let _err = relation_expr("").err().unwrap();
     }
 
     #[test]
@@ -1211,6 +1207,8 @@ mod tests {
             )),
             ret
         );
+
+        let _err = additive_expr("").err().unwrap();
     }
 
     #[test]
@@ -1291,6 +1289,8 @@ mod tests {
             )),
             ret
         );
+
+        let _err = multiplicative_expr("").err().unwrap();
     }
 
     #[test]
@@ -1319,6 +1319,8 @@ mod tests {
             model::UnaryExpr::from((vec!["-", "-"], union_expr_current())),
             ret
         );
+
+        let _err = unary_expr("").err().unwrap();
     }
 
     #[test]
@@ -1330,6 +1332,8 @@ mod tests {
         let (rest, ret) = literal("'a'").unwrap();
         assert_eq!("", rest);
         assert_eq!("a", ret);
+
+        let _err = literal("").err().unwrap();
     }
 
     #[test]
@@ -1349,6 +1353,8 @@ mod tests {
         let (rest, ret) = number(".1").unwrap();
         assert_eq!("", rest);
         assert_eq!(".1", ret);
+
+        let _err = number("").err().unwrap();
     }
 
     #[test]
@@ -1372,6 +1378,8 @@ mod tests {
             ret
         );
 
+        let _err = name_test("").err().unwrap();
+
         let _err = name_test("+").err().unwrap();
     }
 
@@ -1392,6 +1400,8 @@ mod tests {
         let (rest, ret) = node_type("node").unwrap();
         assert_eq!("", rest);
         assert_eq!(model::NodeType::Node, ret);
+
+        let _err = node_type("").err().unwrap();
 
         let _err = node_type("unknown").err().unwrap();
     }

@@ -57,23 +57,18 @@ impl From<&str> for AdditiveOperator {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AndExpr<'a> {
-    operand: EqualityExpr<'a>,
-    operations: Vec<EqualityExpr<'a>>,
+    operands: Vec<EqualityExpr<'a>>,
 }
 
 impl<'a> From<EqualityExpr<'a>> for AndExpr<'a> {
     fn from(value: EqualityExpr<'a>) -> Self {
-        AndExpr::from((value, vec![]))
+        AndExpr::from(vec![value])
     }
 }
 
-impl<'a> From<(EqualityExpr<'a>, Vec<EqualityExpr<'a>>)> for AndExpr<'a> {
-    fn from(value: (EqualityExpr<'a>, Vec<EqualityExpr<'a>>)) -> Self {
-        let (operand, operations) = value;
-        AndExpr {
-            operand,
-            operations,
-        }
+impl<'a> From<Vec<EqualityExpr<'a>>> for AndExpr<'a> {
+    fn from(value: Vec<EqualityExpr<'a>>) -> Self {
+        AndExpr { operands: value }
     }
 }
 
@@ -411,23 +406,18 @@ impl From<&str> for NodeType {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct OrExpr<'a> {
-    operand: AndExpr<'a>,
-    operations: Vec<AndExpr<'a>>,
+    operands: Vec<AndExpr<'a>>,
 }
 
 impl<'a> From<AndExpr<'a>> for OrExpr<'a> {
     fn from(value: AndExpr<'a>) -> Self {
-        OrExpr::from((value, vec![]))
+        OrExpr::from(vec![value])
     }
 }
 
-impl<'a> From<(AndExpr<'a>, Vec<AndExpr<'a>>)> for OrExpr<'a> {
-    fn from(value: (AndExpr<'a>, Vec<AndExpr<'a>>)) -> Self {
-        let (operand, operations) = value;
-        OrExpr {
-            operand,
-            operations,
-        }
+impl<'a> From<Vec<AndExpr<'a>>> for OrExpr<'a> {
+    fn from(value: Vec<AndExpr<'a>>) -> Self {
+        OrExpr { operands: value }
     }
 }
 
@@ -629,23 +619,18 @@ impl<'a> From<(Vec<&'a str>, UnionExpr<'a>)> for UnaryExpr<'a> {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UnionExpr<'a> {
-    operand: PathExpr<'a>,
-    operations: Vec<PathExpr<'a>>,
+    operands: Vec<PathExpr<'a>>,
 }
 
 impl<'a> From<PathExpr<'a>> for UnionExpr<'a> {
     fn from(value: PathExpr<'a>) -> Self {
-        UnionExpr::from((value, vec![]))
+        UnionExpr::from(vec![value])
     }
 }
 
-impl<'a> From<(PathExpr<'a>, Vec<PathExpr<'a>>)> for UnionExpr<'a> {
-    fn from(value: (PathExpr<'a>, Vec<PathExpr<'a>>)) -> Self {
-        let (operand, operations) = value;
-        UnionExpr {
-            operand,
-            operations,
-        }
+impl<'a> From<Vec<PathExpr<'a>>> for UnionExpr<'a> {
+    fn from(value: Vec<PathExpr<'a>>) -> Self {
+        UnionExpr { operands: value }
     }
 }
 
