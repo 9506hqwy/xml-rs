@@ -1,0 +1,16 @@
+[package]
+name = "xml-dom"
+keywords = ["xml"]
+# https://crates.io/category_slugs
+categories = ["parsing"]
+
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+xml-nom = { path="../nom" }
+xml-parser = { path="../parser" }
