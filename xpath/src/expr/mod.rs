@@ -1,4 +1,4 @@
-mod model;
+pub mod model;
 
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_till};

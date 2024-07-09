@@ -34,6 +34,16 @@ impl<'a>
     }
 }
 
+impl<'a> AdditiveExpr<'a> {
+    pub fn operand(&self) -> &MultiplicativeExpr<'a> {
+        &self.operand
+    }
+
+    pub fn operations(&self) -> &[(AdditiveOperator, MultiplicativeExpr<'a>)] {
+        self.operations.as_slice()
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -69,6 +79,12 @@ impl<'a> From<EqualityExpr<'a>> for AndExpr<'a> {
 impl<'a> From<Vec<EqualityExpr<'a>>> for AndExpr<'a> {
     fn from(value: Vec<EqualityExpr<'a>>) -> Self {
         AndExpr { operands: value }
+    }
+}
+
+impl<'a> AndExpr<'a> {
+    pub fn operands(&self) -> &[EqualityExpr<'a>] {
+        self.operands.as_slice()
     }
 }
 
@@ -166,6 +182,16 @@ impl<'a>
     }
 }
 
+impl<'a> EqualityExpr<'a> {
+    pub fn operand(&self) -> &RelationalExpr<'a> {
+        &self.operand
+    }
+
+    pub fn operations(&self) -> &[(EqualityOperator, RelationalExpr<'a>)] {
+        self.operations.as_slice()
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -213,6 +239,16 @@ impl<'a> From<(PrimaryExpr<'a>, Vec<PredicateExpr<'a>>)> for FilterExpr<'a> {
     }
 }
 
+impl<'a> FilterExpr<'a> {
+    pub fn primary(&self) -> &PrimaryExpr<'a> {
+        &self.primary
+    }
+
+    pub fn predicates(&self) -> &[PredicateExpr<'a>] {
+        self.predicates.as_slice()
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -231,6 +267,16 @@ impl<'a> From<(QName<'a>, Vec<Argument<'a>>)> for FunctionCall<'a> {
     fn from(value: (QName<'a>, Vec<Argument<'a>>)) -> Self {
         let (name, args) = value;
         FunctionCall { name, args }
+    }
+}
+
+impl<'a> FunctionCall<'a> {
+    pub fn name(&self) -> &QName<'a> {
+        &self.name
+    }
+
+    pub fn args(&self) -> &[Argument<'a>] {
+        self.args.as_slice()
     }
 }
 
@@ -255,6 +301,16 @@ impl<'a> From<(Step<'a>, Vec<(LocationPathOperator, Step<'a>)>)> for RelativeLoc
             operand,
             operations,
         }
+    }
+}
+
+impl<'a> RelativeLocationPath<'a> {
+    pub fn operand(&self) -> &Step<'a> {
+        &self.operand
+    }
+
+    pub fn operations(&self) -> &[(LocationPathOperator, Step<'a>)] {
+        self.operations.as_slice()
     }
 }
 
@@ -300,6 +356,16 @@ impl<'a> From<(UnaryExpr<'a>, Vec<(MultiplicativeOperator, UnaryExpr<'a>)>)>
             operand,
             operations,
         }
+    }
+}
+
+impl<'a> MultiplicativeExpr<'a> {
+    pub fn operand(&self) -> &UnaryExpr<'a> {
+        &self.operand
+    }
+
+    pub fn operations(&self) -> &[(MultiplicativeOperator, UnaryExpr<'a>)] {
+        self.operations.as_slice()
     }
 }
 
@@ -418,6 +484,12 @@ impl<'a> From<AndExpr<'a>> for OrExpr<'a> {
 impl<'a> From<Vec<AndExpr<'a>>> for OrExpr<'a> {
     fn from(value: Vec<AndExpr<'a>>) -> Self {
         OrExpr { operands: value }
+    }
+}
+
+impl<'a> OrExpr<'a> {
+    pub fn operands(&self) -> &[AndExpr<'a>] {
+        self.operands.as_slice()
     }
 }
 
@@ -548,6 +620,16 @@ impl<'a>
     }
 }
 
+impl<'a> RelationalExpr<'a> {
+    pub fn operand(&self) -> &AdditiveExpr<'a> {
+        &self.operand
+    }
+
+    pub fn operations(&self) -> &[(RelationalOperator, AdditiveExpr<'a>)] {
+        self.operations.as_slice()
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -615,6 +697,16 @@ impl<'a> From<(Vec<&'a str>, UnionExpr<'a>)> for UnaryExpr<'a> {
     }
 }
 
+impl<'a> UnaryExpr<'a> {
+    pub fn inv(&self) -> &[&'a str] {
+        self.inv.as_slice()
+    }
+
+    pub fn value(&self) -> &UnionExpr<'a> {
+        &self.value
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -631,6 +723,12 @@ impl<'a> From<PathExpr<'a>> for UnionExpr<'a> {
 impl<'a> From<Vec<PathExpr<'a>>> for UnionExpr<'a> {
     fn from(value: Vec<PathExpr<'a>>) -> Self {
         UnionExpr { operands: value }
+    }
+}
+
+impl<'a> UnionExpr<'a> {
+    pub fn operands(&self) -> &[PathExpr<'a>] {
+        self.operands.as_slice()
     }
 }
 
