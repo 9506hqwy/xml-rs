@@ -8,44 +8,44 @@ pub trait DomImplementation {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait DocumentFragment: Node {}
+pub trait DocumentFragment<'a>: Node<'a> {}
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Document: Node {
-    fn doc_type(&self) -> Option<XmlDocumentType>;
+pub trait Document<'a>: Node<'a> {
+    fn doc_type(&self) -> Option<XmlDocumentType<'a>>;
 
     fn implementation(&self) -> XmlDomImplementation;
 
-    fn element(&self) -> XmlElement;
+    fn element(&self) -> XmlElement<'a>;
 
-    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList;
+    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList<'a>;
 }
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Node {
+pub trait Node<'a> {
     fn node_name(&self) -> String;
 
     fn node_value(&self) -> Option<String>;
 
     fn node_type(&self) -> NodeType;
 
-    fn parent_node(&self) -> Option<XmlNode>;
+    fn parent_node(&self) -> Option<XmlNode<'a>>;
 
-    fn child_nodes(&self) -> XmlNodeList;
+    fn child_nodes(&self) -> XmlNodeList<'a>;
 
-    fn first_child(&self) -> Option<XmlNode>;
+    fn first_child(&self) -> Option<XmlNode<'a>>;
 
-    fn last_child(&self) -> Option<XmlNode>;
+    fn last_child(&self) -> Option<XmlNode<'a>>;
 
-    fn previous_sibling(&self) -> Option<XmlNode>;
+    fn previous_sibling(&self) -> Option<XmlNode<'a>>;
 
-    fn next_sibling(&self) -> Option<XmlNode>;
+    fn next_sibling(&self) -> Option<XmlNode<'a>>;
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap>;
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>>;
 
-    fn owner_document(&self) -> Option<XmlDocument>;
+    fn owner_document(&self) -> Option<XmlDocument<'a>>;
 
     fn has_child(&self) -> bool;
 }
@@ -88,7 +88,7 @@ pub trait NamedNodeMap<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait CharacterData: Node {
+pub trait CharacterData<'a>: Node<'a> {
     fn data(&self) -> String;
 
     fn length(&self) -> usize;
@@ -98,7 +98,7 @@ pub trait CharacterData: Node {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Attr: Node {
+pub trait Attr<'a>: Node<'a> {
     fn name(&self) -> String;
 
     fn specified(&self) -> bool;
@@ -108,39 +108,39 @@ pub trait Attr: Node {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Element: Node {
+pub trait Element<'a>: Node<'a> {
     fn get_attribute(&self, name: &str) -> String;
 
-    fn get_attribute_node(&self, name: &str) -> Option<XmlAttr>;
+    fn get_attribute_node(&self, name: &str) -> Option<XmlAttr<'a>>;
 
-    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList;
+    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList<'a>;
 }
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Text: CharacterData {}
+pub trait Text<'a>: CharacterData<'a> {}
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Comment: CharacterData {}
+pub trait Comment<'a>: CharacterData<'a> {}
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait CDataSection: Text {}
+pub trait CDataSection<'a>: Text<'a> {}
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait DocumentType: Node {
+pub trait DocumentType<'a>: Node<'a> {
     fn name(&self) -> String;
 
-    fn entities(&self) -> XmlNamedNodeMap;
+    fn entities(&self) -> XmlNamedNodeMap<'a>;
 
-    fn notations(&self) -> XmlNamedNodeMap;
+    fn notations(&self) -> XmlNamedNodeMap<'a>;
 }
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Notation: Node {
+pub trait Notation<'a>: Node<'a> {
     fn public_id(&self) -> Option<String>;
 
     fn system_id(&self) -> Option<String>;
@@ -148,7 +148,7 @@ pub trait Notation: Node {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Entity: Node {
+pub trait Entity<'a>: Node<'a> {
     fn public_id(&self) -> Option<String>;
 
     fn system_id(&self) -> Option<String>;
@@ -158,11 +158,11 @@ pub trait Entity: Node {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait EntityReference: Node {}
+pub trait EntityReference<'a>: Node<'a> {}
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait ProcessingInstruction: Node {
+pub trait ProcessingInstruction<'a>: Node<'a> {
     fn target(&self) -> String;
 
     fn data(&self) -> String;
@@ -223,7 +223,7 @@ impl<'a> XmlNode<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-trait AsNode<'a> {
+pub trait AsNode<'a> {
     fn as_node(&self) -> XmlNode<'a>;
 
     fn as_boxed_node(&self) -> Box<XmlNode<'a>> {
@@ -278,9 +278,9 @@ pub struct XmlDocumentFragment<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> DocumentFragment for XmlDocumentFragment<'a> {}
+impl<'a> DocumentFragment<'a> for XmlDocumentFragment<'a> {}
 
-impl<'a> Node for XmlDocumentFragment<'a> {
+impl<'a> Node<'a> for XmlDocumentFragment<'a> {
     fn node_name(&self) -> String {
         "#document-fragment".to_string()
     }
@@ -293,37 +293,37 @@ impl<'a> Node for XmlDocumentFragment<'a> {
         NodeType::DocumentFragment
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         XmlNodeList {
             nodes: self.children(),
         }
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         self.first_child_node()
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         self.last_child_node()
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
@@ -377,8 +377,8 @@ pub struct XmlDocument<'a> {
     document: &'a xml_parser::model::Document<'a>,
 }
 
-impl<'a> Document for XmlDocument<'a> {
-    fn doc_type(&self) -> Option<XmlDocumentType> {
+impl<'a> Document<'a> for XmlDocument<'a> {
+    fn doc_type(&self) -> Option<XmlDocumentType<'a>> {
         self.document
             .prolog
             .declaration_doc
@@ -393,11 +393,11 @@ impl<'a> Document for XmlDocument<'a> {
         XmlDomImplementation {}
     }
 
-    fn element(&self) -> XmlElement {
+    fn element(&self) -> XmlElement<'a> {
         self.root_element()
     }
 
-    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList {
+    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList<'a> {
         let mut nodes: Vec<XmlNode> = vec![];
 
         for v in self.root_element().elements_by_tag_name(tag_name) {
@@ -408,7 +408,7 @@ impl<'a> Document for XmlDocument<'a> {
     }
 }
 
-impl<'a> Node for XmlDocument<'a> {
+impl<'a> Node<'a> for XmlDocument<'a> {
     fn node_name(&self) -> String {
         "#document".to_string()
     }
@@ -421,37 +421,37 @@ impl<'a> Node for XmlDocument<'a> {
         NodeType::Document
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         XmlNodeList {
             nodes: self.children(),
         }
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         self.first_child_node()
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         self.last_child_node()
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         None::<XmlDocument>
     }
 
@@ -566,7 +566,7 @@ pub struct XmlAttr<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> Attr for XmlAttr<'a> {
+impl<'a> Attr<'a> for XmlAttr<'a> {
     fn name(&self) -> String {
         match &self.attribute.name {
             xml_parser::model::AttributeName::QName(q) => match q {
@@ -597,7 +597,7 @@ impl<'a> Attr for XmlAttr<'a> {
     }
 }
 
-impl<'a> Node for XmlAttr<'a> {
+impl<'a> Node<'a> for XmlAttr<'a> {
     fn node_name(&self) -> String {
         self.name()
     }
@@ -610,37 +610,37 @@ impl<'a> Node for XmlAttr<'a> {
         NodeType::Attribute
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         XmlNodeList {
             nodes: self.children(),
         }
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         self.first_child_node()
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         self.last_child_node()
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
@@ -699,13 +699,13 @@ pub struct XmlElement<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> Element for XmlElement<'a> {
+impl<'a> Element<'a> for XmlElement<'a> {
     fn get_attribute(&self, name: &str) -> String {
         let attr = self.get_attribute_node(name);
         attr.map(|v| v.value()).unwrap_or_default()
     }
 
-    fn get_attribute_node(&self, name: &str) -> Option<XmlAttr> {
+    fn get_attribute_node(&self, name: &str) -> Option<XmlAttr<'a>> {
         self.element
             .attributes
             .iter()
@@ -726,7 +726,7 @@ impl<'a> Element for XmlElement<'a> {
             })
     }
 
-    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList {
+    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList<'a> {
         let nodes = self
             .elements_by_tag_name(tag_name)
             .iter()
@@ -736,7 +736,7 @@ impl<'a> Element for XmlElement<'a> {
     }
 }
 
-impl<'a> Node for XmlElement<'a> {
+impl<'a> Node<'a> for XmlElement<'a> {
     fn node_name(&self) -> String {
         match &self.element.name {
             xml_nom::model::QName::Prefixed(n) => n.local_part.to_string(), // FIXME: namespace
@@ -752,37 +752,37 @@ impl<'a> Node for XmlElement<'a> {
         NodeType::Element
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         self.parent.as_ref().map(|v| *v.clone())
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         XmlNodeList {
             nodes: self.children(),
         }
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         self.first_child_node()
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         self.last_child_node()
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.previous_sibling_child(self.as_node()))
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         let nodes = self
             .element
             .attributes
@@ -798,7 +798,7 @@ impl<'a> Node for XmlElement<'a> {
         Some(XmlNamedNodeMap { nodes })
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
@@ -921,9 +921,9 @@ pub struct XmlText<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> Text for XmlText<'a> {}
+impl<'a> Text<'a> for XmlText<'a> {}
 
-impl<'a> CharacterData for XmlText<'a> {
+impl<'a> CharacterData<'a> for XmlText<'a> {
     fn data(&self) -> String {
         self.data.to_string()
     }
@@ -937,7 +937,7 @@ impl<'a> CharacterData for XmlText<'a> {
     }
 }
 
-impl<'a> Node for XmlText<'a> {
+impl<'a> Node<'a> for XmlText<'a> {
     fn node_name(&self) -> String {
         "#text".to_string()
     }
@@ -950,39 +950,39 @@ impl<'a> Node for XmlText<'a> {
         NodeType::Text
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         self.parent.as_ref().map(|v| *v.clone())
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         XmlNodeList::empty()
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.previous_sibling_child(self.as_node()))
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
@@ -1012,9 +1012,9 @@ pub struct XmlComment<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> Comment for XmlComment<'a> {}
+impl<'a> Comment<'a> for XmlComment<'a> {}
 
-impl<'a> CharacterData for XmlComment<'a> {
+impl<'a> CharacterData<'a> for XmlComment<'a> {
     fn data(&self) -> String {
         self.data.to_string()
     }
@@ -1028,7 +1028,7 @@ impl<'a> CharacterData for XmlComment<'a> {
     }
 }
 
-impl<'a> Node for XmlComment<'a> {
+impl<'a> Node<'a> for XmlComment<'a> {
     fn node_name(&self) -> String {
         "#comment".to_string()
     }
@@ -1041,39 +1041,39 @@ impl<'a> Node for XmlComment<'a> {
         NodeType::Comment
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         self.parent.as_ref().map(|v| *v.clone())
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         XmlNodeList::empty()
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.previous_sibling_child(self.as_node()))
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
@@ -1103,11 +1103,11 @@ pub struct XmlCDataSection<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> CDataSection for XmlCDataSection<'a> {}
+impl<'a> CDataSection<'a> for XmlCDataSection<'a> {}
 
-impl<'a> Text for XmlCDataSection<'a> {}
+impl<'a> Text<'a> for XmlCDataSection<'a> {}
 
-impl<'a> CharacterData for XmlCDataSection<'a> {
+impl<'a> CharacterData<'a> for XmlCDataSection<'a> {
     fn data(&self) -> String {
         self.data.to_string()
     }
@@ -1121,7 +1121,7 @@ impl<'a> CharacterData for XmlCDataSection<'a> {
     }
 }
 
-impl<'a> Node for XmlCDataSection<'a> {
+impl<'a> Node<'a> for XmlCDataSection<'a> {
     fn node_name(&self) -> String {
         "#cdata-section".to_string()
     }
@@ -1134,39 +1134,39 @@ impl<'a> Node for XmlCDataSection<'a> {
         NodeType::CData
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         self.parent.as_ref().map(|v| *v.clone())
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         XmlNodeList::empty()
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.previous_sibling_child(self.as_node()))
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
@@ -1196,24 +1196,24 @@ pub struct XmlDocumentType<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> DocumentType for XmlDocumentType<'a> {
+impl<'a> DocumentType<'a> for XmlDocumentType<'a> {
     fn name(&self) -> String {
         // TODO:
         "".to_string()
     }
 
-    fn entities(&self) -> XmlNamedNodeMap {
+    fn entities(&self) -> XmlNamedNodeMap<'a> {
         // TODO:
         XmlNamedNodeMap::empty()
     }
 
-    fn notations(&self) -> XmlNamedNodeMap {
+    fn notations(&self) -> XmlNamedNodeMap<'a> {
         // TODO:
         XmlNamedNodeMap::empty()
     }
 }
 
-impl<'a> Node for XmlDocumentType<'a> {
+impl<'a> Node<'a> for XmlDocumentType<'a> {
     fn node_name(&self) -> String {
         self.name()
     }
@@ -1226,39 +1226,39 @@ impl<'a> Node for XmlDocumentType<'a> {
         NodeType::DocumentType
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         self.parent.as_ref().map(|v| *v.clone())
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         XmlNodeList::empty()
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.previous_sibling_child(self.as_node()))
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
@@ -1287,7 +1287,7 @@ pub struct XmlNotation<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> Notation for XmlNotation<'a> {
+impl<'a> Notation<'a> for XmlNotation<'a> {
     fn public_id(&self) -> Option<String> {
         // TODO:
         None
@@ -1299,7 +1299,7 @@ impl<'a> Notation for XmlNotation<'a> {
     }
 }
 
-impl<'a> Node for XmlNotation<'a> {
+impl<'a> Node<'a> for XmlNotation<'a> {
     fn node_name(&self) -> String {
         // TODO:
         "".to_string()
@@ -1313,39 +1313,39 @@ impl<'a> Node for XmlNotation<'a> {
         NodeType::Notation
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         self.parent.as_ref().map(|v| *v.clone())
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         XmlNodeList::empty()
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.previous_sibling_child(self.as_node()))
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
@@ -1375,7 +1375,7 @@ pub struct XmlEntity<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> Entity for XmlEntity<'a> {
+impl<'a> Entity<'a> for XmlEntity<'a> {
     fn public_id(&self) -> Option<String> {
         // TODO:
         None
@@ -1392,7 +1392,7 @@ impl<'a> Entity for XmlEntity<'a> {
     }
 }
 
-impl<'a> Node for XmlEntity<'a> {
+impl<'a> Node<'a> for XmlEntity<'a> {
     fn node_name(&self) -> String {
         // TODO:
         "".to_string()
@@ -1406,42 +1406,42 @@ impl<'a> Node for XmlEntity<'a> {
         NodeType::Entity
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         self.parent.as_ref().map(|v| *v.clone())
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         // TODO:
         XmlNodeList { nodes: vec![] }
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         // TODO:
         None
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         // TODO:
         None
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.previous_sibling_child(self.as_node()))
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
@@ -1480,9 +1480,9 @@ pub struct XmlEntityReference<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> EntityReference for XmlEntityReference<'a> {}
+impl<'a> EntityReference<'a> for XmlEntityReference<'a> {}
 
-impl<'a> Node for XmlEntityReference<'a> {
+impl<'a> Node<'a> for XmlEntityReference<'a> {
     fn node_name(&self) -> String {
         // TODO:
         "".to_string()
@@ -1496,42 +1496,42 @@ impl<'a> Node for XmlEntityReference<'a> {
         NodeType::EntityReference
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         self.parent.as_ref().map(|v| *v.clone())
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         // TODO
         XmlNodeList { nodes: vec![] }
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         // TODO:
         None
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         // TODO:
         None
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.previous_sibling_child(self.as_node()))
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
@@ -1569,7 +1569,7 @@ pub struct XmlProcessingInstruction<'a> {
     owner: XmlDocument<'a>,
 }
 
-impl<'a> ProcessingInstruction for XmlProcessingInstruction<'a> {
+impl<'a> ProcessingInstruction<'a> for XmlProcessingInstruction<'a> {
     fn target(&self) -> String {
         self.pi.target.to_string()
     }
@@ -1579,7 +1579,7 @@ impl<'a> ProcessingInstruction for XmlProcessingInstruction<'a> {
     }
 }
 
-impl<'a> Node for XmlProcessingInstruction<'a> {
+impl<'a> Node<'a> for XmlProcessingInstruction<'a> {
     fn node_name(&self) -> String {
         self.target()
     }
@@ -1592,39 +1592,39 @@ impl<'a> Node for XmlProcessingInstruction<'a> {
         NodeType::PI
     }
 
-    fn parent_node(&self) -> Option<XmlNode> {
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
         self.parent.as_ref().map(|v| *v.clone())
     }
 
-    fn child_nodes(&self) -> XmlNodeList {
+    fn child_nodes(&self) -> XmlNodeList<'a> {
         XmlNodeList::empty()
     }
 
-    fn first_child(&self) -> Option<XmlNode> {
+    fn first_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn last_child(&self) -> Option<XmlNode> {
+    fn last_child(&self) -> Option<XmlNode<'a>> {
         None
     }
 
-    fn previous_sibling(&self) -> Option<XmlNode> {
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.previous_sibling_child(self.as_node()))
     }
 
-    fn next_sibling(&self) -> Option<XmlNode> {
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
         self.parent
             .as_ref()
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
         None::<XmlNamedNodeMap>
     }
 
-    fn owner_document(&self) -> Option<XmlDocument> {
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
         Some(self.owner.clone())
     }
 
