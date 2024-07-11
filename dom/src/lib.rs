@@ -186,6 +186,212 @@ pub enum XmlNode<'a> {
     Notation(XmlNotation<'a>),
 }
 
+impl<'a> Node<'a> for XmlNode<'a> {
+    fn node_name(&self) -> String {
+        match self {
+            XmlNode::Element(v) => v.node_name(),
+            XmlNode::Attribute(v) => v.node_name(),
+            XmlNode::Text(v) => v.node_name(),
+            XmlNode::CData(v) => v.node_name(),
+            XmlNode::EntityReference(v) => v.node_name(),
+            XmlNode::Entity(v) => v.node_name(),
+            XmlNode::PI(v) => v.node_name(),
+            XmlNode::Comment(v) => v.node_name(),
+            XmlNode::Document(v) => v.node_name(),
+            XmlNode::DocumentType(v) => v.node_name(),
+            XmlNode::DocumentFragment(v) => v.node_name(),
+            XmlNode::Notation(v) => v.node_name(),
+        }
+    }
+
+    fn node_value(&self) -> Option<String> {
+        match self {
+            XmlNode::Element(v) => v.node_value(),
+            XmlNode::Attribute(v) => v.node_value(),
+            XmlNode::Text(v) => v.node_value(),
+            XmlNode::CData(v) => v.node_value(),
+            XmlNode::EntityReference(v) => v.node_value(),
+            XmlNode::Entity(v) => v.node_value(),
+            XmlNode::PI(v) => v.node_value(),
+            XmlNode::Comment(v) => v.node_value(),
+            XmlNode::Document(v) => v.node_value(),
+            XmlNode::DocumentType(v) => v.node_value(),
+            XmlNode::DocumentFragment(v) => v.node_value(),
+            XmlNode::Notation(v) => v.node_value(),
+        }
+    }
+
+    fn node_type(&self) -> NodeType {
+        match self {
+            XmlNode::Element(v) => v.node_type(),
+            XmlNode::Attribute(v) => v.node_type(),
+            XmlNode::Text(v) => v.node_type(),
+            XmlNode::CData(v) => v.node_type(),
+            XmlNode::EntityReference(v) => v.node_type(),
+            XmlNode::Entity(v) => v.node_type(),
+            XmlNode::PI(v) => v.node_type(),
+            XmlNode::Comment(v) => v.node_type(),
+            XmlNode::Document(v) => v.node_type(),
+            XmlNode::DocumentType(v) => v.node_type(),
+            XmlNode::DocumentFragment(v) => v.node_type(),
+            XmlNode::Notation(v) => v.node_type(),
+        }
+    }
+
+    fn parent_node(&self) -> Option<XmlNode<'a>> {
+        match self {
+            XmlNode::Element(v) => v.parent_node(),
+            XmlNode::Attribute(v) => v.parent_node(),
+            XmlNode::Text(v) => v.parent_node(),
+            XmlNode::CData(v) => v.parent_node(),
+            XmlNode::EntityReference(v) => v.parent_node(),
+            XmlNode::Entity(v) => v.parent_node(),
+            XmlNode::PI(v) => v.parent_node(),
+            XmlNode::Comment(v) => v.parent_node(),
+            XmlNode::Document(v) => v.parent_node(),
+            XmlNode::DocumentType(v) => v.parent_node(),
+            XmlNode::DocumentFragment(v) => v.parent_node(),
+            XmlNode::Notation(v) => v.parent_node(),
+        }
+    }
+
+    fn child_nodes(&self) -> XmlNodeList<'a> {
+        match self {
+            XmlNode::Element(v) => v.child_nodes(),
+            XmlNode::Attribute(v) => v.child_nodes(),
+            XmlNode::Text(v) => v.child_nodes(),
+            XmlNode::CData(v) => v.child_nodes(),
+            XmlNode::EntityReference(v) => v.child_nodes(),
+            XmlNode::Entity(v) => v.child_nodes(),
+            XmlNode::PI(v) => v.child_nodes(),
+            XmlNode::Comment(v) => v.child_nodes(),
+            XmlNode::Document(v) => v.child_nodes(),
+            XmlNode::DocumentType(v) => v.child_nodes(),
+            XmlNode::DocumentFragment(v) => v.child_nodes(),
+            XmlNode::Notation(v) => v.child_nodes(),
+        }
+    }
+
+    fn first_child(&self) -> Option<XmlNode<'a>> {
+        match self {
+            XmlNode::Element(v) => v.first_child(),
+            XmlNode::Attribute(v) => v.first_child(),
+            XmlNode::Text(v) => v.first_child(),
+            XmlNode::CData(v) => v.first_child(),
+            XmlNode::EntityReference(v) => v.first_child(),
+            XmlNode::Entity(v) => v.first_child(),
+            XmlNode::PI(v) => v.first_child(),
+            XmlNode::Comment(v) => v.first_child(),
+            XmlNode::Document(v) => v.first_child(),
+            XmlNode::DocumentType(v) => v.first_child(),
+            XmlNode::DocumentFragment(v) => v.first_child(),
+            XmlNode::Notation(v) => v.first_child(),
+        }
+    }
+
+    fn last_child(&self) -> Option<XmlNode<'a>> {
+        match self {
+            XmlNode::Element(v) => v.last_child(),
+            XmlNode::Attribute(v) => v.last_child(),
+            XmlNode::Text(v) => v.last_child(),
+            XmlNode::CData(v) => v.last_child(),
+            XmlNode::EntityReference(v) => v.last_child(),
+            XmlNode::Entity(v) => v.last_child(),
+            XmlNode::PI(v) => v.last_child(),
+            XmlNode::Comment(v) => v.last_child(),
+            XmlNode::Document(v) => v.last_child(),
+            XmlNode::DocumentType(v) => v.last_child(),
+            XmlNode::DocumentFragment(v) => v.last_child(),
+            XmlNode::Notation(v) => v.last_child(),
+        }
+    }
+
+    fn previous_sibling(&self) -> Option<XmlNode<'a>> {
+        match self {
+            XmlNode::Element(v) => v.previous_sibling(),
+            XmlNode::Attribute(v) => v.previous_sibling(),
+            XmlNode::Text(v) => v.previous_sibling(),
+            XmlNode::CData(v) => v.previous_sibling(),
+            XmlNode::EntityReference(v) => v.previous_sibling(),
+            XmlNode::Entity(v) => v.previous_sibling(),
+            XmlNode::PI(v) => v.previous_sibling(),
+            XmlNode::Comment(v) => v.previous_sibling(),
+            XmlNode::Document(v) => v.previous_sibling(),
+            XmlNode::DocumentType(v) => v.previous_sibling(),
+            XmlNode::DocumentFragment(v) => v.previous_sibling(),
+            XmlNode::Notation(v) => v.previous_sibling(),
+        }
+    }
+
+    fn next_sibling(&self) -> Option<XmlNode<'a>> {
+        match self {
+            XmlNode::Element(v) => v.next_sibling(),
+            XmlNode::Attribute(v) => v.next_sibling(),
+            XmlNode::Text(v) => v.next_sibling(),
+            XmlNode::CData(v) => v.next_sibling(),
+            XmlNode::EntityReference(v) => v.next_sibling(),
+            XmlNode::Entity(v) => v.next_sibling(),
+            XmlNode::PI(v) => v.next_sibling(),
+            XmlNode::Comment(v) => v.next_sibling(),
+            XmlNode::Document(v) => v.next_sibling(),
+            XmlNode::DocumentType(v) => v.next_sibling(),
+            XmlNode::DocumentFragment(v) => v.next_sibling(),
+            XmlNode::Notation(v) => v.next_sibling(),
+        }
+    }
+
+    fn attributes(&self) -> Option<XmlNamedNodeMap<'a>> {
+        match self {
+            XmlNode::Element(v) => v.attributes(),
+            XmlNode::Attribute(v) => v.attributes(),
+            XmlNode::Text(v) => v.attributes(),
+            XmlNode::CData(v) => v.attributes(),
+            XmlNode::EntityReference(v) => v.attributes(),
+            XmlNode::Entity(v) => v.attributes(),
+            XmlNode::PI(v) => v.attributes(),
+            XmlNode::Comment(v) => v.attributes(),
+            XmlNode::Document(v) => v.attributes(),
+            XmlNode::DocumentType(v) => v.attributes(),
+            XmlNode::DocumentFragment(v) => v.attributes(),
+            XmlNode::Notation(v) => v.attributes(),
+        }
+    }
+
+    fn owner_document(&self) -> Option<XmlDocument<'a>> {
+        match self {
+            XmlNode::Element(v) => v.owner_document(),
+            XmlNode::Attribute(v) => v.owner_document(),
+            XmlNode::Text(v) => v.owner_document(),
+            XmlNode::CData(v) => v.owner_document(),
+            XmlNode::EntityReference(v) => v.owner_document(),
+            XmlNode::Entity(v) => v.owner_document(),
+            XmlNode::PI(v) => v.owner_document(),
+            XmlNode::Comment(v) => v.owner_document(),
+            XmlNode::Document(v) => v.owner_document(),
+            XmlNode::DocumentType(v) => v.owner_document(),
+            XmlNode::DocumentFragment(v) => v.owner_document(),
+            XmlNode::Notation(v) => v.owner_document(),
+        }
+    }
+
+    fn has_child(&self) -> bool {
+        match self {
+            XmlNode::Element(v) => v.has_child(),
+            XmlNode::Attribute(v) => v.has_child(),
+            XmlNode::Text(v) => v.has_child(),
+            XmlNode::CData(v) => v.has_child(),
+            XmlNode::EntityReference(v) => v.has_child(),
+            XmlNode::Entity(v) => v.has_child(),
+            XmlNode::PI(v) => v.has_child(),
+            XmlNode::Comment(v) => v.has_child(),
+            XmlNode::Document(v) => v.has_child(),
+            XmlNode::DocumentType(v) => v.has_child(),
+            XmlNode::DocumentFragment(v) => v.has_child(),
+            XmlNode::Notation(v) => v.has_child(),
+        }
+    }
+}
+
 impl<'a> XmlNode<'a> {
     fn previous_sibling_child(&self, node: XmlNode<'a>) -> Option<XmlNode<'a>> {
         let children = match &self {
