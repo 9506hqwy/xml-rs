@@ -1,3 +1,5 @@
+use std::iter::Iterator;
+
 // TODO: read only.
 
 // -----------------------------------------------------------------------------------------------
@@ -729,8 +731,32 @@ impl<'a> NodeList<'a> for XmlNodeList<'a> {
 }
 
 impl<'a> XmlNodeList<'a> {
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         XmlNodeList { nodes: vec![] }
+    }
+
+    pub fn iter(&self) -> XmlNodeIter<'a> {
+        XmlNodeIter {
+            nodes: self.clone(),
+            index: 0,
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+pub struct XmlNodeIter<'a> {
+    nodes: XmlNodeList<'a>,
+    index: usize,
+}
+
+impl<'a> Iterator for XmlNodeIter<'a> {
+    type Item = XmlNode<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.nodes.item(self.index);
+        self.index += 1;
+        item
     }
 }
 
@@ -758,8 +784,32 @@ impl<'a> NamedNodeMap<'a> for XmlNamedNodeMap<'a> {
 }
 
 impl<'a> XmlNamedNodeMap<'a> {
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         XmlNamedNodeMap { nodes: vec![] }
+    }
+
+    pub fn iter(&self) -> XmlNamedNodeIter<'a> {
+        XmlNamedNodeIter {
+            nodes: self.clone(),
+            index: 0,
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+pub struct XmlNamedNodeIter<'a> {
+    nodes: XmlNamedNodeMap<'a>,
+    index: usize,
+}
+
+impl<'a> Iterator for XmlNamedNodeIter<'a> {
+    type Item = XmlNode<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = self.nodes.item(self.index);
+        self.index += 1;
+        item
     }
 }
 
