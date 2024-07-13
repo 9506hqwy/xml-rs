@@ -1,3 +1,4 @@
+use std::fmt;
 use std::iter::Iterator;
 
 // TODO: read only.
@@ -394,6 +395,25 @@ impl<'a> Node<'a> for XmlNode<'a> {
     }
 }
 
+impl<'a> fmt::Display for XmlNode<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            XmlNode::Element(v) => v.fmt(f),
+            XmlNode::Attribute(v) => v.fmt(f),
+            XmlNode::Text(v) => v.fmt(f),
+            XmlNode::CData(v) => v.fmt(f),
+            XmlNode::EntityReference(_) => Ok(()),
+            XmlNode::Entity(_) => Ok(()),
+            XmlNode::PI(v) => v.fmt(f),
+            XmlNode::Comment(v) => v.fmt(f),
+            XmlNode::Document(v) => v.fmt(f),
+            XmlNode::DocumentType(_) => Ok(()),
+            XmlNode::DocumentFragment(v) => v.fmt(f),
+            XmlNode::Notation(_) => Ok(()),
+        }
+    }
+}
+
 impl<'a> XmlNode<'a> {
     fn previous_sibling_child(&self, node: XmlNode<'a>) -> Option<XmlNode<'a>> {
         let children = match &self {
@@ -568,6 +588,12 @@ impl<'a> PartialEq for XmlDocumentFragment<'a> {
     }
 }
 
+impl<'a> fmt::Display for XmlDocumentFragment<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.root_element())
+    }
+}
+
 impl<'a> XmlDocumentFragment<'a> {
     fn root_element(&self) -> XmlElement<'a> {
         XmlElement {
@@ -699,6 +725,12 @@ impl<'a> PartialEq for XmlDocument<'a> {
 impl<'a> From<&'a xml_parser::model::Document<'a>> for XmlDocument<'a> {
     fn from(value: &'a xml_parser::model::Document<'a>) -> Self {
         XmlDocument { document: value }
+    }
+}
+
+impl<'a> fmt::Display for XmlDocument<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.root_element())
     }
 }
 
@@ -946,6 +978,12 @@ impl<'a> PartialEq for XmlAttr<'a> {
     }
 }
 
+impl<'a> fmt::Display for XmlAttr<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.value())
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -1168,6 +1206,28 @@ impl<'a> XmlElement<'a> {
     }
 }
 
+impl<'a> fmt::Display for XmlElement<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        for child in self.children() {
+            match child {
+                XmlNode::Attribute(_) => {}
+                XmlNode::CData(v) => write!(f, "{}", v)?,
+                XmlNode::Comment(_) => {}
+                XmlNode::Document(_) => {}
+                XmlNode::DocumentFragment(_) => {}
+                XmlNode::DocumentType(_) => {}
+                XmlNode::Element(v) => write!(f, "{}", v)?,
+                XmlNode::Entity(_) => {}
+                XmlNode::EntityReference(_) => {}
+                XmlNode::Notation(_) => {}
+                XmlNode::PI(_) => {}
+                XmlNode::Text(v) => write!(f, "{}", v)?,
+            }
+        }
+        Ok(())
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -1256,6 +1316,12 @@ impl<'a> AsNode<'a> for XmlText<'a> {
 impl<'a> PartialEq for XmlText<'a> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
+    }
+}
+
+impl<'a> fmt::Display for XmlText<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.data)
     }
 }
 
@@ -1350,6 +1416,12 @@ impl<'a> PartialEq for XmlComment<'a> {
     }
 }
 
+impl<'a> fmt::Display for XmlComment<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.data)
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -1440,6 +1512,12 @@ impl<'a> AsNode<'a> for XmlCDataSection<'a> {
 impl<'a> PartialEq for XmlCDataSection<'a> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
+    }
+}
+
+impl<'a> fmt::Display for XmlCDataSection<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.data)
     }
 }
 
@@ -1901,6 +1979,12 @@ impl<'a> PartialEq for XmlProcessingInstruction<'a> {
     }
 }
 
+impl<'a> fmt::Display for XmlProcessingInstruction<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.pi.value.unwrap_or_default())
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 fn add_misc_to_nodes<'a>(
@@ -1988,12 +2072,9 @@ mod tests {
         assert_eq!(None, m.node_value());
         assert_eq!(NodeType::DocumentFragment, m.node_type());
         assert_eq!(None, m.parent_node());
-        assert_eq!(
-            XmlNodeList {
-                nodes: vec![root.clone()]
-            },
-            m.child_nodes()
-        );
+        for child in m.child_nodes().iter() {
+            assert_eq!(root, child);
+        }
         assert_eq!(Some(root.clone()), m.first_child());
         assert_eq!(Some(root.clone()), m.last_child());
         assert_eq!(None, m.previous_sibling());
@@ -2001,6 +2082,26 @@ mod tests {
         assert_eq!(None, m.attributes());
         assert_eq!(Some(XmlDocument::from(&document)), m.owner_document());
         assert!(m.has_child());
+
+        // XmlNode
+        let node = m.as_node();
+        assert_eq!("#document-fragment", node.node_name());
+        assert_eq!(None, node.node_value());
+        assert_eq!(NodeType::DocumentFragment, node.node_type());
+        assert_eq!(None, node.parent_node());
+        for child in node.child_nodes().iter() {
+            assert_eq!(root, child);
+        }
+        assert_eq!(Some(root.clone()), node.first_child());
+        assert_eq!(Some(root.clone()), node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(XmlDocument::from(&document)), node.owner_document());
+        assert!(node.has_child());
+
+        // fmt::Display
+        assert_eq!("", format!("{}", m));
     }
 
     #[test]
@@ -2020,24 +2121,18 @@ mod tests {
         assert_eq!(None, m.doc_type());
         assert_eq!(XmlDomImplementation {}, m.implementation());
         assert_eq!(elem, m.element());
-        assert_eq!(
-            XmlNodeList {
-                nodes: vec![root.clone()]
-            },
-            m.get_elements_by_tag_name("root")
-        );
+        for child in m.get_elements_by_tag_name("root").iter() {
+            assert_eq!(root, child);
+        }
 
         // Node
         assert_eq!("#document", m.node_name());
         assert_eq!(None, m.node_value());
         assert_eq!(NodeType::Document, m.node_type());
         assert_eq!(None, m.parent_node());
-        assert_eq!(
-            XmlNodeList {
-                nodes: vec![root.clone()]
-            },
-            m.child_nodes()
-        );
+        for child in m.child_nodes().iter() {
+            assert_eq!(root, child);
+        }
         assert_eq!(Some(root.clone()), m.first_child());
         assert_eq!(Some(root.clone()), m.last_child());
         assert_eq!(None, m.previous_sibling());
@@ -2045,6 +2140,26 @@ mod tests {
         assert_eq!(None, m.attributes());
         assert_eq!(None, m.owner_document());
         assert!(m.has_child());
+
+        // XmlNode
+        let node = m.as_node();
+        assert_eq!("#document", node.node_name());
+        assert_eq!(None, node.node_value());
+        assert_eq!(NodeType::Document, node.node_type());
+        assert_eq!(None, node.parent_node());
+        for child in node.child_nodes().iter() {
+            assert_eq!(root, child);
+        }
+        assert_eq!(Some(root.clone()), node.first_child());
+        assert_eq!(Some(root.clone()), node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(None, node.owner_document());
+        assert!(node.has_child());
+
+        // fmt::Display
+        assert_eq!("", format!("{}", m));
     }
 
     #[test]
@@ -2067,12 +2182,9 @@ mod tests {
         assert_eq!(Some("b".to_string()), attr.node_value());
         assert_eq!(NodeType::Attribute, attr.node_type());
         assert_eq!(None, attr.parent_node());
-        assert_eq!(
-            XmlNodeList {
-                nodes: vec![text.clone()]
-            },
-            attr.child_nodes()
-        );
+        for child in attr.child_nodes().iter() {
+            assert_eq!(text, child);
+        }
         assert_eq!(Some(text.clone()), attr.first_child());
         assert_eq!(Some(text.clone()), attr.last_child());
         assert_eq!(None, attr.previous_sibling());
@@ -2080,6 +2192,26 @@ mod tests {
         assert_eq!(None, attr.attributes());
         assert_eq!(Some(doc.clone()), attr.owner_document());
         assert!(attr.has_child());
+
+        // XmlNode
+        let node = attr.as_node();
+        assert_eq!("a", node.node_name());
+        assert_eq!(Some("b".to_string()), node.node_value());
+        assert_eq!(NodeType::Attribute, node.node_type());
+        assert_eq!(None, node.parent_node());
+        for child in node.child_nodes().iter() {
+            assert_eq!(text, child);
+        }
+        assert_eq!(Some(text.clone()), node.first_child());
+        assert_eq!(Some(text.clone()), node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(node.has_child());
+
+        // fmt::Display
+        assert_eq!("b", format!("{}", attr));
     }
 
     #[test]
@@ -2119,22 +2251,16 @@ mod tests {
         assert_eq!(None, elem1.node_value());
         assert_eq!(NodeType::Element, elem1.node_type());
         assert_eq!(Some(root.as_node()), elem1.parent_node());
-        assert_eq!(
-            XmlNodeList {
-                nodes: vec![data1.clone()]
-            },
-            elem1.child_nodes()
-        );
+        for child in elem1.child_nodes().iter() {
+            assert_eq!(data1, child);
+        }
         assert_eq!(Some(data1.clone()), elem1.first_child());
         assert_eq!(Some(data1.clone()), elem1.last_child());
         assert_eq!(None, elem1.previous_sibling());
         assert_eq!(Some(elem2.as_node()), elem1.next_sibling());
-        assert_eq!(
-            Some(XmlNamedNodeMap {
-                nodes: vec![("a".to_string(), attra.clone().as_node())]
-            }),
-            elem1.attributes()
-        );
+        for child in elem1.attributes().unwrap().iter() {
+            assert_eq!(attra.as_node(), child);
+        }
         assert_eq!(Some(doc.clone()), elem1.owner_document());
         assert!(elem1.has_child());
 
@@ -2148,14 +2274,34 @@ mod tests {
         assert_eq!(None, elem2.last_child());
         assert_eq!(Some(elem1.as_node()), elem2.previous_sibling());
         assert_eq!(None, elem2.next_sibling());
-        assert_eq!(
-            Some(XmlNamedNodeMap {
-                nodes: vec![("c".to_string(), attrc.clone().as_node())]
-            }),
-            elem2.attributes()
-        );
+        for child in elem2.attributes().unwrap().iter() {
+            assert_eq!(attrc.as_node(), child);
+        }
         assert_eq!(Some(doc.clone()), elem2.owner_document());
         assert!(!elem2.has_child());
+
+        // XmlNode (elem1)
+        let node = elem1.as_node();
+        assert_eq!("elem1", node.node_name());
+        assert_eq!(None, node.node_value());
+        assert_eq!(NodeType::Element, node.node_type());
+        assert_eq!(Some(root.as_node()), node.parent_node());
+        for child in node.child_nodes().iter() {
+            assert_eq!(data1, child);
+        }
+        assert_eq!(Some(data1.clone()), node.first_child());
+        assert_eq!(Some(data1.clone()), node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(Some(elem2.as_node()), node.next_sibling());
+        for child in node.attributes().unwrap().iter() {
+            assert_eq!(attra.as_node(), child);
+        }
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(node.has_child());
+
+        // fmt::Display
+        assert_eq!("data1", format!("{}", elem1));
+        assert_eq!("", format!("{}", elem2));
     }
 
     #[test]
@@ -2186,6 +2332,24 @@ mod tests {
         assert_eq!(None, text.attributes());
         assert_eq!(Some(doc.clone()), text.owner_document());
         assert!(!text.has_child());
+
+        // XmlNode
+        let node = text.as_node();
+        assert_eq!("#text", node.node_name());
+        assert_eq!(Some("text".to_string()), node.node_value());
+        assert_eq!(NodeType::Text, node.node_type());
+        assert_eq!(Some(root.as_node()), node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(!node.has_child());
+
+        // fmt::Display
+        assert_eq!("text", format!("{}", text));
     }
 
     #[test]
@@ -2216,6 +2380,24 @@ mod tests {
         assert_eq!(None, comment.attributes());
         assert_eq!(Some(doc.clone()), comment.owner_document());
         assert!(!comment.has_child());
+
+        // XmlNode
+        let node = comment.as_node();
+        assert_eq!("#comment", node.node_name());
+        assert_eq!(Some(" comment ".to_string()), node.node_value());
+        assert_eq!(NodeType::Comment, node.node_type());
+        assert_eq!(Some(root.as_node()), node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(!node.has_child());
+
+        // fmt::Display
+        assert_eq!(" comment ", format!("{}", comment));
     }
 
     #[test]
@@ -2246,6 +2428,24 @@ mod tests {
         assert_eq!(None, cdata.attributes());
         assert_eq!(Some(doc.clone()), cdata.owner_document());
         assert!(!cdata.has_child());
+
+        // XmlNode
+        let node = cdata.as_node();
+        assert_eq!("#cdata-section", node.node_name());
+        assert_eq!(Some("&<>\"".to_string()), node.node_value());
+        assert_eq!(NodeType::CData, node.node_type());
+        assert_eq!(Some(root.as_node()), node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(!node.has_child());
+
+        // fmt::Display
+        assert_eq!("&<>\"", format!("{}", cdata));
     }
 }
 
