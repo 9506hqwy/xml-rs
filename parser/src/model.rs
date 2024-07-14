@@ -169,6 +169,241 @@ impl<'a> From<Comment<'a>> for Contents<'a> {
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct DeclarationDoc<'a> {
+    pub name: QName<'a>,
+    pub external_id: Option<ExternalId<'a>>,
+    pub internal_subset: Vec<InternalSubset<'a>>,
+}
+
+impl<'a>
+    From<(
+        QName<'a>,
+        Option<ExternalId<'a>>,
+        Option<Vec<InternalSubset<'a>>>,
+    )> for DeclarationDoc<'a>
+{
+    fn from(
+        value: (
+            QName<'a>,
+            Option<ExternalId<'a>>,
+            Option<Vec<InternalSubset<'a>>>,
+        ),
+    ) -> Self {
+        let (name, external_id, int_subsets) = value;
+        let internal_subset = int_subsets.unwrap_or_default();
+        DeclarationDoc {
+            name,
+            external_id,
+            internal_subset,
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeclarationEntity<'a> {
+    GeneralEntity(DeclarationGeneralEntity<'a>),
+    ParameterEntity(DeclarationParameterEntity<'a>),
+}
+
+impl<'a> Default for DeclarationEntity<'a> {
+    fn default() -> Self {
+        DeclarationEntity::from(DeclarationGeneralEntity::default())
+    }
+}
+
+impl<'a> From<DeclarationGeneralEntity<'a>> for DeclarationEntity<'a> {
+    fn from(value: DeclarationGeneralEntity<'a>) -> Self {
+        DeclarationEntity::GeneralEntity(value)
+    }
+}
+
+impl<'a> From<DeclarationParameterEntity<'a>> for DeclarationEntity<'a> {
+    fn from(value: DeclarationParameterEntity<'a>) -> Self {
+        DeclarationEntity::ParameterEntity(value)
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeclarationEntityDef<'a> {
+    EntityValue(Vec<EntityValue<'a>>),
+    ExternalId(ExternalId<'a>, Option<&'a str>),
+}
+
+impl<'a> Default for DeclarationEntityDef<'a> {
+    fn default() -> Self {
+        DeclarationEntityDef::from(vec![])
+    }
+}
+
+impl<'a> From<Vec<EntityValue<'a>>> for DeclarationEntityDef<'a> {
+    fn from(value: Vec<EntityValue<'a>>) -> Self {
+        DeclarationEntityDef::EntityValue(value)
+    }
+}
+
+impl<'a> From<(ExternalId<'a>, Option<&'a str>)> for DeclarationEntityDef<'a> {
+    fn from(value: (ExternalId<'a>, Option<&'a str>)) -> Self {
+        let (external_id, ndata) = value;
+        DeclarationEntityDef::ExternalId(external_id, ndata)
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DeclarationGeneralEntity<'a> {
+    pub name: &'a str,
+    pub def: DeclarationEntityDef<'a>,
+}
+
+impl<'a> From<(&'a str, DeclarationEntityDef<'a>)> for DeclarationGeneralEntity<'a> {
+    fn from(value: (&'a str, DeclarationEntityDef<'a>)) -> Self {
+        let (name, def) = value;
+        DeclarationGeneralEntity { name, def }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeclarationMarkup<'a> {
+    Element(&'a str),
+    Attributes(&'a str),
+    Entity(DeclarationEntity<'a>),
+    Notation(DeclarationNotation<'a>),
+    PI(PI<'a>),
+    Commnect(Comment<'a>),
+}
+
+impl<'a> Default for DeclarationMarkup<'a> {
+    fn default() -> Self {
+        DeclarationMarkup::element("")
+    }
+}
+
+impl<'a> From<DeclarationEntity<'a>> for DeclarationMarkup<'a> {
+    fn from(value: DeclarationEntity<'a>) -> Self {
+        DeclarationMarkup::Entity(value)
+    }
+}
+
+impl<'a> From<DeclarationNotation<'a>> for DeclarationMarkup<'a> {
+    fn from(value: DeclarationNotation<'a>) -> Self {
+        DeclarationMarkup::Notation(value)
+    }
+}
+
+impl<'a> From<PI<'a>> for DeclarationMarkup<'a> {
+    fn from(value: PI<'a>) -> Self {
+        DeclarationMarkup::PI(value)
+    }
+}
+
+impl<'a> From<Comment<'a>> for DeclarationMarkup<'a> {
+    fn from(value: Comment<'a>) -> Self {
+        DeclarationMarkup::Commnect(value)
+    }
+}
+
+impl<'a> DeclarationMarkup<'a> {
+    pub fn element(value: &'a str) -> DeclarationMarkup<'a> {
+        DeclarationMarkup::Element(value)
+    }
+
+    pub fn attributes(value: &'a str) -> DeclarationMarkup<'a> {
+        DeclarationMarkup::Attributes(value)
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DeclarationNotation<'a> {
+    pub name: &'a str,
+    pub id: DeclarationNotationId<'a>,
+}
+
+impl<'a> From<(&'a str, DeclarationNotationId<'a>)> for DeclarationNotation<'a> {
+    fn from(value: (&'a str, DeclarationNotationId<'a>)) -> Self {
+        let (name, id) = value;
+        DeclarationNotation { name, id }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeclarationNotationId<'a> {
+    ExternalId(ExternalId<'a>),
+    PublicId(&'a str),
+}
+
+impl<'a> Default for DeclarationNotationId<'a> {
+    fn default() -> Self {
+        DeclarationNotationId::from(ExternalId::default())
+    }
+}
+
+impl<'a> From<ExternalId<'a>> for DeclarationNotationId<'a> {
+    fn from(value: ExternalId<'a>) -> Self {
+        DeclarationNotationId::ExternalId(value)
+    }
+}
+
+impl<'a> From<&'a str> for DeclarationNotationId<'a> {
+    fn from(value: &'a str) -> Self {
+        DeclarationNotationId::PublicId(value)
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DeclarationParameterEntity<'a> {
+    pub name: &'a str,
+    pub def: DeclarationPeDef<'a>,
+}
+
+impl<'a> From<(&'a str, DeclarationPeDef<'a>)> for DeclarationParameterEntity<'a> {
+    fn from(value: (&'a str, DeclarationPeDef<'a>)) -> Self {
+        let (name, def) = value;
+        DeclarationParameterEntity { name, def }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeclarationPeDef<'a> {
+    EntityValue(Vec<EntityValue<'a>>),
+    ExternalId(ExternalId<'a>),
+}
+
+impl<'a> Default for DeclarationPeDef<'a> {
+    fn default() -> Self {
+        DeclarationPeDef::from(vec![])
+    }
+}
+
+impl<'a> From<Vec<EntityValue<'a>>> for DeclarationPeDef<'a> {
+    fn from(value: Vec<EntityValue<'a>>) -> Self {
+        DeclarationPeDef::EntityValue(value)
+    }
+}
+
+impl<'a> From<ExternalId<'a>> for DeclarationPeDef<'a> {
+    fn from(value: ExternalId<'a>) -> Self {
+        DeclarationPeDef::ExternalId(value)
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct DeclarationXml<'a> {
     pub version: &'a str,
     pub encoding: Option<&'a str>,
@@ -265,6 +500,59 @@ impl<'a> EntityValue<'a> {
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum ExternalId<'a> {
+    System(&'a str),
+    Public(&'a str, &'a str),
+}
+
+impl<'a> Default for ExternalId<'a> {
+    fn default() -> Self {
+        ExternalId::System("")
+    }
+}
+
+impl<'a> From<&'a str> for ExternalId<'a> {
+    fn from(value: &'a str) -> Self {
+        ExternalId::System(value)
+    }
+}
+
+impl<'a> From<(&'a str, &'a str)> for ExternalId<'a> {
+    fn from(value: (&'a str, &'a str)) -> Self {
+        let (p, s) = value;
+        ExternalId::Public(p, s)
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum InternalSubset<'a> {
+    Markup(DeclarationMarkup<'a>),
+    ParameterEntityReference(&'a str),
+}
+
+impl<'a> Default for InternalSubset<'a> {
+    fn default() -> Self {
+        InternalSubset::from(DeclarationMarkup::default())
+    }
+}
+
+impl<'a> From<DeclarationMarkup<'a>> for InternalSubset<'a> {
+    fn from(value: DeclarationMarkup<'a>) -> Self {
+        InternalSubset::Markup(value)
+    }
+}
+
+impl<'a> From<&'a str> for InternalSubset<'a> {
+    fn from(value: &'a str) -> Self {
+        InternalSubset::ParameterEntityReference(value)
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Misc<'a> {
     Comment(Comment<'a>),
     PI(PI<'a>),
@@ -316,7 +604,7 @@ impl<'a> From<(&'a str, Option<&'a str>)> for PI<'a> {
 pub struct Prolog<'a> {
     pub declaration_xml: Option<DeclarationXml<'a>>,
     pub heads: Vec<Misc<'a>>,
-    pub declaration_doc: Option<&'a str>,
+    pub declaration_doc: Option<DeclarationDoc<'a>>,
     pub tails: Vec<Misc<'a>>,
 }
 
@@ -325,22 +613,24 @@ impl<'a>
     From<(
         Option<DeclarationXml<'a>>,
         Vec<Misc<'a>>,
-        Option<(&'a str, Vec<Misc<'a>>)>,
+        Option<(DeclarationDoc<'a>, Vec<Misc<'a>>)>,
     )> for Prolog<'a>
 {
     fn from(
         value: (
             Option<DeclarationXml<'a>>,
             Vec<Misc<'a>>,
-            Option<(&'a str, Vec<Misc<'a>>)>,
+            Option<(DeclarationDoc<'a>, Vec<Misc<'a>>)>,
         ),
     ) -> Self {
         let (xml_decl, heads, tail) = value;
+        let declaration_doc = tail.as_ref().map(|t| t.0.clone());
+        let tails = tail.map(|t| t.1).unwrap_or_default();
         Prolog {
             declaration_xml: xml_decl,
             heads,
-            declaration_doc: tail.as_ref().map(|t| t.0),
-            tails: tail.map(|t| t.1).unwrap_or_default(),
+            declaration_doc,
+            tails,
         }
     }
 }

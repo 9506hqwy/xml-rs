@@ -616,6 +616,7 @@ impl<'a> Document<'a> for XmlDocument<'a> {
         self.document
             .prolog
             .declaration_doc
+            .as_ref()
             .map(|declaration| XmlDocumentType {
                 declaration,
                 parent: Some(self.as_boxed_node()),
@@ -1525,7 +1526,7 @@ impl<'a> fmt::Display for XmlCDataSection<'a> {
 
 #[derive(Clone, Debug)]
 pub struct XmlDocumentType<'a> {
-    declaration: &'a str,
+    declaration: &'a xml_parser::model::DeclarationDoc<'a>,
     parent: Option<Box<XmlNode<'a>>>,
     owner: XmlDocument<'a>,
 }
@@ -2022,7 +2023,7 @@ fn add_prolog_to_nodes<'a>(
         add_misc_to_nodes(head, parent.clone(), owner.clone(), nodes);
     }
 
-    if let Some(declaration) = prolog.declaration_doc {
+    if let Some(declaration) = prolog.declaration_doc.as_ref() {
         let parent = parent.clone();
         let owner = owner.clone();
         nodes.push(XmlNode::DocumentType(XmlDocumentType {

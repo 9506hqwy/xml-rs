@@ -291,46 +291,52 @@ fn misc(input: &str) -> IResult<&str, model::Misc<'_>> {
 /// [\[28\] doctypedecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-doctypedecl)
 ///
 /// [\[16\] doctypedecl](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-doctypedecl)
-fn doctype_decl(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        tuple((tag("<!DOCTYPE"), multispace1)),
-        qname,
-        opt(preceded(multispace1, external_id)),
-        multispace0,
-        opt(delimited(
-            tag("["),
-            int_subset,
-            tuple((tag("]"), multispace0)),
+fn doctype_decl(input: &str) -> IResult<&str, model::DeclarationDoc<'_>> {
+    map(
+        tuple((
+            preceded(tuple((tag("<!DOCTYPE"), multispace1)), qname),
+            terminated(opt(preceded(multispace1, external_id)), multispace0),
+            terminated(
+                opt(delimited(
+                    tag("["),
+                    int_subset,
+                    tuple((tag("]"), multispace0)),
+                )),
+                tag(">"),
+            ),
         )),
-        tag(">"),
-    )))(input)
+        model::DeclarationDoc::from,
+    )(input)
 }
 
 /// PEReference | S
 ///
 /// [\[28a\] DeclSep](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-DeclSep)
 fn decl_sep(input: &str) -> IResult<&str, &str> {
-    terminated(recognize(pe_reference), multispace1)(input)
+    alt((pe_reference, multispace1))(input)
 }
 
 /// (markupdecl | DeclSep)*
 ///
 /// [\[28b\] intSubset](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-intSubset)
-fn int_subset(input: &str) -> IResult<&str, Vec<&str>> {
-    many0(alt((markup_decl, decl_sep)))(input)
+fn int_subset(input: &str) -> IResult<&str, Vec<model::InternalSubset<'_>>> {
+    many0(alt((
+        map(markup_decl, model::InternalSubset::from),
+        map(decl_sep, model::InternalSubset::from),
+    )))(input)
 }
 
 /// elementdecl | AttlistDecl | EntityDecl | NotationDecl | PI | Comment
 ///
 /// [\[29\] markupdecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-markupdecl)
-fn markup_decl(input: &str) -> IResult<&str, &str> {
+fn markup_decl(input: &str) -> IResult<&str, model::DeclarationMarkup<'_>> {
     alt((
-        element_decl,
-        attlist_decl,
-        entity_decl,
-        notation_decl,
-        recognize(pi),
-        recognize(comment),
+        map(element_decl, model::DeclarationMarkup::element),
+        map(attlist_decl, model::DeclarationMarkup::attributes),
+        map(entity_decl, model::DeclarationMarkup::from),
+        map(notation_decl, model::DeclarationMarkup::from),
+        map(pi, model::DeclarationMarkup::from),
+        map(comment, model::DeclarationMarkup::from),
     ))(input)
 }
 
@@ -683,72 +689,82 @@ fn pe_reference(input: &str) -> IResult<&str, &str> {
 /// GEDecl | PEDecl
 ///
 /// [\[70\] EntityDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-EntityDecl)
-fn entity_decl(input: &str) -> IResult<&str, &str> {
-    alt((ge_decl, pe_decl))(input)
+fn entity_decl(input: &str) -> IResult<&str, model::DeclarationEntity<'_>> {
+    alt((
+        map(ge_decl, model::DeclarationEntity::from),
+        map(pe_decl, model::DeclarationEntity::from),
+    ))(input)
 }
 
 /// '\<!ENTITY' S Name S EntityDef S? '>'
 ///
 /// [\[71\] GEDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-GEDecl)
-fn ge_decl(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        tag("<!ENTITY"),
-        multispace1,
-        name,
-        multispace1,
-        entity_def,
-        multispace0,
-        tag(">"),
-    )))(input)
+fn ge_decl(input: &str) -> IResult<&str, model::DeclarationGeneralEntity<'_>> {
+    map(
+        tuple((
+            delimited(tuple((tag("<!ENTITY"), multispace1)), name, multispace1),
+            terminated(entity_def, tuple((multispace0, tag(">")))),
+        )),
+        model::DeclarationGeneralEntity::from,
+    )(input)
 }
 
 /// '\<!ENTITY' S '%' S Name S PEDef S? '>'
 ///
 /// [\[72\] PEDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-PEDecl)
-fn pe_decl(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        tag("<!ENTITY"),
-        multispace1,
-        tag("%"),
-        multispace1,
-        name,
-        multispace1,
-        pe_def,
-        multispace0,
-        tag(">"),
-    )))(input)
+fn pe_decl(input: &str) -> IResult<&str, model::DeclarationParameterEntity<'_>> {
+    map(
+        tuple((
+            delimited(
+                tuple((tag("<!ENTITY"), multispace1, tag("%"), multispace1)),
+                name,
+                multispace1,
+            ),
+            terminated(pe_def, tuple((multispace0, tag(">")))),
+        )),
+        model::DeclarationParameterEntity::from,
+    )(input)
 }
 
 /// EntityValue | (ExternalID NDataDecl?)
 ///
 /// [\[73\] EntityDef](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-EntityDef)
-fn entity_def(input: &str) -> IResult<&str, &str> {
+fn entity_def(input: &str) -> IResult<&str, model::DeclarationEntityDef<'_>> {
     alt((
-        recognize(entity_value),
-        recognize(tuple((external_id, opt(ndata_decl)))),
+        map(entity_value, model::DeclarationEntityDef::from),
+        map(
+            tuple((external_id, opt(ndata_decl))),
+            model::DeclarationEntityDef::from,
+        ),
     ))(input)
 }
 
 /// EntityValue | ExternalID
 ///
 /// [\[74\] PEDef](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-PEDef)
-fn pe_def(input: &str) -> IResult<&str, &str> {
-    alt((recognize(entity_value), external_id))(input)
+fn pe_def(input: &str) -> IResult<&str, model::DeclarationPeDef<'_>> {
+    alt((
+        map(entity_value, model::DeclarationPeDef::from),
+        map(external_id, model::DeclarationPeDef::from),
+    ))(input)
 }
 
 /// 'SYSTEM' S SystemLiteral | 'PUBLIC' S PubidLiteral S SystemLiteral
 ///
 /// [\[75\] ExternalID](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-ExternalID)
-fn external_id(input: &str) -> IResult<&str, &str> {
+fn external_id(input: &str) -> IResult<&str, model::ExternalId<'_>> {
     alt((
-        recognize(tuple((tag("SYSTEM"), multispace1, system_literal))),
-        recognize(tuple((
-            tag("PUBLIC"),
-            multispace1,
-            pubid_literal,
-            multispace1,
-            system_literal,
-        ))),
+        map(
+            preceded(tuple((tag("SYSTEM"), multispace1)), system_literal),
+            model::ExternalId::from,
+        ),
+        map(
+            preceded(
+                tuple((tag("PUBLIC"), multispace1)),
+                tuple((pubid_literal, preceded(multispace1, system_literal))),
+            ),
+            model::ExternalId::from,
+        ),
     ))(input)
 }
 
@@ -756,7 +772,7 @@ fn external_id(input: &str) -> IResult<&str, &str> {
 ///
 /// [[76] NDataDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-NDataDecl)
 fn ndata_decl(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((multispace1, tag("NDATA"), multispace1, name)))(input)
+    preceded(tuple((multispace1, tag("NDATA"), multispace1)), name)(input)
 }
 
 /// S 'encoding' Eq ('"' EncName '"' | "'" EncName "'" )
@@ -782,16 +798,21 @@ fn enc_name(input: &str) -> IResult<&str, &str> {
 /// '\<!NOTATION' S Name S (ExternalID | PublicID) S? '>'
 ///
 /// [\[82\] NotationDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-NotationDecl)
-fn notation_decl(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        tag("<!NOTATION"),
-        multispace1,
-        name,
-        multispace1,
-        alt((external_id, public_id)),
-        multispace0,
-        tag(">"),
-    )))(input)
+fn notation_decl(input: &str) -> IResult<&str, model::DeclarationNotation<'_>> {
+    map(
+        tuple((
+            preceded(tuple((tag("<!NOTATION"), multispace1)), name),
+            delimited(
+                multispace1,
+                alt((
+                    map(external_id, model::DeclarationNotationId::from),
+                    map(public_id, model::DeclarationNotationId::from),
+                )),
+                tuple((multispace0, tag(">"))),
+            ),
+        )),
+        model::DeclarationNotation::from,
+    )(input)
 }
 
 /// 'PUBLIC' S PubidLiteral
@@ -1032,7 +1053,14 @@ mod tests {
         let (rest, ret) = prolog("<!DOCTYPE aaa>").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::Prolog::from((None, vec![], Some(("<!DOCTYPE aaa>", vec![])))),
+            model::Prolog::from((
+                None,
+                vec![],
+                Some((
+                    model::DeclarationDoc::from((QName::from("aaa"), None, None)),
+                    vec![]
+                ))
+            )),
             ret
         );
 
@@ -1043,7 +1071,7 @@ mod tests {
                 None,
                 vec![],
                 Some((
-                    "<!DOCTYPE aaa>",
+                    model::DeclarationDoc::from((QName::from("aaa"), None, None)),
                     vec![model::Misc::Comment(model::Comment::from(" aaa "))]
                 ))
             )),
@@ -1097,6 +1125,110 @@ mod tests {
         let (rest, ret) = misc(" ").unwrap();
         assert_eq!("", rest);
         assert_eq!(model::Misc::from(" "), ret);
+    }
+
+    #[test]
+    fn test_doctype_decl() {
+        let (rest, ret) = doctype_decl("<!DOCTYPE aaa>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationDoc::from((QName::from("aaa"), None, None)),
+            ret
+        );
+
+        let (rest, ret) = doctype_decl("<!DOCTYPE aaa SYSTEM 'bbb'>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationDoc::from((
+                QName::from("aaa"),
+                Some(model::ExternalId::from("bbb")),
+                None
+            )),
+            ret
+        );
+
+        let (rest, ret) = doctype_decl("<!DOCTYPE aaa [ <!ELEMENT aaa ANY > ]>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationDoc::from((
+                QName::from("aaa"),
+                None,
+                Some(vec![
+                    model::InternalSubset::from(" "),
+                    model::InternalSubset::from(model::DeclarationMarkup::element(
+                        "<!ELEMENT aaa ANY >"
+                    )),
+                    model::InternalSubset::from(" "),
+                ])
+            )),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_int_subset() {
+        let (rest, ret) = int_subset("<!ELEMENT aaa ANY >").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            vec![model::InternalSubset::from(
+                model::DeclarationMarkup::element("<!ELEMENT aaa ANY >")
+            )],
+            ret
+        );
+
+        let (rest, ret) = int_subset("%aaa;").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(vec![model::InternalSubset::from("aaa")], ret);
+    }
+
+    #[test]
+    fn test_markup_decl() {
+        let (rest, ret) = markup_decl("<!ELEMENT aaa ANY >").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationMarkup::element("<!ELEMENT aaa ANY >"),
+            ret
+        );
+
+        let (rest, ret) = markup_decl("<!ATTLIST aaa>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationMarkup::attributes("<!ATTLIST aaa>"), ret);
+
+        let (rest, ret) = markup_decl("<!ENTITY aaa 'bbb'>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationMarkup::from(model::DeclarationEntity::from(
+                model::DeclarationGeneralEntity::from((
+                    "aaa",
+                    model::DeclarationEntityDef::from(vec![model::EntityValue::text("bbb")]),
+                ))
+            )),
+            ret
+        );
+
+        let (rest, ret) = markup_decl("<!NOTATION aaa SYSTEM 'bbb'>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationMarkup::from(model::DeclarationNotation::from((
+                "aaa",
+                model::DeclarationNotationId::ExternalId(model::ExternalId::from("bbb"))
+            ))),
+            ret
+        );
+
+        let (rest, ret) = markup_decl("<?a?>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationMarkup::from(model::PI::from(("a", None))),
+            ret
+        );
+
+        let (rest, ret) = markup_decl("<!---->").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationMarkup::from(model::Comment::from("")),
+            ret
+        );
     }
 
     #[test]
@@ -1219,6 +1351,107 @@ mod tests {
     }
 
     #[test]
+    fn test_entity_decl() {
+        let (rest, ret) = entity_decl("<!ENTITY aaa 'bbb'>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationEntity::from(model::DeclarationGeneralEntity::from((
+                "aaa",
+                model::DeclarationEntityDef::from(vec![model::EntityValue::text("bbb")]),
+            ))),
+            ret
+        );
+
+        let (rest, ret) = entity_decl("<!ENTITY % aaa 'bbb'>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationEntity::from(model::DeclarationParameterEntity::from((
+                "aaa",
+                model::DeclarationPeDef::from(vec![model::EntityValue::text("bbb")]),
+            )),),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_ge_decl() {
+        let (rest, ret) = ge_decl("<!ENTITY aaa 'bbb'>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationGeneralEntity::from((
+                "aaa",
+                model::DeclarationEntityDef::from(vec![model::EntityValue::text("bbb")]),
+            )),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_pe_decl() {
+        let (rest, ret) = pe_decl("<!ENTITY % aaa 'bbb'>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationParameterEntity::from((
+                "aaa",
+                model::DeclarationPeDef::from(vec![model::EntityValue::text("bbb")]),
+            )),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_entity_def() {
+        let (rest, ret) = entity_def("'aaa'").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationEntityDef::from(vec![model::EntityValue::text("aaa")]),
+            ret
+        );
+
+        let (rest, ret) = entity_def("SYSTEM 'aaa'").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationEntityDef::from((model::ExternalId::from("aaa"), None)),
+            ret
+        );
+
+        let (rest, ret) = entity_def("SYSTEM 'aaa' NDATA bbb").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationEntityDef::from((model::ExternalId::from("aaa"), Some("bbb"))),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_pe_def() {
+        let (rest, ret) = pe_def("'aaa'").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationPeDef::from(vec![model::EntityValue::text("aaa")]),
+            ret
+        );
+
+        let (rest, ret) = pe_def("SYSTEM 'aaa'").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationPeDef::from(model::ExternalId::from("aaa")),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_external_id() {
+        let (rest, ret) = external_id("SYSTEM 'aaa'").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::ExternalId::from("aaa"), ret);
+
+        let (rest, ret) = external_id("PUBLIC 'aaa' 'bbb'").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::ExternalId::from(("aaa", "bbb")), ret);
+    }
+
+    #[test]
     fn test_encoding_decl() {
         let (rest, ret) = encoding_decl(" encoding='utf-8'").unwrap();
         assert_eq!("", rest);
@@ -1234,6 +1467,30 @@ mod tests {
         let (rest, ret) = enc_name("utf-8").unwrap();
         assert_eq!("", rest);
         assert_eq!("utf-8", ret);
+    }
+
+    #[test]
+    fn test_notation_decl() {
+        let (rest, ret) = notation_decl("<!NOTATION aaa SYSTEM 'bbb'>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!("aaa", ret.name);
+        assert_eq!(
+            model::DeclarationNotationId::ExternalId(model::ExternalId::from("bbb")),
+            ret.id
+        );
+
+        let (rest, ret) = notation_decl("<!NOTATION aaa PUBLIC 'bbb' 'ccc'>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!("aaa", ret.name);
+        assert_eq!(
+            model::DeclarationNotationId::ExternalId(model::ExternalId::from(("bbb", "ccc"))),
+            ret.id
+        );
+
+        let (rest, ret) = notation_decl("<!NOTATION aaa PUBLIC 'ccc'>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!("aaa", ret.name);
+        assert_eq!(model::DeclarationNotationId::PublicId("ccc"), ret.id);
     }
 }
 
