@@ -135,11 +135,16 @@ impl From<&str> for AxisName {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum AxisSpecifier {
     Name(AxisName),
-    #[default]
-    Abbreviated,
+    Abbreviated(String),
+}
+
+impl Default for AxisSpecifier {
+    fn default() -> AxisSpecifier {
+        AxisSpecifier::Name(AxisName::Child)
+    }
 }
 
 impl From<AxisName> for AxisSpecifier {

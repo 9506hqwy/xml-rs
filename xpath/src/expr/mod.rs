@@ -74,7 +74,13 @@ fn axis_specifier(input: &str) -> IResult<&str, model::AxisSpecifier> {
             terminated(axis_name, tuple((multispace0, tag("::")))),
             model::AxisSpecifier::from,
         ),
-        map(opt(char('@')), |_| model::AxisSpecifier::default()),
+        map(opt(char('@')), |v| {
+            if let Some(at) = v {
+                model::AxisSpecifier::Abbreviated(at.to_string())
+            } else {
+                model::AxisSpecifier::Abbreviated("".to_string())
+            }
+        }),
     ))(input)
 }
 
@@ -541,7 +547,7 @@ mod tests {
         assert_eq!("", rest);
         assert_eq!(
             model::Step::Test(
-                model::AxisSpecifier::default(),
+                model::AxisSpecifier::Abbreviated("".to_string()),
                 model::NodeTest::from(model::NameTest::from(QName::from("a"))),
                 vec![]
             ),
@@ -593,11 +599,11 @@ mod tests {
 
         let (rest, ret) = axis_specifier("@").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::AxisSpecifier::Abbreviated, ret);
+        assert_eq!(model::AxisSpecifier::Abbreviated("@".to_string()), ret);
 
         let (rest, ret) = axis_specifier("").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::AxisSpecifier::Abbreviated, ret);
+        assert_eq!(model::AxisSpecifier::Abbreviated("".to_string()), ret);
     }
 
     #[test]
