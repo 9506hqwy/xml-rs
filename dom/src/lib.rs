@@ -1575,18 +1575,58 @@ pub struct XmlDocumentType<'a> {
 
 impl<'a> DocumentType<'a> for XmlDocumentType<'a> {
     fn name(&self) -> String {
-        // TODO:
-        "".to_string()
+        match &self.declaration.name {
+            xml_nom::model::QName::Prefixed(n) => n.local_part.to_string(), // FIXME: namespace
+            xml_nom::model::QName::Unprefixed(n) => n.to_string(),
+        }
     }
 
     fn entities(&self) -> XmlNamedNodeMap<'a> {
-        // TODO:
-        XmlNamedNodeMap::empty()
+        let mut notations = vec![];
+        for subset in &self.declaration.internal_subset {
+            if let xml_parser::model::InternalSubset::Markup(
+                xml_parser::model::DeclarationMarkup::Entity(n),
+            ) = subset
+            {
+                notations.push(n);
+            }
+        }
+
+        let nodes = notations
+            .iter()
+            .map(|entity| XmlEntity {
+                entity,
+                parent: Some(self.as_boxed_node()),
+                owner: self.owner.clone(),
+            })
+            .map(|v| (v.node_name(), v.as_node()))
+            .collect();
+
+        XmlNamedNodeMap { nodes }
     }
 
     fn notations(&self) -> XmlNamedNodeMap<'a> {
-        // TODO:
-        XmlNamedNodeMap::empty()
+        let mut notations = vec![];
+        for subset in &self.declaration.internal_subset {
+            if let xml_parser::model::InternalSubset::Markup(
+                xml_parser::model::DeclarationMarkup::Notation(n),
+            ) = subset
+            {
+                notations.push(n);
+            }
+        }
+
+        let nodes = notations
+            .iter()
+            .map(|notation| XmlNotation {
+                notation,
+                parent: Some(self.as_boxed_node()),
+                owner: self.owner.clone(),
+            })
+            .map(|v| (v.node_name(), v.as_node()))
+            .collect();
+
+        XmlNamedNodeMap { nodes }
     }
 }
 
@@ -1666,26 +1706,45 @@ impl<'a> fmt::Debug for XmlDocumentType<'a> {
 
 #[derive(Clone)]
 pub struct XmlNotation<'a> {
+    notation: &'a xml_parser::model::DeclarationNotation<'a>,
     parent: Option<Box<XmlNode<'a>>>,
     owner: XmlDocument<'a>,
 }
 
 impl<'a> Notation<'a> for XmlNotation<'a> {
     fn public_id(&self) -> Option<String> {
-        // TODO:
-        None
+        if let xml_parser::model::DeclarationNotationId::PublicId(id) = self.notation.id {
+            Some(id.to_string())
+        } else if let xml_parser::model::DeclarationNotationId::ExternalId(
+            xml_parser::model::ExternalId::Public(id, _),
+        ) = &self.notation.id
+        {
+            Some(id.to_string())
+        } else {
+            None
+        }
     }
 
     fn system_id(&self) -> Option<String> {
-        // TODO:
-        None
+        if let xml_parser::model::DeclarationNotationId::ExternalId(
+            xml_parser::model::ExternalId::System(id),
+        ) = &self.notation.id
+        {
+            Some(id.to_string())
+        } else if let xml_parser::model::DeclarationNotationId::ExternalId(
+            xml_parser::model::ExternalId::Public(_, id),
+        ) = &self.notation.id
+        {
+            Some(id.to_string())
+        } else {
+            None
+        }
     }
 }
 
 impl<'a> Node<'a> for XmlNotation<'a> {
     fn node_name(&self) -> String {
-        // TODO:
-        "".to_string()
+        self.notation.name.to_string()
     }
 
     fn node_value(&self) -> Option<String> {
@@ -1744,9 +1803,8 @@ impl<'a> AsNode<'a> for XmlNotation<'a> {
 }
 
 impl<'a> PartialEq for XmlNotation<'a> {
-    fn eq(&self, _other: &Self) -> bool {
-        // TODO:
-        false
+    fn eq(&self, other: &Self) -> bool {
+        self.notation == other.notation
     }
 }
 
@@ -1760,31 +1818,61 @@ impl<'a> fmt::Debug for XmlNotation<'a> {
 
 #[derive(Clone)]
 pub struct XmlEntity<'a> {
+    entity: &'a xml_parser::model::DeclarationEntity<'a>,
     parent: Option<Box<XmlNode<'a>>>,
     owner: XmlDocument<'a>,
 }
 
 impl<'a> Entity<'a> for XmlEntity<'a> {
     fn public_id(&self) -> Option<String> {
-        // TODO:
-        None
+        match self.entity {
+            xml_parser::model::DeclarationEntity::GeneralEntity(g) => match &g.def {
+                xml_parser::model::DeclarationEntityDef::EntityValue(_) => None,
+                xml_parser::model::DeclarationEntityDef::ExternalId(id, _) => match id {
+                    xml_parser::model::ExternalId::System(_) => None,
+                    xml_parser::model::ExternalId::Public(id, _) => Some(id.to_string()),
+                },
+            },
+            xml_parser::model::DeclarationEntity::ParameterEntity(p) => match &p.def {
+                xml_parser::model::DeclarationPeDef::EntityValue(_) => None,
+                xml_parser::model::DeclarationPeDef::ExternalId(id) => match id {
+                    xml_parser::model::ExternalId::System(_) => None,
+                    xml_parser::model::ExternalId::Public(id, _) => Some(id.to_string()),
+                },
+            },
+        }
     }
 
     fn system_id(&self) -> Option<String> {
-        // TODO:
-        None
+        match self.entity {
+            xml_parser::model::DeclarationEntity::GeneralEntity(g) => match &g.def {
+                xml_parser::model::DeclarationEntityDef::EntityValue(_) => None,
+                xml_parser::model::DeclarationEntityDef::ExternalId(id, _) => match id {
+                    xml_parser::model::ExternalId::System(id) => Some(id.to_string()),
+                    xml_parser::model::ExternalId::Public(_, id) => Some(id.to_string()),
+                },
+            },
+            xml_parser::model::DeclarationEntity::ParameterEntity(p) => match &p.def {
+                xml_parser::model::DeclarationPeDef::EntityValue(_) => None,
+                xml_parser::model::DeclarationPeDef::ExternalId(id) => match id {
+                    xml_parser::model::ExternalId::System(id) => Some(id.to_string()),
+                    xml_parser::model::ExternalId::Public(_, id) => Some(id.to_string()),
+                },
+            },
+        }
     }
 
     fn notation_name(&self) -> Option<String> {
-        // TODO:
-        None
+        match self.entity {
+            xml_parser::model::DeclarationEntity::GeneralEntity(g) => Some(g.name.to_string()),
+            xml_parser::model::DeclarationEntity::ParameterEntity(p) => Some(p.name.to_string()),
+        }
     }
 }
 
 impl<'a> Node<'a> for XmlEntity<'a> {
     fn node_name(&self) -> String {
-        // TODO:
-        "".to_string()
+        self.notation_name().unwrap()
     }
 
     fn node_value(&self) -> Option<String> {
@@ -1800,18 +1888,17 @@ impl<'a> Node<'a> for XmlEntity<'a> {
     }
 
     fn child_nodes(&self) -> XmlNodeList<'a> {
-        // TODO:
-        XmlNodeList { nodes: vec![] }
+        XmlNodeList {
+            nodes: self.children(),
+        }
     }
 
     fn first_child(&self) -> Option<XmlNode<'a>> {
-        // TODO:
-        None
+        self.first_child_node()
     }
 
     fn last_child(&self) -> Option<XmlNode<'a>> {
-        // TODO:
-        None
+        self.last_child_node()
     }
 
     fn previous_sibling(&self) -> Option<XmlNode<'a>> {
@@ -1835,8 +1922,7 @@ impl<'a> Node<'a> for XmlEntity<'a> {
     }
 
     fn has_child(&self) -> bool {
-        // TODO:
-        false
+        !self.children().is_empty()
     }
 }
 
@@ -1854,9 +1940,8 @@ impl<'a> HasChild<'a> for XmlEntity<'a> {
 }
 
 impl<'a> PartialEq for XmlEntity<'a> {
-    fn eq(&self, _other: &Self) -> bool {
-        // TODO:
-        false
+    fn eq(&self, other: &Self) -> bool {
+        self.entity == other.entity
     }
 }
 
@@ -1879,8 +1964,14 @@ impl<'a> EntityReference<'a> for XmlEntityReference<'a> {}
 
 impl<'a> Node<'a> for XmlEntityReference<'a> {
     fn node_name(&self) -> String {
-        // TODO:
-        "".to_string()
+        match &self.reference {
+            xml_parser::model::Reference::Character(ch, radix) => match radix {
+                10 => format!("#{}", ch),
+                16 => format!("#x{}", ch),
+                _ => unreachable!(),
+            },
+            xml_parser::model::Reference::Entity(e) => e.to_string(),
+        }
     }
 
     fn node_value(&self) -> Option<String> {
@@ -1896,18 +1987,17 @@ impl<'a> Node<'a> for XmlEntityReference<'a> {
     }
 
     fn child_nodes(&self) -> XmlNodeList<'a> {
-        // TODO
-        XmlNodeList { nodes: vec![] }
+        XmlNodeList {
+            nodes: self.children(),
+        }
     }
 
     fn first_child(&self) -> Option<XmlNode<'a>> {
-        // TODO:
-        None
+        self.first_child_node()
     }
 
     fn last_child(&self) -> Option<XmlNode<'a>> {
-        // TODO:
-        None
+        self.last_child_node()
     }
 
     fn previous_sibling(&self) -> Option<XmlNode<'a>> {
@@ -1931,8 +2021,7 @@ impl<'a> Node<'a> for XmlEntityReference<'a> {
     }
 
     fn has_child(&self) -> bool {
-        // TODO:
-        false
+        !self.children().is_empty()
     }
 }
 
