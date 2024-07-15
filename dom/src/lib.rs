@@ -500,7 +500,7 @@ impl DomImplementation for XmlDomImplementation {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlDocumentFragment<'a> {
     document: &'a xml_parser::model::Document<'a>,
     owner: XmlDocument<'a>,
@@ -588,6 +588,12 @@ impl<'a> PartialEq for XmlDocumentFragment<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlDocumentFragment<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlDocumentFragment {{ {:?} }}", self.root_element())
+    }
+}
+
 impl<'a> fmt::Display for XmlDocumentFragment<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.root_element())
@@ -606,7 +612,7 @@ impl<'a> XmlDocumentFragment<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlDocument<'a> {
     document: &'a xml_parser::model::Document<'a>,
 }
@@ -729,6 +735,12 @@ impl<'a> From<&'a xml_parser::model::Document<'a>> for XmlDocument<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlDocument<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlDocument {{ {:?} }}", self.root_element())
+    }
+}
+
 impl<'a> fmt::Display for XmlDocument<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.root_element())
@@ -848,7 +860,7 @@ impl<'a> Iterator for XmlNamedNodeIter<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlAttr<'a> {
     attribute: &'a xml_parser::model::Attribute<'a>,
     parent: Option<Box<XmlNode<'a>>>,
@@ -979,6 +991,12 @@ impl<'a> PartialEq for XmlAttr<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlAttr<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlAttr {{ {} }}", self.name())
+    }
+}
+
 impl<'a> fmt::Display for XmlAttr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.value())
@@ -987,7 +1005,7 @@ impl<'a> fmt::Display for XmlAttr<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlElement<'a> {
     element: &'a xml_parser::model::Element<'a>,
     parent: Option<Box<XmlNode<'a>>>,
@@ -1207,6 +1225,12 @@ impl<'a> XmlElement<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlElement<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlElement {{ {} }}", self.node_name())
+    }
+}
+
 impl<'a> fmt::Display for XmlElement<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         for child in self.children() {
@@ -1231,7 +1255,7 @@ impl<'a> fmt::Display for XmlElement<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlText<'a> {
     data: &'a str,
     parent: Option<Box<XmlNode<'a>>>,
@@ -1320,6 +1344,12 @@ impl<'a> PartialEq for XmlText<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlText<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlText {{ {} }}", self.data)
+    }
+}
+
 impl<'a> fmt::Display for XmlText<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.data)
@@ -1328,7 +1358,7 @@ impl<'a> fmt::Display for XmlText<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlComment<'a> {
     data: &'a str,
     parent: Option<Box<XmlNode<'a>>>,
@@ -1417,6 +1447,12 @@ impl<'a> PartialEq for XmlComment<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlComment<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlComment {{ {} }}", self.data)
+    }
+}
+
 impl<'a> fmt::Display for XmlComment<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.data)
@@ -1425,7 +1461,7 @@ impl<'a> fmt::Display for XmlComment<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlCDataSection<'a> {
     data: &'a str,
     parent: Option<Box<XmlNode<'a>>>,
@@ -1516,6 +1552,12 @@ impl<'a> PartialEq for XmlCDataSection<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlCDataSection<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlCDataSection {{ {} }}", self.data)
+    }
+}
+
 impl<'a> fmt::Display for XmlCDataSection<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.data)
@@ -1524,7 +1566,7 @@ impl<'a> fmt::Display for XmlCDataSection<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlDocumentType<'a> {
     declaration: &'a xml_parser::model::DeclarationDoc<'a>,
     parent: Option<Box<XmlNode<'a>>>,
@@ -1614,9 +1656,15 @@ impl<'a> PartialEq for XmlDocumentType<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlDocumentType<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlDocumentType {{ {} }}", self.name())
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlNotation<'a> {
     parent: Option<Box<XmlNode<'a>>>,
     owner: XmlDocument<'a>,
@@ -1702,9 +1750,15 @@ impl<'a> PartialEq for XmlNotation<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlNotation<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlNotation {{ {} }}", self.node_name())
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlEntity<'a> {
     parent: Option<Box<XmlNode<'a>>>,
     owner: XmlDocument<'a>,
@@ -1806,9 +1860,15 @@ impl<'a> PartialEq for XmlEntity<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlEntity<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlEntity {{ {} }}", self.node_name())
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlEntityReference<'a> {
     reference: &'a xml_parser::model::Reference<'a>,
     parent: Option<Box<XmlNode<'a>>>,
@@ -1895,9 +1955,15 @@ impl<'a> PartialEq for XmlEntityReference<'a> {
     }
 }
 
+impl<'a> fmt::Debug for XmlEntityReference<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlEntityReference {{ {} }}", self.node_name())
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct XmlProcessingInstruction<'a> {
     pi: &'a xml_parser::model::PI<'a>,
     parent: Option<Box<XmlNode<'a>>>,
@@ -1977,6 +2043,12 @@ impl<'a> AsNode<'a> for XmlProcessingInstruction<'a> {
 impl<'a> PartialEq for XmlProcessingInstruction<'a> {
     fn eq(&self, other: &Self) -> bool {
         self.pi == other.pi
+    }
+}
+
+impl<'a> fmt::Debug for XmlProcessingInstruction<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlProcessingInstruction {{ {} }}", self.node_name())
     }
 }
 
