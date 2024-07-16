@@ -481,7 +481,7 @@ mod tests {
         assert_eq!(
             model::RelativeLocationPath::from((
                 model::Step::Current,
-                vec![(model::LocationPathOperator::Child, model::Step::Current)]
+                vec![(model::LocationPathOperator::Current, model::Step::Current)]
             )),
             ret
         );
@@ -491,7 +491,7 @@ mod tests {
         assert_eq!(
             model::RelativeLocationPath::from((
                 model::Step::Current,
-                vec![(model::LocationPathOperator::Child, model::Step::Current)]
+                vec![(model::LocationPathOperator::Current, model::Step::Current)]
             )),
             ret
         );
@@ -502,7 +502,7 @@ mod tests {
             model::RelativeLocationPath::from((
                 model::Step::Current,
                 vec![(
-                    model::LocationPathOperator::Descendant,
+                    model::LocationPathOperator::DescendantOrSelfNode,
                     model::Step::Current
                 )]
             )),
@@ -515,7 +515,7 @@ mod tests {
             model::RelativeLocationPath::from((
                 model::Step::Current,
                 vec![(
-                    model::LocationPathOperator::Descendant,
+                    model::LocationPathOperator::DescendantOrSelfNode,
                     model::Step::Current
                 )]
             )),
@@ -528,9 +528,9 @@ mod tests {
             model::RelativeLocationPath::from((
                 model::Step::Current,
                 vec![
-                    (model::LocationPathOperator::Child, model::Step::Current),
+                    (model::LocationPathOperator::Current, model::Step::Current),
                     (
-                        model::LocationPathOperator::Descendant,
+                        model::LocationPathOperator::DescendantOrSelfNode,
                         model::Step::Current
                     ),
                 ]
@@ -831,7 +831,7 @@ mod tests {
         assert_eq!("", rest);
         assert_eq!(
             model::PathExpr::from((
-                Some((None, model::LocationPathOperator::Child)),
+                Some((None, model::LocationPathOperator::Current)),
                 model::RelativeLocationPath::from(model::Step::Current),
             )),
             ret
@@ -841,7 +841,7 @@ mod tests {
         assert_eq!("", rest);
         assert_eq!(
             model::PathExpr::from((
-                Some((None, model::LocationPathOperator::Descendant)),
+                Some((None, model::LocationPathOperator::DescendantOrSelfNode)),
                 model::RelativeLocationPath::from(model::Step::Current),
             )),
             ret
@@ -853,7 +853,7 @@ mod tests {
             model::PathExpr::from((
                 Some((
                     Some(model::FilterExpr::from(model::PrimaryExpr::from("a"))),
-                    model::LocationPathOperator::Child
+                    model::LocationPathOperator::Current
                 )),
                 model::RelativeLocationPath::from(model::Step::Current),
             )),
@@ -866,7 +866,7 @@ mod tests {
             model::PathExpr::from((
                 Some((
                     Some(model::FilterExpr::from(model::PrimaryExpr::from("a"))),
-                    model::LocationPathOperator::Descendant
+                    model::LocationPathOperator::DescendantOrSelfNode
                 )),
                 model::RelativeLocationPath::from(model::Step::Current),
             )),

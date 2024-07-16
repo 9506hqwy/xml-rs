@@ -324,15 +324,15 @@ impl<'a> RelativeLocationPath<'a> {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum LocationPathOperator {
     #[default]
-    Child,
-    Descendant,
+    Current,
+    DescendantOrSelfNode,
 }
 
 impl From<&str> for LocationPathOperator {
     fn from(value: &str) -> Self {
         match value {
-            "/" => LocationPathOperator::Child,
-            "//" => LocationPathOperator::Descendant,
+            "/" => LocationPathOperator::Current,
+            "//" => LocationPathOperator::DescendantOrSelfNode,
             _ => unreachable!(),
         }
     }
