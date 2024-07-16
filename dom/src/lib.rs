@@ -395,21 +395,21 @@ impl<'a> Node<'a> for XmlNode<'a> {
     }
 }
 
-impl<'a> fmt::Display for XmlNode<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+impl<'a> AsStringValue for XmlNode<'a> {
+    fn as_string_value(&self) -> String {
         match self {
-            XmlNode::Element(v) => v.fmt(f),
-            XmlNode::Attribute(v) => v.fmt(f),
-            XmlNode::Text(v) => v.fmt(f),
-            XmlNode::CData(v) => v.fmt(f),
-            XmlNode::EntityReference(_) => Ok(()),
-            XmlNode::Entity(_) => Ok(()),
-            XmlNode::PI(v) => v.fmt(f),
-            XmlNode::Comment(v) => v.fmt(f),
-            XmlNode::Document(v) => v.fmt(f),
-            XmlNode::DocumentType(_) => Ok(()),
-            XmlNode::DocumentFragment(v) => v.fmt(f),
-            XmlNode::Notation(_) => Ok(()),
+            XmlNode::Element(v) => v.as_string_value(),
+            XmlNode::Attribute(v) => v.as_string_value(),
+            XmlNode::Text(v) => v.as_string_value(),
+            XmlNode::CData(v) => v.as_string_value(),
+            XmlNode::EntityReference(_) => "".to_string(),
+            XmlNode::Entity(_) => "".to_string(),
+            XmlNode::PI(v) => v.as_string_value(),
+            XmlNode::Comment(v) => v.as_string_value(),
+            XmlNode::Document(v) => v.as_string_value(),
+            XmlNode::DocumentType(_) => "".to_string(),
+            XmlNode::DocumentFragment(v) => v.as_string_value(),
+            XmlNode::Notation(_) => "".to_string(),
         }
     }
 }
@@ -449,6 +449,25 @@ impl<'a> XmlNode<'a> {
     }
 }
 
+impl<'a> fmt::Display for XmlNode<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            XmlNode::Element(v) => v.fmt(f),
+            XmlNode::Attribute(v) => v.fmt(f),
+            XmlNode::Text(v) => v.fmt(f),
+            XmlNode::CData(v) => v.fmt(f),
+            XmlNode::EntityReference(v) => v.fmt(f),
+            XmlNode::Entity(v) => v.fmt(f),
+            XmlNode::PI(v) => v.fmt(f),
+            XmlNode::Comment(v) => v.fmt(f),
+            XmlNode::Document(v) => v.fmt(f),
+            XmlNode::DocumentType(v) => v.fmt(f),
+            XmlNode::DocumentFragment(v) => v.fmt(f),
+            XmlNode::Notation(v) => v.fmt(f),
+        }
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 pub trait AsNode<'a> {
@@ -457,6 +476,12 @@ pub trait AsNode<'a> {
     fn as_boxed_node(&self) -> Box<XmlNode<'a>> {
         Box::new(self.as_node())
     }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+pub trait AsStringValue {
+    fn as_string_value(&self) -> String;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -566,6 +591,12 @@ impl<'a> AsNode<'a> for XmlDocumentFragment<'a> {
     }
 }
 
+impl<'a> AsStringValue for XmlDocumentFragment<'a> {
+    fn as_string_value(&self) -> String {
+        self.root_element().as_string_value()
+    }
+}
+
 impl<'a> HasChild<'a> for XmlDocumentFragment<'a> {
     fn children(&self) -> Vec<XmlNode<'a>> {
         let mut nodes: Vec<XmlNode> = vec![];
@@ -596,6 +627,7 @@ impl<'a> fmt::Debug for XmlDocumentFragment<'a> {
 
 impl<'a> fmt::Display for XmlDocumentFragment<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        // TODO:
         write!(f, "{}", self.root_element())
     }
 }
@@ -707,6 +739,12 @@ impl<'a> AsNode<'a> for XmlDocument<'a> {
     }
 }
 
+impl<'a> AsStringValue for XmlDocument<'a> {
+    fn as_string_value(&self) -> String {
+        self.root_element().as_string_value()
+    }
+}
+
 impl<'a> HasChild<'a> for XmlDocument<'a> {
     fn children(&self) -> Vec<XmlNode<'a>> {
         let mut nodes: Vec<XmlNode> = vec![];
@@ -743,6 +781,7 @@ impl<'a> fmt::Debug for XmlDocument<'a> {
 
 impl<'a> fmt::Display for XmlDocument<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        // TODO:
         write!(f, "{}", self.root_element())
     }
 }
@@ -956,6 +995,12 @@ impl<'a> AsNode<'a> for XmlAttr<'a> {
     }
 }
 
+impl<'a> AsStringValue for XmlAttr<'a> {
+    fn as_string_value(&self) -> String {
+        self.value()
+    }
+}
+
 impl<'a> HasChild<'a> for XmlAttr<'a> {
     fn children(&self) -> Vec<XmlNode<'a>> {
         let mut nodes: Vec<XmlNode> = vec![];
@@ -999,7 +1044,7 @@ impl<'a> fmt::Debug for XmlAttr<'a> {
 
 impl<'a> fmt::Display for XmlAttr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.value())
+        write!(f, "{}=\"{}\"", self.name(), self.value())
     }
 }
 
@@ -1126,6 +1171,29 @@ impl<'a> AsNode<'a> for XmlElement<'a> {
     }
 }
 
+impl<'a> AsStringValue for XmlElement<'a> {
+    fn as_string_value(&self) -> String {
+        let mut s = String::new();
+        for child in self.children() {
+            match child {
+                XmlNode::Attribute(_) => {}
+                XmlNode::CData(v) => s.push_str(&v.as_string_value()),
+                XmlNode::Comment(_) => {}
+                XmlNode::Document(_) => {}
+                XmlNode::DocumentFragment(_) => {}
+                XmlNode::DocumentType(_) => {}
+                XmlNode::Element(v) => s.push_str(&v.as_string_value()),
+                XmlNode::Entity(_) => {}
+                XmlNode::EntityReference(_) => {}
+                XmlNode::Notation(_) => {}
+                XmlNode::PI(_) => {}
+                XmlNode::Text(v) => s.push_str(&v.as_string_value()),
+            }
+        }
+        s
+    }
+}
+
 impl<'a> HasChild<'a> for XmlElement<'a> {
     fn children(&self) -> Vec<XmlNode<'a>> {
         let mut nodes: Vec<XmlNode<'a>> = vec![];
@@ -1233,23 +1301,17 @@ impl<'a> fmt::Debug for XmlElement<'a> {
 
 impl<'a> fmt::Display for XmlElement<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        for child in self.children() {
-            match child {
-                XmlNode::Attribute(_) => {}
-                XmlNode::CData(v) => write!(f, "{}", v)?,
-                XmlNode::Comment(_) => {}
-                XmlNode::Document(_) => {}
-                XmlNode::DocumentFragment(_) => {}
-                XmlNode::DocumentType(_) => {}
-                XmlNode::Element(v) => write!(f, "{}", v)?,
-                XmlNode::Entity(_) => {}
-                XmlNode::EntityReference(_) => {}
-                XmlNode::Notation(_) => {}
-                XmlNode::PI(_) => {}
-                XmlNode::Text(v) => write!(f, "{}", v)?,
+        write!(f, "<{}", self.node_name())?;
+        if let Some(attrs) = self.attributes() {
+            for attr in attrs.iter() {
+                write!(f, " {}", attr)?;
             }
         }
-        Ok(())
+        write!(f, ">")?;
+        for child in self.children() {
+            write!(f, "{}", child)?;
+        }
+        write!(f, "</{}>", self.node_name())
     }
 }
 
@@ -1335,6 +1397,12 @@ impl<'a> Node<'a> for XmlText<'a> {
 impl<'a> AsNode<'a> for XmlText<'a> {
     fn as_node(&self) -> XmlNode<'a> {
         XmlNode::Text(self.clone())
+    }
+}
+
+impl<'a> AsStringValue for XmlText<'a> {
+    fn as_string_value(&self) -> String {
+        self.data()
     }
 }
 
@@ -1441,6 +1509,12 @@ impl<'a> AsNode<'a> for XmlComment<'a> {
     }
 }
 
+impl<'a> AsStringValue for XmlComment<'a> {
+    fn as_string_value(&self) -> String {
+        self.data()
+    }
+}
+
 impl<'a> PartialEq for XmlComment<'a> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
@@ -1455,7 +1529,7 @@ impl<'a> fmt::Debug for XmlComment<'a> {
 
 impl<'a> fmt::Display for XmlComment<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.data)
+        write!(f, "<!--{}-->", self.data)
     }
 }
 
@@ -1546,6 +1620,12 @@ impl<'a> AsNode<'a> for XmlCDataSection<'a> {
     }
 }
 
+impl<'a> AsStringValue for XmlCDataSection<'a> {
+    fn as_string_value(&self) -> String {
+        self.data()
+    }
+}
+
 impl<'a> PartialEq for XmlCDataSection<'a> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
@@ -1560,7 +1640,7 @@ impl<'a> fmt::Debug for XmlCDataSection<'a> {
 
 impl<'a> fmt::Display for XmlCDataSection<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.data)
+        write!(f, "<![CDATA[{}]]>", self.data)
     }
 }
 
@@ -1702,6 +1782,13 @@ impl<'a> fmt::Debug for XmlDocumentType<'a> {
     }
 }
 
+impl<'a> fmt::Display for XmlDocumentType<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        // TODO
+        write!(f, "<!DOCTYPE {}>", self.name())
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone)]
@@ -1811,6 +1898,13 @@ impl<'a> PartialEq for XmlNotation<'a> {
 impl<'a> fmt::Debug for XmlNotation<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "XmlNotation {{ {} }}", self.node_name())
+    }
+}
+
+impl<'a> fmt::Display for XmlNotation<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        // TODO
+        write!(f, "<!NOTATION {} SYSTEM \"\">", self.node_name())
     }
 }
 
@@ -1951,6 +2045,13 @@ impl<'a> fmt::Debug for XmlEntity<'a> {
     }
 }
 
+impl<'a> fmt::Display for XmlEntity<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        // TODO
+        write!(f, "<!ENTITY {} \"\">", self.node_name())
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone)]
@@ -2050,6 +2151,12 @@ impl<'a> fmt::Debug for XmlEntityReference<'a> {
     }
 }
 
+impl<'a> fmt::Display for XmlEntityReference<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "&{};", self.node_name())
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone)]
@@ -2129,6 +2236,12 @@ impl<'a> AsNode<'a> for XmlProcessingInstruction<'a> {
     }
 }
 
+impl<'a> AsStringValue for XmlProcessingInstruction<'a> {
+    fn as_string_value(&self) -> String {
+        self.pi.value.unwrap_or_default().to_string()
+    }
+}
+
 impl<'a> PartialEq for XmlProcessingInstruction<'a> {
     fn eq(&self, other: &Self) -> bool {
         self.pi == other.pi
@@ -2143,7 +2256,7 @@ impl<'a> fmt::Debug for XmlProcessingInstruction<'a> {
 
 impl<'a> fmt::Display for XmlProcessingInstruction<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.pi.value.unwrap_or_default())
+        write!(f, "<?{} {}?>", self.target(), self.data())
     }
 }
 
@@ -2262,8 +2375,8 @@ mod tests {
         assert_eq!(Some(XmlDocument::from(&document)), node.owner_document());
         assert!(node.has_child());
 
-        // fmt::Display
-        assert_eq!("", format!("{}", m));
+        // AsStringValue
+        assert_eq!("", m.as_string_value());
     }
 
     #[test]
@@ -2320,8 +2433,8 @@ mod tests {
         assert_eq!(None, node.owner_document());
         assert!(node.has_child());
 
-        // fmt::Display
-        assert_eq!("", format!("{}", m));
+        // AsStringValue
+        assert_eq!("", m.as_string_value());
     }
 
     #[test]
@@ -2372,8 +2485,8 @@ mod tests {
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(node.has_child());
 
-        // fmt::Display
-        assert_eq!("b", format!("{}", attr));
+        // AsStringValue
+        assert_eq!("b", attr.as_string_value());
     }
 
     #[test]
@@ -2461,9 +2574,9 @@ mod tests {
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(node.has_child());
 
-        // fmt::Display
-        assert_eq!("data1", format!("{}", elem1));
-        assert_eq!("", format!("{}", elem2));
+        // AsStringValue
+        assert_eq!("data1", elem1.as_string_value());
+        assert_eq!("", elem2.as_string_value());
     }
 
     #[test]
@@ -2510,8 +2623,8 @@ mod tests {
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(!node.has_child());
 
-        // fmt::Display
-        assert_eq!("text", format!("{}", text));
+        // AsStringValue
+        assert_eq!("text", text.as_string_value());
     }
 
     #[test]
@@ -2558,8 +2671,8 @@ mod tests {
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(!node.has_child());
 
-        // fmt::Display
-        assert_eq!(" comment ", format!("{}", comment));
+        // AsStringValue
+        assert_eq!(" comment ", comment.as_string_value());
     }
 
     #[test]
@@ -2606,8 +2719,8 @@ mod tests {
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(!node.has_child());
 
-        // fmt::Display
-        assert_eq!("&<>\"", format!("{}", cdata));
+        // AsStringValue
+        assert_eq!("&<>\"", cdata.as_string_value());
     }
 }
 
