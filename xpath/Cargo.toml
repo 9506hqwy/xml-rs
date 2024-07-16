@@ -13,4 +13,8 @@ license.workspace = true
 
 [dependencies]
 nom = { version="7.1.3", features=["alloc"] }
+xml-dom = { path="../dom" }
 xml-nom = { path="../nom" }
+
+[dev-dependencies]
+xml-parser = { path="../parser" }
