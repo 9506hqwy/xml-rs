@@ -169,6 +169,115 @@ impl<'a> From<Comment<'a>> for Contents<'a> {
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct DeclarationAtt<'a> {
+    pub name: QName<'a>,
+    pub defs: Vec<DeclarationAttDef<'a>>,
+}
+
+impl<'a> From<(QName<'a>, Vec<DeclarationAttDef<'a>>)> for DeclarationAtt<'a> {
+    fn from(value: (QName<'a>, Vec<DeclarationAttDef<'a>>)) -> Self {
+        let (name, defs) = value;
+        DeclarationAtt { name, defs }
+    }
+}
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DeclarationAttDef<'a> {
+    pub name: DeclarationAttName<'a>,
+    pub ty: DeclarationAttType<'a>,
+    pub value: DeclarationAttDefault<'a>,
+}
+
+impl<'a>
+    From<(
+        DeclarationAttName<'a>,
+        DeclarationAttType<'a>,
+        DeclarationAttDefault<'a>,
+    )> for DeclarationAttDef<'a>
+{
+    fn from(
+        value: (
+            DeclarationAttName<'a>,
+            DeclarationAttType<'a>,
+            DeclarationAttDefault<'a>,
+        ),
+    ) -> Self {
+        let (name, ty, value) = value;
+        DeclarationAttDef { name, ty, value }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum DeclarationAttDefault<'a> {
+    #[default]
+    Required,
+    Implied,
+    Value(Option<&'a str>, Vec<AttributeValue<'a>>),
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeclarationAttName<'a> {
+    Attr(QName<'a>),
+    Namsspace(AttributeName<'a>),
+}
+
+impl<'a> Default for DeclarationAttName<'a> {
+    fn default() -> Self {
+        DeclarationAttName::Attr(QName::default())
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum DeclarationAttType<'a> {
+    #[default]
+    Cdata,
+    Entities,
+    Entity,
+    Id,
+    IdRef,
+    IdRefs,
+    NmToken,
+    NmTokens,
+    Notation(Vec<&'a str>),
+    Enumeration(Vec<&'a str>),
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum DeclarationContent<'a> {
+    #[default]
+    Empty,
+    Any,
+    Mixed(Option<Vec<QName<'a>>>),
+    Children(DeclarationContentItem<'a>),
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeclarationContentItem<'a> {
+    Name(QName<'a>, Option<&'a str>),
+    Choice(Vec<DeclarationContentItem<'a>>, Option<&'a str>),
+    Seq(Vec<DeclarationContentItem<'a>>, Option<&'a str>),
+}
+
+impl<'a> Default for DeclarationContentItem<'a> {
+    fn default() -> Self {
+        DeclarationContentItem::Name(QName::default(), None)
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct DeclarationDoc<'a> {
     pub name: QName<'a>,
     pub external_id: Option<ExternalId<'a>>,
@@ -227,6 +336,21 @@ impl<'a> From<DeclarationParameterEntity<'a>> for DeclarationEntity<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DeclarationElement<'a> {
+    pub name: QName<'a>,
+    pub content: DeclarationContent<'a>,
+}
+
+impl<'a> From<(QName<'a>, DeclarationContent<'a>)> for DeclarationElement<'a> {
+    fn from(value: (QName<'a>, DeclarationContent<'a>)) -> Self {
+        let (name, content) = value;
+        DeclarationElement { name, content }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeclarationEntityDef<'a> {
     EntityValue(Vec<EntityValue<'a>>),
@@ -271,8 +395,8 @@ impl<'a> From<(&'a str, DeclarationEntityDef<'a>)> for DeclarationGeneralEntity<
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeclarationMarkup<'a> {
-    Element(&'a str),
-    Attributes(&'a str),
+    Element(DeclarationElement<'a>),
+    Attributes(DeclarationAtt<'a>),
     Entity(DeclarationEntity<'a>),
     Notation(DeclarationNotation<'a>),
     PI(PI<'a>),
@@ -281,7 +405,7 @@ pub enum DeclarationMarkup<'a> {
 
 impl<'a> Default for DeclarationMarkup<'a> {
     fn default() -> Self {
-        DeclarationMarkup::element("")
+        DeclarationMarkup::element(DeclarationElement::default())
     }
 }
 
@@ -310,11 +434,11 @@ impl<'a> From<Comment<'a>> for DeclarationMarkup<'a> {
 }
 
 impl<'a> DeclarationMarkup<'a> {
-    pub fn element(value: &'a str) -> DeclarationMarkup<'a> {
+    pub fn element(value: DeclarationElement<'a>) -> DeclarationMarkup<'a> {
         DeclarationMarkup::Element(value)
     }
 
-    pub fn attributes(value: &'a str) -> DeclarationMarkup<'a> {
+    pub fn attributes(value: DeclarationAtt<'a>) -> DeclarationMarkup<'a> {
         DeclarationMarkup::Attributes(value)
     }
 }

@@ -459,29 +459,43 @@ fn empty_entity_tag(input: &str) -> IResult<&str, model::Element<'_>> {
 /// [\[45\] elementdecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-elementdecl)
 ///
 /// [\[17\] elementdecl](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-elementdecl)
-fn element_decl(input: &str) -> IResult<&str, &str> {
-    recognize(delimited(
-        tuple((tag("<!ELEMENT"), multispace1)),
-        tuple((qname, preceded(multispace1, content_spec))),
-        tuple((multispace0, tag(">"))),
-    ))(input)
+fn element_decl(input: &str) -> IResult<&str, model::DeclarationElement<'_>> {
+    map(
+        delimited(
+            tuple((tag("<!ELEMENT"), multispace1)),
+            tuple((qname, preceded(multispace1, content_spec))),
+            tuple((multispace0, tag(">"))),
+        ),
+        model::DeclarationElement::from,
+    )(input)
 }
 
 /// 'EMPTY' | 'ANY' | Mixed | children
 ///
 /// [\[46\] contentspec](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-contentspec)
-fn content_spec(input: &str) -> IResult<&str, &str> {
-    alt((tag("EMPTY"), tag("ANY"), mixed, children))(input)
+fn content_spec(input: &str) -> IResult<&str, model::DeclarationContent<'_>> {
+    alt((
+        map(tag("EMPTY"), |_| model::DeclarationContent::Empty),
+        map(tag("ANY"), |_| model::DeclarationContent::Any),
+        map(mixed, model::DeclarationContent::Mixed),
+        map(children, model::DeclarationContent::Children),
+    ))(input)
 }
 
 /// (choice | seq) ('?' | '*' | '+')?
 ///
 /// [\[47\] children](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-children)
-fn children(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        alt((choice, seq)),
-        opt(alt((tag("?"), tag("*"), tag("+")))),
-    )))(input)
+fn children(input: &str) -> IResult<&str, model::DeclarationContentItem<'_>> {
+    alt((
+        map(
+            tuple((seq, opt(alt((tag("?"), tag("*"), tag("+")))))),
+            |(v, q)| model::DeclarationContentItem::Seq(v, q),
+        ),
+        map(
+            tuple((choice, opt(alt((tag("?"), tag("*"), tag("+")))))),
+            |(v, q)| model::DeclarationContentItem::Choice(v, q),
+        ),
+    ))(input)
 }
 
 /// (Name | choice | seq) ('?' | '*' | '+')?
@@ -489,39 +503,61 @@ fn children(input: &str) -> IResult<&str, &str> {
 /// [\[48\] cp](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-cp)
 ///
 /// [\[18\] cp](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-cp)
-fn cp(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        alt((recognize(qname), choice, seq)),
-        opt(alt((tag("?"), tag("*"), tag("+")))),
-    )))(input)
+fn cp(input: &str) -> IResult<&str, model::DeclarationContentItem<'_>> {
+    alt((
+        map(
+            tuple((seq, opt(alt((tag("?"), tag("*"), tag("+")))))),
+            |(v, q)| model::DeclarationContentItem::Seq(v, q),
+        ),
+        map(
+            tuple((choice, opt(alt((tag("?"), tag("*"), tag("+")))))),
+            |(v, q)| model::DeclarationContentItem::Choice(v, q),
+        ),
+        map(
+            tuple((qname, opt(alt((tag("?"), tag("*"), tag("+")))))),
+            |(v, q)| model::DeclarationContentItem::Name(v, q),
+        ),
+    ))(input)
 }
 
 /// '(' S? cp ( S? '|' S? cp )+ S? ')'
 ///
 /// [\[49\] choice](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-choice)
-fn choice(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        tag("("),
-        multispace0,
-        cp,
-        many1(tuple((multispace0, tag("|"), multispace0, cp))),
-        multispace0,
-        tag(")"),
-    )))(input)
+fn choice(input: &str) -> IResult<&str, Vec<model::DeclarationContentItem<'_>>> {
+    map(
+        delimited(
+            tuple((tag("("), multispace0)),
+            tuple((
+                cp,
+                many1(preceded(tuple((multispace0, tag("|"), multispace0)), cp)),
+            )),
+            tuple((multispace0, tag(")"))),
+        ),
+        |(f, mut r)| {
+            r.insert(0, f);
+            r
+        },
+    )(input)
 }
 
 /// '(' S? cp ( S? ',' S? cp )* S? ')'
 ///
 /// [\[50\] seq](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-seq)
-fn seq(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        tag("("),
-        multispace0,
-        cp,
-        many0(tuple((multispace0, tag(","), multispace0, cp))),
-        multispace0,
-        tag(")"),
-    )))(input)
+fn seq(input: &str) -> IResult<&str, Vec<model::DeclarationContentItem<'_>>> {
+    map(
+        delimited(
+            tuple((tag("("), multispace0)),
+            tuple((
+                cp,
+                many0(preceded(tuple((multispace0, tag(","), multispace0)), cp)),
+            )),
+            tuple((multispace0, tag(")"))),
+        ),
+        |(f, mut r)| {
+            r.insert(0, f);
+            r
+        },
+    )(input)
 }
 
 /// '(' S? '#PCDATA' (S? '|' S? Name)* S? ')*' | '(' S? '#PCDATA' S? ')'
@@ -529,23 +565,20 @@ fn seq(input: &str) -> IResult<&str, &str> {
 /// [\[51\] Mixed](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Mixed)
 ///
 /// [\[19\] Mixed](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-Mixed)
-fn mixed(input: &str) -> IResult<&str, &str> {
+fn mixed(input: &str) -> IResult<&str, Option<Vec<xml_nom::model::QName<'_>>>> {
     alt((
-        recognize(tuple((
-            tag("("),
-            multispace0,
-            tag("#PCDATA"),
-            many0(tuple((multispace0, tag("|"), multispace0, qname))),
-            multispace0,
-            tag(")*"),
-        ))),
-        recognize(tuple((
-            tag("("),
-            multispace0,
-            tag("#PCDATA"),
-            multispace0,
-            tag(")"),
-        ))),
+        map(
+            delimited(
+                tuple((tag("("), multispace0, tag("#PCDATA"))),
+                many0(preceded(tuple((multispace0, tag("|"), multispace0)), qname)),
+                tuple((multispace0, tag(")*"))),
+            ),
+            Some,
+        ),
+        map(
+            tuple((tag("("), multispace0, tag("#PCDATA"), multispace0, tag(")"))),
+            |_| None,
+        ),
     ))(input)
 }
 
@@ -554,15 +587,15 @@ fn mixed(input: &str) -> IResult<&str, &str> {
 /// [\[52\] AttlistDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-AttlistDecl)
 ///
 /// [\[20\] AttlistDecl](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-AttlistDecl)
-fn attlist_decl(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        tag("<!ATTLIST"),
-        multispace1,
-        qname,
-        many0(att_def),
-        multispace0,
-        tag(">"),
-    )))(input)
+fn attlist_decl(input: &str) -> IResult<&str, model::DeclarationAtt<'_>> {
+    map(
+        delimited(
+            tuple((tag("<!ATTLIST"), multispace1)),
+            tuple((qname, many0(att_def))),
+            tuple((multispace0, tag(">"))),
+        ),
+        model::DeclarationAtt::from,
+    )(input)
 }
 
 /// S Name S AttType S DefaultDecl
@@ -570,79 +603,104 @@ fn attlist_decl(input: &str) -> IResult<&str, &str> {
 /// [\[53\] AttDef](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-AttDef)
 ///
 /// [\[21\] AttDef](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-AttDef)
-fn att_def(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        multispace1,
-        alt((recognize(qname), recognize(ns_att_name))),
-        multispace1,
-        att_type,
-        multispace1,
-        default_decl,
-    )))(input)
+fn att_def(input: &str) -> IResult<&str, model::DeclarationAttDef<'_>> {
+    map(
+        tuple((
+            preceded(
+                multispace1,
+                alt((
+                    map(qname, model::DeclarationAttName::Attr),
+                    map(ns_att_name, model::DeclarationAttName::Namsspace),
+                )),
+            ),
+            preceded(multispace1, att_type),
+            preceded(multispace1, default_decl),
+        )),
+        model::DeclarationAttDef::from,
+    )(input)
 }
 
 /// StringType | TokenizedType | EnumeratedType
 ///
 /// [\[54\] AttType](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-AttType)
-fn att_type(input: &str) -> IResult<&str, &str> {
+fn att_type(input: &str) -> IResult<&str, model::DeclarationAttType<'_>> {
     alt((
         enumerated_type,
-        tag("CDATA"),    // [55] StringType
-        tag("IDREFS"),   // [56] TokenizedType
-        tag("IDREF"),    // [56] TokenizedType
-        tag("ID"),       // [56] TokenizedType
-        tag("ENTITIES"), // [56] TokenizedType
-        tag("ENTITY"),   // [56] TokenizedType
-        tag("NMTOKENS"), // [56] TokenizedType
-        tag("NMTOKEN"),  // [56] TokenizedType
+        map(tag("CDATA"), |_| model::DeclarationAttType::Cdata), // [55] StringType
+        map(tag("IDREFS"), |_| model::DeclarationAttType::IdRefs), // [56] TokenizedType
+        map(tag("IDREF"), |_| model::DeclarationAttType::IdRef), // [56] TokenizedType
+        map(tag("ID"), |_| model::DeclarationAttType::Id),       // [56] TokenizedType
+        map(tag("ENTITIES"), |_| model::DeclarationAttType::Entities), // [56] TokenizedType
+        map(tag("ENTITY"), |_| model::DeclarationAttType::Entity), // [56] TokenizedType
+        map(tag("NMTOKENS"), |_| model::DeclarationAttType::NmTokens), // [56] TokenizedType
+        map(tag("NMTOKEN"), |_| model::DeclarationAttType::NmToken), // [56] TokenizedType
     ))(input)
 }
 
 /// NotationType | Enumeration
 ///
 /// [\[57\] EnumeratedType](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-EnumeratedType)
-fn enumerated_type(input: &str) -> IResult<&str, &str> {
-    alt((notation_type, enumeration))(input)
+fn enumerated_type(input: &str) -> IResult<&str, model::DeclarationAttType<'_>> {
+    alt((
+        map(notation_type, model::DeclarationAttType::Notation),
+        map(enumeration, model::DeclarationAttType::Enumeration),
+    ))(input)
 }
 
 /// 'NOTATION' S '(' S? Name (S? '|' S? Name)* S? ')'
 ///
 /// [\[58\] NotationType](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-NotationType)
-fn notation_type(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        tag("NOTATION"),
-        multispace1,
-        tag("("),
-        multispace0,
-        name,
-        many0(tuple((multispace0, tag("|"), multispace0, name))),
-        multispace0,
-        tag(")"),
-    )))(input)
+fn notation_type(input: &str) -> IResult<&str, Vec<&str>> {
+    map(
+        delimited(
+            tuple((tag("NOTATION"), multispace1, tag("("), multispace0)),
+            tuple((
+                name,
+                many0(preceded(tuple((multispace0, tag("|"), multispace0)), name)),
+            )),
+            tuple((multispace0, tag(")"))),
+        ),
+        |(f, mut r)| {
+            r.insert(0, f);
+            r
+        },
+    )(input)
 }
 
 /// '(' S? Nmtoken (S? '|' S? Nmtoken)* S? ')'
 ///
 /// [\[59\] Enumeration](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Enumeration)
-fn enumeration(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        tag("("),
-        multispace0,
-        nmtoken,
-        many0(tuple((multispace0, tag("|"), multispace0, nmtoken))),
-        multispace0,
-        tag(")"),
-    )))(input)
+fn enumeration(input: &str) -> IResult<&str, Vec<&str>> {
+    map(
+        delimited(
+            tuple((tag("("), multispace0)),
+            tuple((
+                nmtoken,
+                many0(preceded(
+                    tuple((multispace0, tag("|"), multispace0)),
+                    nmtoken,
+                )),
+            )),
+            tuple((multispace0, tag(")"))),
+        ),
+        |(f, mut r)| {
+            r.insert(0, f);
+            r
+        },
+    )(input)
 }
 
 /// '#REQUIRED' | '#IMPLIED' | (('#FIXED' S)? AttValue)
 ///
 /// [\[60\] DefaultDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-DefaultDecl)
-fn default_decl(input: &str) -> IResult<&str, &str> {
+fn default_decl(input: &str) -> IResult<&str, model::DeclarationAttDefault<'_>> {
     alt((
-        tag("#REQUIRED"),
-        tag("#IMPLIED"),
-        recognize(tuple((opt(tuple((tag("FIXED"), multispace1))), att_value))),
+        map(tag("#REQUIRED"), |_| model::DeclarationAttDefault::Required),
+        map(tag("#IMPLIED"), |_| model::DeclarationAttDefault::Implied),
+        map(
+            tuple((opt(terminated(tag("#FIXED"), multispace1)), att_value)),
+            |(f, a)| model::DeclarationAttDefault::Value(f, a),
+        ),
     ))(input)
 }
 
@@ -1156,7 +1214,10 @@ mod tests {
                 Some(vec![
                     model::InternalSubset::from(" "),
                     model::InternalSubset::from(model::DeclarationMarkup::element(
-                        "<!ELEMENT aaa ANY >"
+                        model::DeclarationElement::from((
+                            QName::from("aaa"),
+                            model::DeclarationContent::Any,
+                        ))
                     )),
                     model::InternalSubset::from(" "),
                 ])
@@ -1171,7 +1232,10 @@ mod tests {
         assert_eq!("", rest);
         assert_eq!(
             vec![model::InternalSubset::from(
-                model::DeclarationMarkup::element("<!ELEMENT aaa ANY >")
+                model::DeclarationMarkup::element(model::DeclarationElement::from((
+                    QName::from("aaa"),
+                    model::DeclarationContent::Any,
+                )))
             )],
             ret
         );
@@ -1186,13 +1250,22 @@ mod tests {
         let (rest, ret) = markup_decl("<!ELEMENT aaa ANY >").unwrap();
         assert_eq!("", rest);
         assert_eq!(
-            model::DeclarationMarkup::element("<!ELEMENT aaa ANY >"),
+            model::DeclarationMarkup::element(model::DeclarationElement::from((
+                QName::from("aaa"),
+                model::DeclarationContent::Any,
+            ))),
             ret
         );
 
         let (rest, ret) = markup_decl("<!ATTLIST aaa>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::DeclarationMarkup::attributes("<!ATTLIST aaa>"), ret);
+        assert_eq!(
+            model::DeclarationMarkup::attributes(model::DeclarationAtt::from((
+                QName::from("aaa"),
+                vec![]
+            ))),
+            ret
+        );
 
         let (rest, ret) = markup_decl("<!ENTITY aaa 'bbb'>").unwrap();
         assert_eq!("", rest);
@@ -1346,6 +1419,231 @@ mod tests {
                     )),
                 ]
             )),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_element_decl() {
+        let (rest, ret) = element_decl("<!ELEMENT aaa EMPTY>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationElement::from((QName::from("aaa"), model::DeclarationContent::Empty)),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_content_spec() {
+        let (rest, ret) = content_spec("EMPTY").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationContent::Empty, ret);
+
+        let (rest, ret) = content_spec("ANY").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationContent::Any, ret);
+
+        let (rest, ret) = content_spec("(#PCDATA)").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationContent::Mixed(None), ret);
+
+        let (rest, ret) = content_spec("(bbb)").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationContent::Children(model::DeclarationContentItem::Seq(
+                vec![model::DeclarationContentItem::Name(
+                    QName::from("bbb"),
+                    None
+                )],
+                None
+            )),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_children() {
+        let (rest, ret) = children("(a)").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationContentItem::Seq(
+                vec![model::DeclarationContentItem::Name(QName::from("a"), None),],
+                None
+            ),
+            ret
+        );
+
+        let (rest, ret) = children("(a | b)?").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationContentItem::Choice(
+                vec![
+                    model::DeclarationContentItem::Name(QName::from("a"), None),
+                    model::DeclarationContentItem::Name(QName::from("b"), None),
+                ],
+                Some("?")
+            ),
+            ret
+        );
+
+        let (rest, ret) = children("(a , b)*").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationContentItem::Seq(
+                vec![
+                    model::DeclarationContentItem::Name(QName::from("a"), None),
+                    model::DeclarationContentItem::Name(QName::from("b"), None),
+                ],
+                Some("*")
+            ),
+            ret
+        );
+
+        let (rest, ret) = children("(a | b | c)+").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationContentItem::Choice(
+                vec![
+                    model::DeclarationContentItem::Name(QName::from("a"), None),
+                    model::DeclarationContentItem::Name(QName::from("b"), None),
+                    model::DeclarationContentItem::Name(QName::from("c"), None),
+                ],
+                Some("+")
+            ),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_cp() {
+        let (rest, ret) = cp("a").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationContentItem::Name(QName::from("a"), None),
+            ret
+        );
+
+        let (rest, ret) = cp("(a | b)?").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationContentItem::Choice(
+                vec![
+                    model::DeclarationContentItem::Name(QName::from("a"), None),
+                    model::DeclarationContentItem::Name(QName::from("b"), None),
+                ],
+                Some("?")
+            ),
+            ret
+        );
+
+        let (rest, ret) = cp("(a , b)*").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationContentItem::Seq(
+                vec![
+                    model::DeclarationContentItem::Name(QName::from("a"), None),
+                    model::DeclarationContentItem::Name(QName::from("b"), None),
+                ],
+                Some("*")
+            ),
+            ret
+        );
+
+        let (rest, ret) = cp("a+").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationContentItem::Name(QName::from("a"), Some("+")),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_mixed() {
+        let (rest, ret) = mixed("(#PCDATA)").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(None, ret);
+
+        let (rest, ret) = mixed("(#PCDATA)*").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(Some(vec![]), ret);
+
+        let (rest, ret) = mixed("(#PCDATA | a)*").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(Some(vec![QName::from("a")]), ret);
+
+        let (rest, ret) = mixed("(#PCDATA | a | b)*").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(Some(vec![QName::from("a"), QName::from("b")]), ret);
+    }
+
+    #[test]
+    fn test_attlist_decl() {
+        let (rest, ret) = attlist_decl("<!ATTLIST a>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationAtt::from((QName::from("a"), vec![])), ret);
+
+        let (rest, ret) = attlist_decl("<!ATTLIST a b ID #REQUIRED>").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationAtt::from((
+                QName::from("a"),
+                vec![model::DeclarationAttDef::from((
+                    model::DeclarationAttName::Attr(QName::from("b")),
+                    model::DeclarationAttType::Id,
+                    model::DeclarationAttDefault::Required
+                )),]
+            )),
+            ret
+        );
+    }
+
+    #[test]
+    fn test_att_type() {
+        let (rest, ret) = att_type("NOTATION (a)").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationAttType::Notation(vec!["a"]), ret);
+
+        let (rest, ret) = att_type("NOTATION (a | b)").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationAttType::Notation(vec!["a", "b"]), ret);
+
+        let (rest, ret) = att_type("(a)").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationAttType::Enumeration(vec!["a"]), ret);
+
+        let (rest, ret) = att_type("(a | b)").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationAttType::Enumeration(vec!["a", "b"]), ret);
+
+        let (rest, ret) = att_type("CDATA").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationAttType::Cdata, ret);
+    }
+
+    #[test]
+    fn test_default_decl() {
+        let (rest, ret) = default_decl("#REQUIRED").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationAttDefault::Required, ret);
+
+        let (rest, ret) = default_decl("#IMPLIED").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(model::DeclarationAttDefault::Implied, ret);
+
+        let (rest, ret) = default_decl("'a'").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationAttDefault::Value(None, vec![model::AttributeValue::from("a")]),
+            ret
+        );
+
+        let (rest, ret) = default_decl("#FIXED 'a'").unwrap();
+        assert_eq!("", rest);
+        assert_eq!(
+            model::DeclarationAttDefault::Value(
+                Some("#FIXED"),
+                vec![model::AttributeValue::from("a")]
+            ),
             ret
         );
     }
