@@ -1069,11 +1069,9 @@ mod tests {
 
     #[test]
     fn test_cdsect() {
-        /* FIXME
         let (rest, ret) = cdsect("<![CDATA[]]>").unwrap();
         assert_eq!("", rest);
-        assert_eq!(model::CData::new(""), ret);
-        */
+        assert_eq!(model::CData::from(""), ret);
 
         let (rest, ret) = cdsect("<![CDATA[aaa]]>").unwrap();
         assert_eq!("", rest);

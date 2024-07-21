@@ -43,16 +43,7 @@ where
         let e = except.clone();
         match parser.parse(i) {
             Ok((rest, value)) => match value.find_substring(e) {
-                Some(index) => {
-                    if index == 0 {
-                        Err(Err::Error(Error::from_error_kind(
-                            input,
-                            ErrorKind::TakeUntil,
-                        )))
-                    } else {
-                        Ok((input.slice(index..), input.slice(..index)))
-                    }
-                }
+                Some(index) => Ok((input.slice(index..), input.slice(..index))),
                 None => Ok((rest, value)),
             },
             Err(e) => Err(e),
@@ -115,10 +106,9 @@ mod tests {
             .unwrap();
         assert_eq!(Err::Error(("1", ErrorKind::Alpha)), err);
 
-        let err = take_until::<_, _, _, (_, ErrorKind)>(alpha1, "bc")("bc")
-            .err()
-            .unwrap();
-        assert_eq!(Err::Error(("bc", ErrorKind::TakeUntil)), err);
+        let (rest, ret) = take_until::<_, _, _, (_, ErrorKind)>(alpha1, "bc")("bc").unwrap();
+        assert_eq!("bc", rest);
+        assert_eq!("", ret);
     }
 }
 
