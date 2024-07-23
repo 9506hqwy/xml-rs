@@ -183,6 +183,7 @@ pub trait UnparsedEntity {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlAttribute {
     local_name: String,
     prefix: Option<String>,
@@ -290,7 +291,8 @@ impl XmlAttribute {
     fn find_delcaration_type(&self) -> Option<XmlDeclarationAttType> {
         let element = self.parent.as_ref()?;
         let doc = self.owner.borrow();
-        let declaration = doc.prolog().declaration()?.borrow();
+        let prolog = doc.prolog.borrow();
+        let declaration = prolog.declaration()?.borrow();
         let elem = declaration
             .attributes()
             .iter()
@@ -313,6 +315,7 @@ impl XmlAttribute {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub enum XmlAttributeValue {
     Text(String),
     Reference(XmlReference),
@@ -320,6 +323,7 @@ pub enum XmlAttributeValue {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlCData {
     data: String,
     parent: Option<XmlNode<XmlElement>>,
@@ -358,6 +362,7 @@ impl XmlCData {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlCharReference {
     text: String,
     num: String,
@@ -407,6 +412,7 @@ impl XmlCharReference {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlComment {
     comment: String,
     parent: Option<XmlItem>,
@@ -436,6 +442,7 @@ impl XmlComment {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlDeclarationAttDef {
     local_name: String,
     prefix: Option<String>,
@@ -471,6 +478,7 @@ impl From<&parser::DeclarationAttDef<'_>> for XmlDeclarationAttDef {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlDeclarationAttList {
     local_name: String,
     prefix: Option<String>,
@@ -542,10 +550,11 @@ impl From<&parser::DeclarationAttType<'_>> for XmlDeclarationAttType {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlDocument {
-    prolog: XmlDocumentProlog,
+    prolog: XmlNode<XmlDocumentProlog>,
     root: Option<XmlNode<XmlElement>>,
-    epilog: XmlDocumentEpilog,
+    epilog: XmlNode<XmlDocumentEpilog>,
     base_uri: String,
     encoding: String,
     standalone: Option<bool>,
@@ -557,15 +566,15 @@ impl Document for XmlDocument {
     fn children(&self) -> OrderedList<XmlItem> {
         let mut items = vec![];
 
-        for v in self.prolog.head.as_slice() {
+        for v in self.prolog.borrow().head.as_slice() {
             items.push(v.clone());
         }
 
-        if let Some(v) = &self.prolog.declaration {
+        if let Some(v) = &self.prolog.borrow().declaration {
             items.push(XmlItem::DocumentType(v.clone()));
         }
 
-        for v in self.prolog.tail.as_slice() {
+        for v in self.prolog.borrow().tail.as_slice() {
             items.push(v.clone());
         }
 
@@ -573,7 +582,7 @@ impl Document for XmlDocument {
             items.push(XmlItem::Element(v.clone()));
         }
 
-        for v in self.epilog.head.as_slice() {
+        for v in self.epilog.borrow().head.as_slice() {
             items.push(v.clone());
         }
 
@@ -589,6 +598,7 @@ impl Document for XmlDocument {
     fn notations(&self) -> Option<UnorderedSet<XmlNode<XmlNotation>>> {
         let items = self
             .prolog
+            .borrow()
             .declaration
             .as_ref()
             .map(|v| v.borrow().notations())
@@ -605,6 +615,7 @@ impl Document for XmlDocument {
     fn unparsed_entities(&self) -> UnorderedSet<XmlNode<XmlUnparsedEntity>> {
         let items = self
             .prolog
+            .borrow()
             .declaration
             .as_ref()
             .map(|v| v.borrow().unparsed_entities())
@@ -636,9 +647,9 @@ impl Document for XmlDocument {
 impl XmlDocument {
     pub fn new(value: &parser::Document<'_>) -> error::Result<XmlNode<Self>> {
         let document = node(XmlDocument {
-            prolog: XmlDocumentProlog::default(),
+            prolog: node(XmlDocumentProlog::default()),
             root: None,
-            epilog: XmlDocumentEpilog::default(),
+            epilog: node(XmlDocumentEpilog::default()),
             base_uri: String::new(),
             encoding: xml_encoding(value),
             standalone: xml_standalone(value),
@@ -658,15 +669,15 @@ impl XmlDocument {
         Ok(document)
     }
 
-    pub fn prolog(&self) -> &XmlDocumentProlog {
-        &self.prolog
+    pub fn prolog(&self) -> XmlNode<XmlDocumentProlog> {
+        self.prolog.clone()
     }
 
-    fn set_epilog(&mut self, epilog: XmlDocumentEpilog) {
+    fn set_epilog(&mut self, epilog: XmlNode<XmlDocumentEpilog>) {
         self.epilog = epilog;
     }
 
-    fn set_prolog(&mut self, prolog: XmlDocumentProlog) {
+    fn set_prolog(&mut self, prolog: XmlNode<XmlDocumentProlog>) {
         self.prolog = prolog;
     }
 
@@ -677,13 +688,13 @@ impl XmlDocument {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct XmlDocumentEpilog {
     head: Vec<XmlItem>,
 }
 
 impl XmlDocumentEpilog {
-    pub fn new(value: &parser::Document, owner: XmlNode<XmlDocument>) -> Self {
+    pub fn new(value: &parser::Document, owner: XmlNode<XmlDocument>) -> XmlNode<Self> {
         let mut head = vec![];
 
         for h in value.miscs.as_slice() {
@@ -700,13 +711,13 @@ impl XmlDocumentEpilog {
             }
         }
 
-        XmlDocumentEpilog { head }
+        node(XmlDocumentEpilog { head })
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct XmlDocumentProlog {
     head: Vec<XmlItem>,
     declaration: Option<XmlNode<XmlDocumentTypeDeclaration>>,
@@ -714,7 +725,7 @@ pub struct XmlDocumentProlog {
 }
 
 impl XmlDocumentProlog {
-    pub fn new(value: &parser::Prolog, owner: XmlNode<XmlDocument>) -> Self {
+    pub fn new(value: &parser::Prolog, owner: XmlNode<XmlDocument>) -> XmlNode<Self> {
         let mut head = vec![];
         let mut declaration = None;
         let mut tail = vec![];
@@ -751,11 +762,11 @@ impl XmlDocumentProlog {
             }
         }
 
-        XmlDocumentProlog {
+        node(XmlDocumentProlog {
             head,
             declaration,
             tail,
-        }
+        })
     }
 
     pub fn declaration(&self) -> Option<&XmlNode<XmlDocumentTypeDeclaration>> {
@@ -765,13 +776,14 @@ impl XmlDocumentProlog {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlDocumentTypeDeclaration {
     local_name: String,
     prefix: Option<String>,
     system_identifier: Option<String>,
     public_identifier: Option<String>,
     attributes: Vec<XmlDeclarationAttList>,
-    entities: Vec<XmlEntity>,
+    entities: Vec<XmlNode<XmlEntity>>,
     pis: Vec<XmlNode<XmlProcessingInstruction>>,
     notations: Vec<XmlNode<XmlNotation>>,
     parent: XmlNode<XmlDocument>,
@@ -878,7 +890,7 @@ impl XmlDocumentTypeDeclaration {
         self.attributes.as_slice()
     }
 
-    pub fn entities(&self) -> &[XmlEntity] {
+    pub fn entities(&self) -> &[XmlNode<XmlEntity>] {
         self.entities.as_slice()
     }
 
@@ -889,7 +901,7 @@ impl XmlDocumentTypeDeclaration {
     pub fn unparsed_entities(&self) -> Vec<XmlNode<XmlUnparsedEntity>> {
         self.entities
             .iter()
-            .filter(|v| v.notation_name.is_some())
+            .filter(|v| v.borrow().notation_name.is_some())
             .map(|v| XmlUnparsedEntity::new(v.clone()))
             .collect()
     }
@@ -898,7 +910,7 @@ impl XmlDocumentTypeDeclaration {
         self.attributes.push(attribute);
     }
 
-    fn push_entity(&mut self, entity: XmlEntity) {
+    fn push_entity(&mut self, entity: XmlNode<XmlEntity>) {
         self.entities.push(entity);
     }
 
@@ -913,6 +925,7 @@ impl XmlDocumentTypeDeclaration {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlElement {
     local_name: String,
     prefix: Option<String>,
@@ -1150,7 +1163,10 @@ impl From<(&str, &str, XmlNode<XmlDocument>)> for XmlEntity {
 }
 
 impl XmlEntity {
-    pub fn new(value: &parser::DeclarationGeneralEntity, owner: XmlNode<XmlDocument>) -> Self {
+    pub fn new(
+        value: &parser::DeclarationGeneralEntity,
+        owner: XmlNode<XmlDocument>,
+    ) -> XmlNode<Self> {
         let name = value.name.to_string();
 
         let (values, system_identifier, public_identifier, notation_name) = match &value.def {
@@ -1165,14 +1181,14 @@ impl XmlEntity {
             }
         };
 
-        XmlEntity {
+        node(XmlEntity {
             name,
             values,
             system_identifier,
             public_identifier,
             notation_name,
             owner,
-        }
+        })
     }
 
     pub fn name(&self) -> &str {
@@ -1504,7 +1520,7 @@ impl XmlItem {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct XmlNamespace {
     prefix: Option<String>,
     namespace_name: String,
@@ -1522,6 +1538,7 @@ impl Namespace for XmlNamespace {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlNotation {
     name: String,
     system_identifier: Option<String>,
@@ -1580,6 +1597,7 @@ impl XmlNotation {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlProcessingInstruction {
     target: String,
     content: Option<String>,
@@ -1651,6 +1669,7 @@ impl XmlReference {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlText {
     text: String,
     parent: Option<XmlNode<XmlElement>>,
@@ -1689,8 +1708,12 @@ impl XmlText {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlUnexpandedEntityReference {
-    entity: XmlEntity,
+    entity: XmlNode<XmlEntity>,
+    name: String,
+    system_identifier: Option<String>,
+    public_identifier: Option<String>,
     declaration_base_uri: String,
     parent: XmlNode<XmlElement>,
     owner: XmlNode<XmlDocument>,
@@ -1698,15 +1721,15 @@ pub struct XmlUnexpandedEntityReference {
 
 impl UnexpandedEntityReference for XmlUnexpandedEntityReference {
     fn name(&self) -> &str {
-        self.entity.name()
+        self.name.as_str()
     }
 
     fn system_identifier(&self) -> Value<Option<&str>> {
-        Value::V(self.entity.system_identifier())
+        Value::V(self.system_identifier.as_deref())
     }
 
     fn public_identifier(&self) -> Value<Option<&str>> {
-        Value::V(self.entity.public_identifier())
+        Value::V(self.public_identifier.as_deref())
     }
 
     fn declaration_base_uri(&self) -> &str {
@@ -1720,14 +1743,23 @@ impl UnexpandedEntityReference for XmlUnexpandedEntityReference {
 
 impl XmlUnexpandedEntityReference {
     pub fn new(
-        entity: XmlEntity,
+        entity: XmlNode<XmlEntity>,
         parent: XmlNode<XmlElement>,
         owner: XmlNode<XmlDocument>,
     ) -> XmlNode<Self> {
+        let name = entity.borrow().name().to_string();
+
+        let system_identifier = entity.borrow().system_identifier().map(|v| v.to_string());
+
+        let public_identifier = entity.borrow().public_identifier().map(|v| v.to_string());
+
         let declaration_base_uri = String::new();
 
         node(XmlUnexpandedEntityReference {
             entity,
+            name,
+            system_identifier,
+            public_identifier,
             declaration_base_uri,
             parent,
             owner,
@@ -1737,22 +1769,27 @@ impl XmlUnexpandedEntityReference {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct XmlUnparsedEntity {
-    entity: XmlEntity,
+    entity: XmlNode<XmlEntity>,
+    name: String,
+    system_identifier: String,
+    public_identifier: Option<String>,
     declaration_base_uri: String,
+    notation_name: String,
 }
 
 impl UnparsedEntity for XmlUnparsedEntity {
     fn name(&self) -> &str {
-        self.entity.name()
+        self.name.as_str()
     }
 
     fn system_identifier(&self) -> &str {
-        self.entity.system_identifier().unwrap()
+        self.system_identifier.as_str()
     }
 
     fn public_identifier(&self) -> Option<&str> {
-        self.entity.public_identifier()
+        self.public_identifier.as_deref()
     }
 
     fn declaration_base_uri(&self) -> &str {
@@ -1760,28 +1797,40 @@ impl UnparsedEntity for XmlUnparsedEntity {
     }
 
     fn notation_name(&self) -> &str {
-        self.entity.notation_name().unwrap()
+        self.notation_name.as_str()
     }
 
     fn notation(&self) -> Value<Option<XmlNode<XmlNotation>>> {
-        notation(&self.entity.owner(), self.notation_name())
+        notation(&self.entity.borrow().owner(), self.notation_name())
     }
 }
 
 impl XmlUnparsedEntity {
-    pub fn new(entity: XmlEntity) -> XmlNode<Self> {
+    pub fn new(entity: XmlNode<XmlEntity>) -> XmlNode<Self> {
+        let name = entity.borrow().name().to_string();
+
+        let system_identifier = entity.borrow().system_identifier().unwrap().to_string();
+
+        let public_identifier = entity.borrow().public_identifier().map(|v| v.to_string());
+
         let declaration_base_uri = String::new();
+
+        let notation_name = entity.borrow().notation_name().unwrap().to_string();
 
         node(XmlUnparsedEntity {
             entity,
+            name,
+            system_identifier,
+            public_identifier,
             declaration_base_uri,
+            notation_name,
         })
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct NamespaceUri {
     value: String,
 }
@@ -1826,6 +1875,7 @@ impl NamespaceUri {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct OrderedList<T>
 where
     T: Clone,
@@ -1891,6 +1941,7 @@ where
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct UnorderedSet<T>
 where
     T: Clone,
@@ -1952,7 +2003,11 @@ where
 
 // -----------------------------------------------------------------------------------------------
 
-pub enum Value<T> {
+#[derive(Clone)]
+pub enum Value<T>
+where
+    T: Clone,
+{
     Unknown,
     V(T),
 }
@@ -1980,13 +2035,13 @@ fn char_from_char16(value: &str) -> error::Result<char> {
     char::from_u32(num).ok_or(error::Error::NotFoundReference(format!("#x{}", value)))
 }
 
-fn entity(document: &XmlNode<XmlDocument>, name: &str) -> error::Result<XmlEntity> {
-    if let Some(declaration) = document.borrow().prolog().declaration() {
+fn entity(document: &XmlNode<XmlDocument>, name: &str) -> error::Result<XmlNode<XmlEntity>> {
+    if let Some(declaration) = document.borrow().prolog().borrow().declaration() {
         if let Some(v) = declaration
             .borrow()
             .entities()
             .iter()
-            .find(|v| v.name() == name)
+            .find(|v| v.borrow().name() == name)
             .cloned()
         {
             return Ok(v);
@@ -1994,11 +2049,11 @@ fn entity(document: &XmlNode<XmlDocument>, name: &str) -> error::Result<XmlEntit
     }
 
     match name {
-        "lt" => Ok(XmlEntity::from(("lt", "<", document.clone()))),
-        "gt" => Ok(XmlEntity::from(("gt", ">", document.clone()))),
-        "amp" => Ok(XmlEntity::from(("amp", "&", document.clone()))),
-        "apos" => Ok(XmlEntity::from(("apos", "'", document.clone()))),
-        "quot" => Ok(XmlEntity::from(("quot", "\"", document.clone()))),
+        "lt" => Ok(node(XmlEntity::from(("lt", "<", document.clone())))),
+        "gt" => Ok(node(XmlEntity::from(("gt", ">", document.clone())))),
+        "amp" => Ok(node(XmlEntity::from(("amp", "&", document.clone())))),
+        "apos" => Ok(node(XmlEntity::from(("apos", "'", document.clone())))),
+        "quot" => Ok(node(XmlEntity::from(("quot", "\"", document.clone())))),
         _ => Err(error::Error::NotFoundReference(name.to_string())),
     }
 }
@@ -2068,7 +2123,7 @@ fn qname(name: &xml_nom::model::QName<'_>) -> (String, Option<String>) {
 fn str_from_name(name: &str, owner: &XmlNode<XmlDocument>) -> error::Result<String> {
     let entity = entity(owner, name)?;
     let mut parsed = String::new();
-    for value in entity.values().unwrap_or_default() {
+    for value in entity.borrow().values().unwrap_or_default() {
         match &value {
             XmlEntityValue::Parameter(_) => {
                 unimplemented!("Not support parameter entity reference.")
