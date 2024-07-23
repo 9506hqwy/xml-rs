@@ -257,6 +257,14 @@ impl Attribute for XmlAttribute {
     }
 }
 
+impl PartialEq<XmlAttribute> for XmlAttribute {
+    fn eq(&self, other: &XmlAttribute) -> bool {
+        self.local_name == other.local_name
+            && self.prefix == other.prefix
+            && self.values == other.values
+    }
+}
+
 impl XmlAttribute {
     pub fn new(
         value: &parser::Attribute,
@@ -315,7 +323,7 @@ impl XmlAttribute {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum XmlAttributeValue {
     Text(String),
     Reference(XmlReference),
@@ -342,6 +350,12 @@ impl Character for XmlCData {
 
     fn parent(&self) -> error::Result<XmlNode<XmlElement>> {
         self.parent.clone().ok_or(error::Error::IsolatedNode)
+    }
+}
+
+impl PartialEq<XmlCData> for XmlCData {
+    fn eq(&self, other: &XmlCData) -> bool {
+        self.data == other.data
     }
 }
 
@@ -383,6 +397,12 @@ impl Character for XmlCharReference {
 
     fn parent(&self) -> error::Result<XmlNode<XmlElement>> {
         self.parent.clone().ok_or(error::Error::IsolatedNode)
+    }
+}
+
+impl PartialEq<XmlCharReference> for XmlCharReference {
+    fn eq(&self, other: &XmlCharReference) -> bool {
+        self.text == other.text
     }
 }
 
@@ -429,6 +449,12 @@ impl Comment for XmlComment {
     }
 }
 
+impl PartialEq<XmlComment> for XmlComment {
+    fn eq(&self, other: &XmlComment) -> bool {
+        self.comment == other.comment
+    }
+}
+
 impl XmlComment {
     pub fn new(comment: &str, parent: XmlItem, owner: XmlNode<XmlDocument>) -> XmlNode<Self> {
         let comment = comment.to_string();
@@ -442,7 +468,7 @@ impl XmlComment {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct XmlDeclarationAttDef {
     local_name: String,
     prefix: Option<String>,
@@ -493,6 +519,14 @@ impl HasQName for XmlDeclarationAttList {
 
     fn prefix(&self) -> Option<&str> {
         self.prefix.as_deref()
+    }
+}
+
+impl PartialEq<XmlDeclarationAttList> for XmlDeclarationAttList {
+    fn eq(&self, other: &XmlDeclarationAttList) -> bool {
+        self.local_name == other.local_name
+            && self.prefix == other.prefix
+            && self.atts == other.atts
     }
 }
 
@@ -644,6 +678,17 @@ impl Document for XmlDocument {
     }
 }
 
+impl PartialEq<XmlDocument> for XmlDocument {
+    fn eq(&self, other: &XmlDocument) -> bool {
+        self.prolog == other.prolog
+            && self.root == other.root
+            && self.epilog == other.epilog
+            && self.encoding == other.encoding
+            && self.standalone == other.standalone
+            && self.version == other.version
+    }
+}
+
 impl XmlDocument {
     pub fn new(value: &parser::Document<'_>) -> error::Result<XmlNode<Self>> {
         let document = node(XmlDocument {
@@ -688,7 +733,7 @@ impl XmlDocument {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct XmlDocumentEpilog {
     head: Vec<XmlItem>,
 }
@@ -717,7 +762,7 @@ impl XmlDocumentEpilog {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct XmlDocumentProlog {
     head: Vec<XmlItem>,
     declaration: Option<XmlNode<XmlDocumentTypeDeclaration>>,
@@ -814,6 +859,19 @@ impl DocumentTypeDeclaration for XmlDocumentTypeDeclaration {
 
     fn parent(&self) -> XmlNode<XmlDocument> {
         self.parent.clone()
+    }
+}
+
+impl PartialEq<XmlDocumentTypeDeclaration> for XmlDocumentTypeDeclaration {
+    fn eq(&self, other: &XmlDocumentTypeDeclaration) -> bool {
+        self.local_name == other.local_name
+            && self.prefix == other.prefix
+            && self.system_identifier == other.system_identifier
+            && self.public_identifier == other.public_identifier
+            && self.attributes == other.attributes
+            && self.entities == other.entities
+            && self.pis == other.pis
+            && self.notations == other.notations
     }
 }
 
@@ -1027,6 +1085,15 @@ impl Element for XmlElement {
     }
 }
 
+impl PartialEq<XmlElement> for XmlElement {
+    fn eq(&self, other: &XmlElement) -> bool {
+        self.local_name == other.local_name
+            && self.prefix == other.prefix
+            && self.children == other.children
+            && self.attributes == other.attributes
+    }
+}
+
 impl XmlElement {
     pub fn new(
         value: &parser::Element<'_>,
@@ -1162,6 +1229,16 @@ impl From<(&str, &str, XmlNode<XmlDocument>)> for XmlEntity {
     }
 }
 
+impl PartialEq<XmlEntity> for XmlEntity {
+    fn eq(&self, other: &XmlEntity) -> bool {
+        self.name == other.name
+            && self.values == other.values
+            && self.system_identifier == other.system_identifier
+            && self.public_identifier == other.public_identifier
+            && self.notation_name == other.notation_name
+    }
+}
+
 impl XmlEntity {
     pub fn new(
         value: &parser::DeclarationGeneralEntity,
@@ -1218,7 +1295,7 @@ impl XmlEntity {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum XmlEntityValue {
     Text(String),
     Parameter(String),
@@ -1239,7 +1316,7 @@ impl XmlEntityValue {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum XmlItem {
     Attribute(XmlNode<XmlAttribute>),
     CData(XmlNode<XmlCData>),
@@ -1566,6 +1643,14 @@ impl Notation for XmlNotation {
     }
 }
 
+impl PartialEq<XmlNotation> for XmlNotation {
+    fn eq(&self, other: &XmlNotation) -> bool {
+        self.name == other.name
+            && self.system_identifier == other.system_identifier
+            && self.public_identifier == other.public_identifier
+    }
+}
+
 impl XmlNotation {
     pub fn new(
         value: &parser::DeclarationNotation,
@@ -1628,6 +1713,12 @@ impl ProcessingInstruction for XmlProcessingInstruction {
     }
 }
 
+impl PartialEq<XmlProcessingInstruction> for XmlProcessingInstruction {
+    fn eq(&self, other: &XmlProcessingInstruction) -> bool {
+        self.target == other.target && self.content == other.content
+    }
+}
+
 impl XmlProcessingInstruction {
     pub fn new(
         value: &parser::PI<'_>,
@@ -1652,7 +1743,7 @@ impl XmlProcessingInstruction {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum XmlReference {
     Character(String, u32),
     Entity(String),
@@ -1688,6 +1779,12 @@ impl Character for XmlText {
 
     fn parent(&self) -> error::Result<XmlNode<XmlElement>> {
         self.parent.clone().ok_or(error::Error::IsolatedNode)
+    }
+}
+
+impl PartialEq<XmlText> for XmlText {
+    fn eq(&self, other: &XmlText) -> bool {
+        self.text == other.text
     }
 }
 
@@ -1741,6 +1838,12 @@ impl UnexpandedEntityReference for XmlUnexpandedEntityReference {
     }
 }
 
+impl PartialEq<XmlUnexpandedEntityReference> for XmlUnexpandedEntityReference {
+    fn eq(&self, other: &XmlUnexpandedEntityReference) -> bool {
+        self.entity == other.entity
+    }
+}
+
 impl XmlUnexpandedEntityReference {
     pub fn new(
         entity: XmlNode<XmlEntity>,
@@ -1769,7 +1872,7 @@ impl XmlUnexpandedEntityReference {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct XmlUnparsedEntity {
     entity: XmlNode<XmlEntity>,
     name: String,
