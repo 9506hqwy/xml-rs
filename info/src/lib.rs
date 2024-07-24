@@ -225,7 +225,7 @@ impl Attribute for XmlAttribute {
         for value in self.values.as_slice() {
             match value {
                 XmlAttributeValue::Reference(v) => {
-                    let v = str_from_reference(v, &self.owner)?;
+                    let v = str_from_reference(v.clone(), &self.owner)?;
                     normalized.push_str(normalize_ws(v.as_str()).as_str());
                 }
                 XmlAttributeValue::Text(ref v) => {
@@ -277,23 +277,37 @@ impl XmlAttribute {
             prefix,
             values: vec![],
             parent: Some(parent),
-            owner,
+            owner: owner.clone(),
         });
 
         for value in value.value.as_slice() {
             match value {
                 parser::AttributeValue::Reference(v) => {
-                    let value = XmlAttributeValue::Reference(XmlReference::new(v));
+                    let value = XmlAttributeValue::Reference(XmlReference::new(
+                        v,
+                        attribute.clone().into(),
+                        owner.clone(),
+                    ));
                     attribute.borrow_mut().push_value(value);
                 }
                 parser::AttributeValue::Text(v) => {
-                    let value = XmlAttributeValue::Text(v.to_string());
-                    attribute.borrow_mut().push_value(value);
+                    if !v.is_empty() {
+                        let value = XmlAttributeValue::Text(v.to_string());
+                        attribute.borrow_mut().push_value(value);
+                    }
                 }
             }
         }
 
         attribute
+    }
+
+    pub fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
+
+    pub fn values(&self) -> &[XmlAttributeValue] {
+        self.values.as_slice()
     }
 
     fn find_delcaration_type(&self) -> Option<XmlDeclarationAttType> {
@@ -326,7 +340,7 @@ impl XmlAttribute {
 #[derive(Clone, Debug, PartialEq)]
 pub enum XmlAttributeValue {
     Text(String),
-    Reference(XmlReference),
+    Reference(XmlNode<XmlReference>),
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -371,6 +385,18 @@ impl XmlCData {
             parent: Some(parent),
             owner,
         })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
     }
 }
 
@@ -428,6 +454,18 @@ impl XmlCharReference {
             owner,
         }))
     }
+
+    pub fn num(&self) -> &str {
+        self.num.as_str()
+    }
+
+    pub fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
+
+    pub fn radix(&self) -> u32 {
+        self.radix
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -463,6 +501,18 @@ impl XmlComment {
             parent: Some(parent),
             owner,
         })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.comment.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.comment.len()
+    }
+
+    pub fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
     }
 }
 
@@ -509,7 +559,6 @@ pub struct XmlDeclarationAttList {
     local_name: String,
     prefix: Option<String>,
     atts: Vec<XmlDeclarationAttDef>,
-    owner: XmlNode<XmlDocument>,
 }
 
 impl HasQName for XmlDeclarationAttList {
@@ -531,7 +580,7 @@ impl PartialEq<XmlDeclarationAttList> for XmlDeclarationAttList {
 }
 
 impl XmlDeclarationAttList {
-    pub fn new(value: &parser::DeclarationAtt<'_>, owner: XmlNode<XmlDocument>) -> Self {
+    pub fn new(value: &parser::DeclarationAtt<'_>) -> Self {
         let (local_name, prefix) = qname(&value.name);
 
         let atts = value.defs.iter().map(XmlDeclarationAttDef::from).collect();
@@ -540,7 +589,6 @@ impl XmlDeclarationAttList {
             local_name,
             prefix,
             atts,
-            owner,
         }
     }
 }
@@ -903,7 +951,7 @@ impl XmlDocumentTypeDeclaration {
             match subset {
                 parser::InternalSubset::Markup(v) => match v {
                     parser::DeclarationMarkup::Attributes(v) => {
-                        let attribute = XmlDeclarationAttList::new(v, parent.clone());
+                        let attribute = XmlDeclarationAttList::new(v);
                         declaration.borrow_mut().push_attribute(attribute);
                     }
                     parser::DeclarationMarkup::Commnect(_) => {
@@ -914,7 +962,8 @@ impl XmlDocumentTypeDeclaration {
                     }
                     parser::DeclarationMarkup::Entity(v) => match v {
                         parser::DeclarationEntity::GeneralEntity(v) => {
-                            let entity = XmlEntity::new(v, parent.clone());
+                            let entity =
+                                XmlEntity::new(v, declaration.clone().into(), parent.clone());
                             declaration.borrow_mut().push_entity(entity);
                         }
                         parser::DeclarationEntity::ParameterEntity(_) => {
@@ -991,6 +1040,7 @@ pub struct XmlElement {
     attributes: Vec<XmlNode<XmlAttribute>>,
     base_uri: String,
     parent: Option<XmlItem>,
+    owner: XmlNode<XmlDocument>,
 }
 
 impl HasQName for XmlElement {
@@ -1109,6 +1159,7 @@ impl XmlElement {
             attributes: vec![],
             base_uri: String::new(),
             parent: Some(parent),
+            owner: owner.clone(),
         });
 
         if let Some(content) = &value.content {
@@ -1174,6 +1225,10 @@ impl XmlElement {
         Ok(element)
     }
 
+    pub fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
+
     pub fn set_local_name(&mut self, local_name: &str) {
         self.local_name = local_name.to_string();
     }
@@ -1212,6 +1267,7 @@ pub struct XmlEntity {
     system_identifier: Option<String>,
     public_identifier: Option<String>,
     notation_name: Option<String>,
+    parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
 }
 
@@ -1224,6 +1280,7 @@ impl From<(&str, &str, XmlNode<XmlDocument>)> for XmlEntity {
             system_identifier: None,
             public_identifier: None,
             notation_name: None,
+            parent: None,
             owner,
         }
     }
@@ -1242,13 +1299,25 @@ impl PartialEq<XmlEntity> for XmlEntity {
 impl XmlEntity {
     pub fn new(
         value: &parser::DeclarationGeneralEntity,
+        parent: XmlItem,
         owner: XmlNode<XmlDocument>,
     ) -> XmlNode<Self> {
-        let name = value.name.to_string();
+        let entity = node(XmlEntity {
+            name: value.name.to_string(),
+            values: None,
+            system_identifier: None,
+            public_identifier: None,
+            notation_name: None,
+            parent: Some(parent),
+            owner: owner.clone(),
+        });
 
         let (values, system_identifier, public_identifier, notation_name) = match &value.def {
             parser::DeclarationEntityDef::EntityValue(v) => {
-                let values = v.iter().map(XmlEntityValue::new).collect();
+                let values = v
+                    .iter()
+                    .map(|v| XmlEntityValue::new(v, entity.clone().into(), owner.clone()))
+                    .collect();
                 (Some(values), None, None, None)
             }
             parser::DeclarationEntityDef::ExternalId(v, n) => {
@@ -1257,15 +1326,12 @@ impl XmlEntity {
                 (None, Some(s), p, n)
             }
         };
+        entity.borrow_mut().values = values;
+        entity.borrow_mut().system_identifier = system_identifier;
+        entity.borrow_mut().public_identifier = public_identifier;
+        entity.borrow_mut().notation_name = notation_name;
 
-        node(XmlEntity {
-            name,
-            values,
-            system_identifier,
-            public_identifier,
-            notation_name,
-            owner,
-        })
+        entity
     }
 
     pub fn name(&self) -> &str {
@@ -1291,6 +1357,10 @@ impl XmlEntity {
     pub fn owner(&self) -> XmlNode<XmlDocument> {
         self.owner.clone()
     }
+
+    pub fn parent(&self) -> Option<XmlItem> {
+        self.parent.clone()
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -1299,16 +1369,22 @@ impl XmlEntity {
 pub enum XmlEntityValue {
     Text(String),
     Parameter(String),
-    Reference(XmlReference),
+    Reference(XmlNode<XmlReference>),
 }
 
 impl XmlEntityValue {
-    pub fn new(value: &parser::EntityValue<'_>) -> Self {
+    pub fn new(
+        value: &parser::EntityValue<'_>,
+        parent: XmlItem,
+        owner: XmlNode<XmlDocument>,
+    ) -> Self {
         match value {
             parser::EntityValue::ParameterEntityReference(v) => {
                 XmlEntityValue::Parameter(v.to_string())
             }
-            parser::EntityValue::Reference(v) => XmlEntityValue::Reference(XmlReference::new(v)),
+            parser::EntityValue::Reference(v) => {
+                XmlEntityValue::Reference(XmlReference::new(v, parent, owner))
+            }
             parser::EntityValue::Text(v) => XmlEntityValue::Text(v.to_string()),
         }
     }
@@ -1325,6 +1401,7 @@ pub enum XmlItem {
     Document(XmlNode<XmlDocument>),
     DocumentType(XmlNode<XmlDocumentTypeDeclaration>),
     Element(XmlNode<XmlElement>),
+    Entity(XmlNode<XmlEntity>),
     Namespace(XmlNode<XmlNamespace>),
     Notation(XmlNode<XmlNotation>),
     PI(XmlNode<XmlProcessingInstruction>),
@@ -1372,6 +1449,12 @@ impl From<XmlNode<XmlDocumentTypeDeclaration>> for XmlItem {
 impl From<XmlNode<XmlElement>> for XmlItem {
     fn from(value: XmlNode<XmlElement>) -> Self {
         XmlItem::Element(value)
+    }
+}
+
+impl From<XmlNode<XmlEntity>> for XmlItem {
+    fn from(value: XmlNode<XmlEntity>) -> Self {
+        XmlItem::Entity(value)
     }
 }
 
@@ -1449,6 +1532,12 @@ impl From<XmlDocumentTypeDeclaration> for XmlItem {
 
 impl From<XmlElement> for XmlItem {
     fn from(value: XmlElement) -> Self {
+        XmlItem::from(node(value))
+    }
+}
+
+impl From<XmlEntity> for XmlItem {
+    fn from(value: XmlEntity) -> Self {
         XmlItem::from(node(value))
     }
 }
@@ -1540,6 +1629,14 @@ impl XmlItem {
 
     pub fn as_element(&self) -> Option<XmlNode<XmlElement>> {
         if let XmlItem::Element(v) = self {
+            Some(v.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_entity(&self) -> Option<XmlNode<XmlEntity>> {
+        if let XmlItem::Entity(v) = self {
             Some(v.clone())
         } else {
             None
@@ -1678,6 +1775,14 @@ impl XmlNotation {
             owner,
         })
     }
+
+    pub fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
+
+    pub fn parent(&self) -> XmlItem {
+        self.parent.clone()
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -1739,21 +1844,85 @@ impl XmlProcessingInstruction {
             owner,
         })
     }
+
+    pub fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct XmlReference {
+    value: XmlReferenceValue,
+    parent: Option<XmlItem>,
+    owner: XmlNode<XmlDocument>,
+}
+
+impl PartialEq<XmlReference> for XmlReference {
+    fn eq(&self, other: &XmlReference) -> bool {
+        self.value == other.value
+    }
+}
+
+impl XmlReference {
+    pub fn new(
+        value: &parser::Reference,
+        parent: XmlItem,
+        owner: XmlNode<XmlDocument>,
+    ) -> XmlNode<Self> {
+        node(XmlReference {
+            value: XmlReferenceValue::new(value),
+            parent: Some(parent),
+            owner,
+        })
+    }
+
+    pub fn new_from_char_ref(value: XmlNode<XmlCharReference>) -> XmlNode<Self> {
+        let num = value.borrow().num().to_string();
+        let radix = value.borrow().radix();
+        node(XmlReference {
+            value: XmlReferenceValue::Character(num, radix),
+            parent: value.borrow().parent().ok().map(|v| v.into()),
+            owner: value.borrow().owner(),
+        })
+    }
+
+    pub fn new_from_ref(value: XmlNode<XmlEntity>) -> XmlNode<Self> {
+        let name = value.borrow().name().to_string();
+        node(XmlReference {
+            value: XmlReferenceValue::Entity(name),
+            parent: value.borrow().parent(),
+            owner: value.borrow().owner(),
+        })
+    }
+
+    pub fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
+
+    pub fn parent(&self) -> error::Result<XmlItem> {
+        self.parent.clone().ok_or(error::Error::IsolatedNode)
+    }
+
+    pub fn value(&self) -> XmlReferenceValue {
+        self.value.clone()
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum XmlReference {
+pub enum XmlReferenceValue {
     Character(String, u32),
     Entity(String),
 }
 
-impl XmlReference {
+impl XmlReferenceValue {
     pub fn new(value: &parser::Reference) -> Self {
         match value {
-            parser::Reference::Character(v, r) => XmlReference::Character(v.to_string(), *r),
-            parser::Reference::Entity(v) => XmlReference::Entity(v.to_string()),
+            parser::Reference::Character(v, r) => XmlReferenceValue::Character(v.to_string(), *r),
+            parser::Reference::Entity(v) => XmlReferenceValue::Entity(v.to_string()),
         }
     }
 }
@@ -1800,6 +1969,18 @@ impl XmlText {
             parent: Some(parent),
             owner,
         })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.text.len()
+    }
+
+    pub fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
     }
 }
 
@@ -1868,6 +2049,14 @@ impl XmlUnexpandedEntityReference {
             owner,
         })
     }
+
+    pub fn entity(&self) -> XmlNode<XmlEntity> {
+        self.entity.clone()
+    }
+
+    pub fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -1928,6 +2117,10 @@ impl XmlUnparsedEntity {
             declaration_base_uri,
             notation_name,
         })
+    }
+
+    pub fn entity(&self) -> XmlNode<XmlEntity> {
+        self.entity.clone()
     }
 }
 
@@ -2232,7 +2425,7 @@ fn str_from_name(name: &str, owner: &XmlNode<XmlDocument>) -> error::Result<Stri
                 unimplemented!("Not support parameter entity reference.")
             }
             XmlEntityValue::Reference(v) => {
-                let v = str_from_reference(v, owner)?;
+                let v = str_from_reference(v.clone(), owner)?;
                 parsed.push_str(v.as_str());
             }
             XmlEntityValue::Text(v) => parsed.push_str(v),
@@ -2241,14 +2434,17 @@ fn str_from_name(name: &str, owner: &XmlNode<XmlDocument>) -> error::Result<Stri
     Ok(parsed)
 }
 
-fn str_from_reference(value: &XmlReference, owner: &XmlNode<XmlDocument>) -> error::Result<String> {
-    match value {
-        XmlReference::Character(v, r) => match r {
+fn str_from_reference(
+    value: XmlNode<XmlReference>,
+    owner: &XmlNode<XmlDocument>,
+) -> error::Result<String> {
+    match &value.borrow().value {
+        XmlReferenceValue::Character(v, r) => match r {
             10 => char_from_char10(v).map(|v| v.to_string()),
             16 => char_from_char16(v).map(|v| v.to_string()),
             _ => unreachable!(),
         },
-        XmlReference::Entity(v) => str_from_name(v, owner),
+        XmlReferenceValue::Entity(v) => str_from_name(v, owner),
     }
 }
 
