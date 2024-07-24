@@ -183,7 +183,7 @@ pub trait UnparsedEntity {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlAttribute {
     local_name: String,
     prefix: Option<String>,
@@ -323,7 +323,7 @@ impl XmlAttribute {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum XmlAttributeValue {
     Text(String),
     Reference(XmlReference),
@@ -331,7 +331,7 @@ pub enum XmlAttributeValue {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlCData {
     data: String,
     parent: Option<XmlNode<XmlElement>>,
@@ -376,7 +376,7 @@ impl XmlCData {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlCharReference {
     text: String,
     num: String,
@@ -432,7 +432,7 @@ impl XmlCharReference {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlComment {
     comment: String,
     parent: Option<XmlItem>,
@@ -468,7 +468,7 @@ impl XmlComment {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct XmlDeclarationAttDef {
     local_name: String,
     prefix: Option<String>,
@@ -504,7 +504,7 @@ impl From<&parser::DeclarationAttDef<'_>> for XmlDeclarationAttDef {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlDeclarationAttList {
     local_name: String,
     prefix: Option<String>,
@@ -584,7 +584,7 @@ impl From<&parser::DeclarationAttType<'_>> for XmlDeclarationAttType {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlDocument {
     prolog: XmlNode<XmlDocumentProlog>,
     root: Option<XmlNode<XmlElement>>,
@@ -733,7 +733,7 @@ impl XmlDocument {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct XmlDocumentEpilog {
     head: Vec<XmlItem>,
 }
@@ -762,7 +762,7 @@ impl XmlDocumentEpilog {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct XmlDocumentProlog {
     head: Vec<XmlItem>,
     declaration: Option<XmlNode<XmlDocumentTypeDeclaration>>,
@@ -821,7 +821,7 @@ impl XmlDocumentProlog {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlDocumentTypeDeclaration {
     local_name: String,
     prefix: Option<String>,
@@ -983,7 +983,7 @@ impl XmlDocumentTypeDeclaration {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlElement {
     local_name: String,
     prefix: Option<String>,
@@ -1205,7 +1205,7 @@ impl XmlElement {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlEntity {
     name: String,
     values: Option<Vec<XmlEntityValue>>,
@@ -1295,7 +1295,7 @@ impl XmlEntity {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum XmlEntityValue {
     Text(String),
     Parameter(String),
@@ -1316,7 +1316,7 @@ impl XmlEntityValue {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum XmlItem {
     Attribute(XmlNode<XmlAttribute>),
     CData(XmlNode<XmlCData>),
@@ -1597,7 +1597,7 @@ impl XmlItem {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct XmlNamespace {
     prefix: Option<String>,
     namespace_name: String,
@@ -1615,7 +1615,7 @@ impl Namespace for XmlNamespace {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlNotation {
     name: String,
     system_identifier: Option<String>,
@@ -1682,7 +1682,7 @@ impl XmlNotation {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlProcessingInstruction {
     target: String,
     content: Option<String>,
@@ -1743,7 +1743,7 @@ impl XmlProcessingInstruction {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum XmlReference {
     Character(String, u32),
     Entity(String),
@@ -1760,7 +1760,7 @@ impl XmlReference {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlText {
     text: String,
     parent: Option<XmlNode<XmlElement>>,
@@ -1805,7 +1805,7 @@ impl XmlText {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct XmlUnexpandedEntityReference {
     entity: XmlNode<XmlEntity>,
     name: String,
@@ -1872,7 +1872,7 @@ impl XmlUnexpandedEntityReference {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct XmlUnparsedEntity {
     entity: XmlNode<XmlEntity>,
     name: String,
@@ -1933,7 +1933,7 @@ impl XmlUnparsedEntity {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NamespaceUri {
     value: String,
 }
@@ -1978,7 +1978,7 @@ impl NamespaceUri {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OrderedList<T>
 where
     T: Clone,
@@ -2044,7 +2044,7 @@ where
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UnorderedSet<T>
 where
     T: Clone,
@@ -2106,7 +2106,7 @@ where
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Value<T>
 where
     T: Clone,
@@ -2318,6 +2318,9 @@ mod tests {
 
         let all_declarations_processed = doc.borrow().all_declarations_processed();
         assert!(all_declarations_processed);
+
+        //PartialEq
+        assert_eq!(doc, doc);
     }
 
     #[test]
@@ -2354,6 +2357,9 @@ mod tests {
 
         let all_declarations_processed = doc.borrow().all_declarations_processed();
         assert!(all_declarations_processed);
+
+        //PartialEq
+        assert_eq!(doc, doc);
     }
 
     #[test]
@@ -2393,6 +2399,9 @@ mod tests {
 
         let p3 = children.get(7).unwrap().as_pi().unwrap();
         assert_eq!("p3", p3.borrow().target());
+
+        //PartialEq
+        assert_eq!(doc, doc);
     }
 
     #[test]
@@ -2408,6 +2417,9 @@ mod tests {
         // Document[notations]
         let notations = doc.borrow().notations();
         assert!(notations.is_none());
+
+        //PartialEq
+        assert_eq!(doc, doc);
     }
 
     #[test]
@@ -2445,6 +2457,9 @@ mod tests {
 
         let parent = root.borrow().parent().unwrap();
         assert!(parent.as_document().is_some());
+
+        //PartialEq
+        assert_eq!(root, root);
     }
 
     #[test]
@@ -2514,6 +2529,9 @@ mod tests {
 
         let parent = child.borrow().parent().unwrap();
         assert!(parent.as_element().is_some());
+
+        //PartialEq
+        assert_eq!(root, root);
     }
 
     #[test]
@@ -2557,6 +2575,9 @@ mod tests {
 
         let t2 = children.get(8).unwrap().as_text().unwrap();
         assert_eq!("t2", t2.borrow().character_code());
+
+        //PartialEq
+        assert_eq!(root, root);
     }
 
     #[test]
@@ -2582,6 +2603,9 @@ mod tests {
         let c = i.next().unwrap();
         assert_eq!("c", c.borrow().local_name());
         assert_eq!(Some("d"), c.borrow().prefix());
+
+        //PartialEq
+        assert_eq!(root, root);
     }
 
     #[test]
@@ -2632,6 +2656,9 @@ mod tests {
                 .unwrap()
                 .map(|v| v.value().to_string())
         );
+
+        //PartialEq
+        assert_eq!(root, root);
     }
 
     #[test]
@@ -2660,6 +2687,9 @@ mod tests {
             "http://www.w3.org/XML/1998/namespace",
             s.borrow().namespace_name()
         );
+
+        //PartialEq
+        assert_eq!(root, root);
     }
 
     #[test]
@@ -2701,6 +2731,9 @@ mod tests {
 
         let parent = attr.borrow().owner_element().unwrap();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(attr, attr);
     }
 
     #[test]
@@ -2742,6 +2775,9 @@ mod tests {
 
         let parent = attr.borrow().owner_element().unwrap();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(attr, attr);
     }
 
     #[test]
@@ -2756,6 +2792,9 @@ mod tests {
         // Attribute[normalized value]
         let value = attr.borrow().normalized_value().unwrap();
         assert_eq!("a &bあ c", value);
+
+        //PartialEq
+        assert_eq!(attr, attr);
     }
 
     #[test]
@@ -2785,6 +2824,9 @@ mod tests {
 
         let parent = pi.borrow().parent().as_element().unwrap();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(pi, pi);
     }
 
     #[test]
@@ -2817,6 +2859,9 @@ mod tests {
 
         let parent = pi.borrow().parent().as_element().unwrap();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(pi, pi);
     }
 
     #[test]
@@ -2836,7 +2881,10 @@ mod tests {
             assert!(notation.is_none());
         } else {
             unreachable!();
-        };
+        }
+
+        //PartialEq
+        assert_eq!(pi, pi);
     }
 
     #[test]
@@ -2875,6 +2923,9 @@ mod tests {
 
         let parent = amp.borrow().parent();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(amp, amp);
     }
 
     #[test]
@@ -2916,6 +2967,9 @@ mod tests {
 
         let parent = amp.borrow().parent();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(amp, amp);
     }
 
     #[test]
@@ -2939,6 +2993,9 @@ mod tests {
 
         let parent = cdata.borrow().parent().unwrap();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(cdata, cdata);
     }
 
     #[test]
@@ -2969,6 +3026,9 @@ mod tests {
 
         let parent = char_ref.borrow().parent().unwrap();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(char_ref, char_ref);
     }
 
     #[test]
@@ -2999,6 +3059,9 @@ mod tests {
 
         let parent = char_ref.borrow().parent().unwrap();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(char_ref, char_ref);
     }
 
     #[test]
@@ -3022,6 +3085,9 @@ mod tests {
 
         let parent = text.borrow().parent().unwrap();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(text, text);
     }
 
     #[test]
@@ -3045,6 +3111,9 @@ mod tests {
 
         let parent = comment.borrow().parent().unwrap().as_element().unwrap();
         assert_eq!("root", parent.borrow().local_name());
+
+        //PartialEq
+        assert_eq!(comment, comment);
     }
 
     #[test]
@@ -3074,7 +3143,10 @@ mod tests {
             assert!(notation.is_none());
         } else {
             unreachable!();
-        };
+        }
+
+        //PartialEq
+        assert_eq!(entity, entity);
     }
 
     #[test]
@@ -3104,7 +3176,10 @@ mod tests {
             assert_eq!("ddd", notation.unwrap().borrow().name());
         } else {
             unreachable!();
-        };
+        }
+
+        //PartialEq
+        assert_eq!(entity, entity);
     }
 
     #[test]
@@ -3122,7 +3197,10 @@ mod tests {
             assert!(notation.is_none());
         } else {
             unreachable!();
-        };
+        }
+
+        //PartialEq
+        assert_eq!(entity, entity);
     }
 
     #[test]
@@ -3146,6 +3224,9 @@ mod tests {
 
         let declaration_base_uri = notation.borrow().declaration_base_uri().to_string();
         assert_eq!("", declaration_base_uri);
+
+        //PartialEq
+        assert_eq!(notation, notation);
     }
 
     #[test]
@@ -3170,6 +3251,9 @@ mod tests {
 
         let declaration_base_uri = notation.borrow().declaration_base_uri().to_string();
         assert_eq!("", declaration_base_uri);
+
+        //PartialEq
+        assert_eq!(notation, notation);
     }
 
     #[test]
@@ -3193,6 +3277,9 @@ mod tests {
 
         let namespace_name = ns.borrow().namespace_name().to_string();
         assert_eq!("http://test", namespace_name);
+
+        //PartialEq
+        assert_eq!(ns, ns);
     }
 
     #[test]
@@ -3216,5 +3303,8 @@ mod tests {
 
         let namespace_name = ns.borrow().namespace_name().to_string();
         assert_eq!("http://test/aaa", namespace_name);
+
+        //PartialEq
+        assert_eq!(ns, ns);
     }
 }
