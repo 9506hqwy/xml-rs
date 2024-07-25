@@ -1,12 +1,11 @@
 #[derive(Debug)]
 pub enum Error {
-    Dom(xml_dom::error::Error),
-    InvalidType,
+    Info(xml_info::error::Error),
 }
 
-impl From<xml_dom::error::Error> for Error {
-    fn from(value: xml_dom::error::Error) -> Self {
-        Error::Dom(value)
+impl From<xml_info::error::Error> for Error {
+    fn from(value: xml_info::error::Error) -> Self {
+        Error::Info(value)
     }
 }
 

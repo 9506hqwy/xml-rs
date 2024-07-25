@@ -12,5 +12,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-xml-nom = { path="../nom" }
+xml-info = { path="../info" }
+
+[dev-dependencies]
 xml-parser = { path="../parser" }

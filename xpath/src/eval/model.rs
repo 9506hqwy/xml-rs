@@ -41,120 +41,130 @@ impl Context {
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Debug)]
-pub enum Value<'a> {
+pub enum Value {
     Boolean(bool),
-    Node(Vec<XmlNode<'a>>),
+    Node(Vec<XmlNode>),
     Number(f64),
     Text(String),
 }
 
-impl<'a> Default for Value<'a> {
+impl Default for Value {
     fn default() -> Self {
         Value::Node(vec![])
     }
 }
 
 /// function: string
-impl<'a> From<&Value<'a>> for String {
-    fn from(value: &Value<'a>) -> Self {
+impl TryFrom<&Value> for String {
+    type Error = super::error::Error;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
         match value {
             Value::Boolean(v) => {
                 if *v {
-                    "true".to_string()
+                    Ok("true".to_string())
                 } else {
-                    "false".to_string()
+                    Ok("false".to_string())
                 }
             }
             Value::Node(v) => {
                 if let Some(f) = v.first() {
-                    f.as_string_value()
+                    Ok(f.as_string_value()?)
                 } else {
-                    "".to_string()
+                    Ok("".to_string())
                 }
             }
             Value::Number(v) => match *v {
-                f64::INFINITY => "Infinity".to_string(),
-                f64::NEG_INFINITY => "-Infinity".to_string(),
-                _ => v.to_string(),
+                f64::INFINITY => Ok("Infinity".to_string()),
+                f64::NEG_INFINITY => Ok("-Infinity".to_string()),
+                _ => Ok(v.to_string()),
             },
-            Value::Text(v) => v.to_string(),
+            Value::Text(v) => Ok(v.to_string()),
         }
     }
 }
 
 /// function: boolean
-impl<'a> From<&Value<'a>> for bool {
-    fn from(value: &Value<'a>) -> Self {
+impl TryFrom<&Value> for bool {
+    type Error = super::error::Error;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Boolean(v) => *v,
-            Value::Node(v) => !v.is_empty(),
+            Value::Boolean(v) => Ok(*v),
+            Value::Node(v) => Ok(!v.is_empty()),
             Value::Number(_) => {
-                let n = f64::from(value);
-                !(n == 0f64 || n.is_nan())
+                let n = f64::try_from(value)?;
+                Ok(!(n == 0f64 || n.is_nan()))
             }
-            Value::Text(v) => !v.is_empty(),
+            Value::Text(v) => Ok(!v.is_empty()),
         }
     }
 }
 
 /// function: number
-impl<'a> From<&Value<'a>> for f64 {
-    fn from(value: &Value<'a>) -> Self {
+impl TryFrom<&Value> for f64 {
+    type Error = super::error::Error;
+
+    fn try_from(value: &Value) -> Result<Self, Self::Error> {
         match value {
             Value::Boolean(v) => {
                 if *v {
-                    1f64
+                    Ok(1f64)
                 } else {
-                    0f64
+                    Ok(0f64)
                 }
             }
             Value::Node(_) => {
-                let s = String::from(value);
-                f64::from(&Value::Text(s))
+                let s = String::try_from(value)?;
+                Ok(f64::try_from(&Value::Text(s))?)
             }
-            Value::Number(v) => *v,
-            Value::Text(v) => v.parse::<f64>().unwrap_or(f64::NAN),
+            Value::Number(v) => Ok(*v),
+            Value::Text(v) => Ok(v.parse::<f64>().unwrap_or(f64::NAN)),
         }
     }
 }
 
-impl<'a> cmp::PartialEq<bool> for Value<'a> {
+impl cmp::PartialEq<bool> for Value {
     fn eq(&self, other: &bool) -> bool {
-        bool::from(self) == *other
+        bool::try_from(self)
+            .map(|v| v == *other)
+            .unwrap_or_default()
     }
 }
 
-impl<'a> cmp::PartialEq<f64> for Value<'a> {
+impl cmp::PartialEq<f64> for Value {
     fn eq(&self, other: &f64) -> bool {
-        f64::from(self) == *other
+        f64::try_from(self).map(|v| v == *other).unwrap_or_default()
     }
 }
 
-impl<'a> cmp::PartialEq<String> for Value<'a> {
+impl cmp::PartialEq<String> for Value {
     fn eq(&self, other: &String) -> bool {
-        &String::from(self) == other
+        String::try_from(self)
+            .map(|v| &v == other)
+            .unwrap_or_default()
     }
 }
 
-impl<'a> cmp::PartialOrd<bool> for Value<'a> {
+impl cmp::PartialOrd<bool> for Value {
     fn partial_cmp(&self, other: &bool) -> Option<cmp::Ordering> {
-        self.partial_cmp(&f64::from(&Value::Boolean(*other)))
+        self.partial_cmp(&f64::try_from(&Value::Boolean(*other)).ok()?)
     }
 }
 
-impl<'a> cmp::PartialOrd<f64> for Value<'a> {
+impl cmp::PartialOrd<f64> for Value {
     fn partial_cmp(&self, other: &f64) -> Option<cmp::Ordering> {
-        f64::from(self).partial_cmp(other)
+        f64::try_from(self).ok()?.partial_cmp(other)
     }
 }
 
-impl<'a> cmp::PartialOrd<String> for Value<'a> {
+impl cmp::PartialOrd<String> for Value {
     fn partial_cmp(&self, other: &String) -> Option<cmp::Ordering> {
-        self.partial_cmp(&f64::from(&Value::Text(other.clone())))
+        self.partial_cmp(&f64::try_from(&Value::Text(other.clone())).ok()?)
     }
 }
 
-impl<'a> fmt::Display for Value<'a> {
+impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             Value::Boolean(v) => v.fmt(f),
@@ -170,66 +180,66 @@ impl<'a> fmt::Display for Value<'a> {
     }
 }
 
-impl<'a> ops::Add for Value<'a> {
+impl ops::Add for Value {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let a = f64::from(&self);
-        let b = f64::from(&rhs);
+        let a = f64::try_from(&self).unwrap();
+        let b = f64::try_from(&rhs).unwrap();
         Value::Number(a + b)
     }
 }
 
-impl<'a> ops::Sub for Value<'a> {
+impl ops::Sub for Value {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let a = f64::from(&self);
-        let b = f64::from(&rhs);
+        let a = f64::try_from(&self).unwrap();
+        let b = f64::try_from(&rhs).unwrap();
         Value::Number(a - b)
     }
 }
 
-impl<'a> ops::Mul for Value<'a> {
+impl ops::Mul for Value {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        let a = f64::from(&self);
-        let b = f64::from(&rhs);
+        let a = f64::try_from(&self).unwrap();
+        let b = f64::try_from(&rhs).unwrap();
         Value::Number(a * b)
     }
 }
 
-impl<'a> ops::Div for Value<'a> {
+impl ops::Div for Value {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self::Output {
-        let a = f64::from(&self);
-        let b = f64::from(&rhs);
+        let a = f64::try_from(&self).unwrap();
+        let b = f64::try_from(&rhs).unwrap();
         Value::Number(a / b)
     }
 }
 
-impl<'a> ops::Rem for Value<'a> {
+impl ops::Rem for Value {
     type Output = Self;
 
     fn rem(self, rhs: Self) -> Self::Output {
-        let a = f64::from(&self);
-        let b = f64::from(&rhs);
+        let a = f64::try_from(&self).unwrap();
+        let b = f64::try_from(&rhs).unwrap();
         Value::Number(a % b)
     }
 }
 
-impl<'a> ops::Neg for Value<'a> {
+impl ops::Neg for Value {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        let a = f64::from(&self);
+        let a = f64::try_from(&self).unwrap();
         Value::Number(0f64 - a)
     }
 }
 
-impl<'a> Value<'a> {
+impl Value {
     pub fn is_bool(&self) -> bool {
         matches!(self, Value::Boolean(_))
     }
@@ -249,48 +259,48 @@ impl<'a> Value<'a> {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait AsValue<'a> {
-    fn as_value(&self) -> Value<'a>;
+pub trait AsValue {
+    fn as_value(&self) -> Value;
 }
 
-impl<'a> AsValue<'a> for bool {
-    fn as_value(&self) -> Value<'a> {
+impl AsValue for bool {
+    fn as_value(&self) -> Value {
         Value::Boolean(*self)
     }
 }
 
-impl<'a> AsValue<'a> for XmlNode<'a> {
-    fn as_value(&self) -> Value<'a> {
+impl AsValue for XmlNode {
+    fn as_value(&self) -> Value {
         Value::Node(vec![self.clone()])
     }
 }
 
-impl<'a> AsValue<'a> for Vec<XmlNode<'a>> {
-    fn as_value(&self) -> Value<'a> {
+impl AsValue for Vec<XmlNode> {
+    fn as_value(&self) -> Value {
         Value::Node(self.clone())
     }
 }
 
-impl<'a> AsValue<'a> for f64 {
-    fn as_value(&self) -> Value<'a> {
+impl AsValue for f64 {
+    fn as_value(&self) -> Value {
         Value::Number(*self)
     }
 }
 
-impl<'a> AsValue<'a> for usize {
-    fn as_value(&self) -> Value<'a> {
+impl AsValue for usize {
+    fn as_value(&self) -> Value {
         Value::Number(*self as f64)
     }
 }
 
-impl<'a> AsValue<'a> for String {
-    fn as_value(&self) -> Value<'a> {
+impl AsValue for String {
+    fn as_value(&self) -> Value {
         Value::Text(self.clone())
     }
 }
 
-impl<'a> AsValue<'a> for &str {
-    fn as_value(&self) -> Value<'a> {
+impl AsValue for &str {
+    fn as_value(&self) -> Value {
         Value::Text(self.to_string())
     }
 }
@@ -334,104 +344,104 @@ mod tests {
     #[test]
     fn test_value_to_string_boolean() {
         let v = Value::Boolean(false);
-        assert_eq!("false", String::from(&v));
+        assert_eq!("false", String::try_from(&v).unwrap());
 
         let v = Value::Boolean(true);
-        assert_eq!("true", String::from(&v));
+        assert_eq!("true", String::try_from(&v).unwrap());
     }
 
     #[test]
     fn test_value_to_string_node() {
         let v = Value::Node(vec![]);
-        assert_eq!("", String::from(&v));
+        assert_eq!("", String::try_from(&v).unwrap());
 
         let (_, tree) = xml_parser::document("<root>a</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let v = Value::Node(vec![doc.as_node()]);
-        assert_eq!("a", String::from(&v));
+        assert_eq!("a", String::try_from(&v).unwrap());
     }
 
     #[test]
     fn test_value_to_string_number() {
         let v = Value::Number(0f64);
-        assert_eq!("0", String::from(&v));
+        assert_eq!("0", String::try_from(&v).unwrap());
 
         let v = Value::Number(-0f64);
-        assert_eq!("-0", String::from(&v));
+        assert_eq!("-0", String::try_from(&v).unwrap());
 
         let v = Value::Number(f64::NAN);
-        assert_eq!("NaN", String::from(&v));
+        assert_eq!("NaN", String::try_from(&v).unwrap());
 
         let v = Value::Number(f64::INFINITY);
-        assert_eq!("Infinity", String::from(&v));
+        assert_eq!("Infinity", String::try_from(&v).unwrap());
 
         let v = Value::Number(f64::NEG_INFINITY);
-        assert_eq!("-Infinity", String::from(&v));
+        assert_eq!("-Infinity", String::try_from(&v).unwrap());
 
         let v = Value::Number(1f64);
-        assert_eq!("1", String::from(&v));
+        assert_eq!("1", String::try_from(&v).unwrap());
 
         let v = Value::Number(1.1f64);
-        assert_eq!("1.1", String::from(&v));
+        assert_eq!("1.1", String::try_from(&v).unwrap());
     }
 
     #[test]
     fn test_value_to_string_text() {
         let v = Value::Text("a".to_string());
-        assert_eq!("a", String::from(&v));
+        assert_eq!("a", String::try_from(&v).unwrap());
     }
 
     #[test]
     fn test_value_to_bool_boolean() {
         let v = Value::Boolean(false);
-        assert!(!bool::from(&v));
+        assert!(!bool::try_from(&v).unwrap());
 
         let v = Value::Boolean(true);
-        assert!(bool::from(&v));
+        assert!(bool::try_from(&v).unwrap());
     }
 
     #[test]
     fn test_value_to_bool_node() {
         let v = Value::Node(vec![]);
-        assert!(!bool::from(&v));
+        assert!(!bool::try_from(&v).unwrap());
 
         let (_, tree) = xml_parser::document("<root>a</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let v = Value::Node(vec![doc.as_node()]);
-        assert!(bool::from(&v));
+        assert!(bool::try_from(&v).unwrap());
     }
 
     #[test]
     fn test_value_to_bool_number() {
         let v = Value::Number(0f64);
-        assert!(!bool::from(&v));
+        assert!(!bool::try_from(&v).unwrap());
 
         let v = Value::Number(-0f64);
-        assert!(!bool::from(&v));
+        assert!(!bool::try_from(&v).unwrap());
 
         let v = Value::Number(f64::NAN);
-        assert!(!bool::from(&v));
+        assert!(!bool::try_from(&v).unwrap());
 
         let v = Value::Number(f64::INFINITY);
-        assert!(bool::from(&v));
+        assert!(bool::try_from(&v).unwrap());
 
         let v = Value::Number(f64::NEG_INFINITY);
-        assert!(bool::from(&v));
+        assert!(bool::try_from(&v).unwrap());
 
         let v = Value::Number(1f64);
-        assert!(bool::from(&v));
+        assert!(bool::try_from(&v).unwrap());
 
         let v = Value::Number(1.1f64);
-        assert!(bool::from(&v));
+        assert!(bool::try_from(&v).unwrap());
     }
 
     #[test]
     fn test_value_to_bool_text() {
         let v = Value::Text("".to_string());
-        assert!(!bool::from(&v));
+        assert!(!bool::try_from(&v).unwrap());
 
         let v = Value::Text("a".to_string());
-        assert!(bool::from(&v));
+        assert!(bool::try_from(&v).unwrap());
     }
 
     #[test]

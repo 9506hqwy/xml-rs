@@ -6,87 +6,87 @@ use model::AsValue;
 use xml_dom::{self as dom, AsNode, AsStringValue, Node};
 use xml_nom::{self as nom};
 
-pub fn document<'a>(
+pub fn document(
     expr: &expr::Expr,
-    document: dom::XmlDocument<'a>,
+    document: dom::XmlDocument,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     eval_expr(expr, document.as_node(), context)
 }
 
 // -----------------------------------------------------------------------------------------------
 
-fn eval_expr<'a>(
+fn eval_expr(
     expr: &expr::Expr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     eval_or_expr(expr, node, context)
 }
 
-fn eval_or_expr<'a>(
+fn eval_or_expr(
     or: &expr::OrExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let first = or.operands().first().unwrap();
     let mut op1 = eval_and_expr(first, node.clone(), context)?;
 
     for and in or.operands().iter().skip(1) {
-        if bool::from(&op1) {
+        if bool::try_from(&op1)? {
             return Ok(true.as_value());
         }
 
-        let op2 = bool::from(&eval_and_expr(and, node.clone(), context)?);
+        let op2 = bool::try_from(&eval_and_expr(and, node.clone(), context)?)?;
         op1 = op2.as_value();
     }
 
     Ok(op1)
 }
 
-fn eval_and_expr<'a>(
+fn eval_and_expr(
     and: &expr::AndExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let first = and.operands().first().unwrap();
     let mut op1 = eval_eq_expr(first, node.clone(), context)?;
 
     for eq in and.operands().iter().skip(1) {
-        if !bool::from(&op1) {
+        if !bool::try_from(&op1)? {
             return Ok(false.as_value());
         }
 
-        let op2 = bool::from(&eval_eq_expr(eq, node.clone(), context)?);
+        let op2 = bool::try_from(&eval_eq_expr(eq, node.clone(), context)?)?;
         op1 = op2.as_value();
     }
 
     Ok(op1)
 }
 
-fn eval_eq_expr<'a>(
+fn eval_eq_expr(
     eq: &expr::EqualityExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let mut op1 = eval_relational_expr(eq.operand(), node.clone(), context)?;
     for (op, op2) in eq.operations() {
         let op2 = eval_relational_expr(op2, node.clone(), context)?;
         let ret = match op {
             expr::EqualityOperator::Equal => equal_value(&op1, &op2),
             expr::EqualityOperator::NotEqual => not_equal_value(&op1, &op2),
-        };
+        }?;
 
         op1 = ret.as_value();
     }
     Ok(op1)
 }
 
-fn eval_relational_expr<'a>(
+fn eval_relational_expr(
     rel: &expr::RelationalExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let mut op1 = eval_add_expr(rel.operand(), node.clone(), context)?;
     for (op, op2) in rel.operations() {
         let op2 = eval_add_expr(op2, node.clone(), context)?;
@@ -95,18 +95,18 @@ fn eval_relational_expr<'a>(
             expr::RelationalOperator::GreaterThan => greater_than_value(&op1, &op2),
             expr::RelationalOperator::LessEqual => less_eq_value(&op1, &op2),
             expr::RelationalOperator::LessThan => less_than_value(&op1, &op2),
-        };
+        }?;
 
         op1 = ret.as_value();
     }
     Ok(op1)
 }
 
-fn eval_add_expr<'a>(
+fn eval_add_expr(
     add: &expr::AdditiveExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let mut op1 = eval_mul_expr(add.operand(), node.clone(), context)?;
     for (op, op2) in add.operations() {
         let op2 = eval_mul_expr(op2, node.clone(), context)?;
@@ -118,11 +118,11 @@ fn eval_add_expr<'a>(
     Ok(op1)
 }
 
-fn eval_mul_expr<'a>(
+fn eval_mul_expr(
     mul: &expr::MultiplicativeExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let mut op1 = eval_unary_expr(mul.operand(), node.clone(), context)?;
     for (op, op2) in mul.operations() {
         let op2 = eval_unary_expr(op2, node.clone(), context)?;
@@ -135,11 +135,11 @@ fn eval_mul_expr<'a>(
     Ok(op1)
 }
 
-fn eval_unary_expr<'a>(
+fn eval_unary_expr(
     uni: &expr::UnaryExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let value = eval_union_expr(uni.value(), node.clone(), context)?;
     let inv = uni.inv().len() % 2;
     if inv == 0 {
@@ -149,11 +149,11 @@ fn eval_unary_expr<'a>(
     }
 }
 
-fn eval_union_expr<'a>(
+fn eval_union_expr(
     uni: &expr::UnionExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let mut nodes = vec![];
 
     let mut value = if let Some(first) = uni.operands().first() {
@@ -184,11 +184,11 @@ fn eval_union_expr<'a>(
     Ok(nodes.as_value())
 }
 
-fn eval_path_expr<'a>(
+fn eval_path_expr(
     path: &expr::PathExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let nodes = match path {
         expr::PathExpr::Filter(filter) => eval_filter_expr(filter, node.clone(), context)?,
         expr::PathExpr::Path(filter, location) => {
@@ -203,11 +203,11 @@ fn eval_path_expr<'a>(
     Ok(nodes)
 }
 
-fn eval_filter_expr<'a>(
+fn eval_filter_expr(
     filter: &expr::FilterExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let value = eval_primary_expr(filter.primary(), node.clone(), context)?;
     if filter.predicates().is_empty() {
         return Ok(value);
@@ -236,11 +236,11 @@ fn eval_filter_expr<'a>(
     Ok(nodes.as_value())
 }
 
-fn eval_primary_expr<'a>(
+fn eval_primary_expr(
     primary: &expr::PrimaryExpr,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     match primary {
         expr::PrimaryExpr::Expr(expr) => eval_expr(expr, node, context),
         expr::PrimaryExpr::Function(func) => eval_func_expr(func, node, context),
@@ -250,12 +250,12 @@ fn eval_primary_expr<'a>(
     }
 }
 
-fn eval_filtered_loc_expr<'a>(
+fn eval_filtered_loc_expr(
     filter: &Option<(Option<expr::FilterExpr>, expr::LocationPathOperator)>,
     location: &expr::RelativeLocationPath,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<Vec<dom::XmlNode<'a>>> {
+) -> error::Result<Vec<dom::XmlNode>> {
     let nodes = if let Some((filter, op)) = filter {
         if let Some(filter) = filter {
             let value = eval_filter_expr(filter, node.clone(), context)?;
@@ -295,11 +295,11 @@ fn eval_filtered_loc_expr<'a>(
     Ok(collected)
 }
 
-fn eval_loc_expr<'a>(
+fn eval_loc_expr(
     location: &expr::RelativeLocationPath,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<Vec<dom::XmlNode<'a>>> {
+) -> error::Result<Vec<dom::XmlNode>> {
     let mut nodes = eval_step_expr(location.operand(), node, context)?;
 
     if !location.operations().is_empty() {
@@ -325,11 +325,11 @@ fn eval_loc_expr<'a>(
     Ok(nodes)
 }
 
-fn eval_step_expr<'a>(
+fn eval_step_expr(
     step: &expr::Step,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<Vec<dom::XmlNode<'a>>> {
+) -> error::Result<Vec<dom::XmlNode>> {
     match step {
         expr::Step::Current => Ok(vec![node]),
         expr::Step::Parent => match node {
@@ -342,13 +342,13 @@ fn eval_step_expr<'a>(
     }
 }
 
-fn eval_axis_node_test<'a>(
+fn eval_axis_node_test(
     axis: &expr::AxisSpecifier,
     test: &expr::NodeTest,
     predicates: &[expr::Expr],
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<Vec<dom::XmlNode<'a>>> {
+) -> error::Result<Vec<dom::XmlNode>> {
     let mut nodes = match axis {
         expr::AxisSpecifier::Abbreviated(v) => match v.as_str() {
             "@" => attributes(node),
@@ -390,7 +390,7 @@ fn eval_axis_node_test<'a>(
     Ok(nodes)
 }
 
-fn eval_node_test(test: &expr::NodeTest, node: dom::XmlNode<'_>, _: &mut model::Context) -> bool {
+fn eval_node_test(test: &expr::NodeTest, node: dom::XmlNode, _: &mut model::Context) -> bool {
     match test {
         expr::NodeTest::Name(name) => match name {
             expr::NameTest::All => true,
@@ -410,23 +410,23 @@ fn eval_node_test(test: &expr::NodeTest, node: dom::XmlNode<'_>, _: &mut model::
     }
 }
 
-fn eval_predicate<'a>(
-    predicate: &expr::Expr<'a>,
-    node: dom::XmlNode<'a>,
+fn eval_predicate(
+    predicate: &expr::Expr,
+    node: dom::XmlNode,
     context: &mut model::Context,
 ) -> error::Result<bool> {
     let value = eval_expr(predicate, node, context)?;
     match value {
         model::Value::Number(v) => Ok(v as usize == context.get_position()),
-        _ => Ok(bool::from(&value)),
+        _ => Ok(bool::try_from(&value)?),
     }
 }
 
-fn eval_func_expr<'a>(
+fn eval_func_expr(
     func: &expr::FunctionCall,
-    node: dom::XmlNode<'a>,
+    node: dom::XmlNode,
     context: &mut model::Context,
-) -> error::Result<model::Value<'a>> {
+) -> error::Result<model::Value> {
     let name = match func.name() {
         nom::model::QName::Prefixed(p) => p.local_part, // FIXME: namespace
         nom::model::QName::Unprefixed(u) => u,
@@ -450,7 +450,7 @@ fn eval_func_expr<'a>(
 
 // -----------------------------------------------------------------------------------------------
 
-fn ancestor(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
+fn ancestor(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![];
 
     let mut parent = node.parent_node();
@@ -462,13 +462,13 @@ fn ancestor(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
     nodes
 }
 
-fn ancestor_and_self(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
+fn ancestor_and_self(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![node.clone()];
     nodes.append(&mut ancestor(node));
     nodes
 }
 
-fn attributes(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
+fn attributes(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![];
 
     if let Some(attrs) = node.attributes() {
@@ -480,7 +480,7 @@ fn attributes(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
     nodes
 }
 
-fn child(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
+fn child(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![];
 
     for c in node.child_nodes().iter() {
@@ -490,7 +490,7 @@ fn child(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
     nodes
 }
 
-fn descendant(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
+fn descendant(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![];
 
     for child in node.child_nodes().iter() {
@@ -503,13 +503,13 @@ fn descendant(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
     nodes
 }
 
-fn descendant_and_self(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
+fn descendant_and_self(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![node.clone()];
     nodes.append(&mut descendant(node));
     nodes
 }
 
-fn following(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
+fn following(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![];
 
     for n in following_sibling(node) {
@@ -519,7 +519,7 @@ fn following(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
     nodes
 }
 
-fn following_sibling(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
+fn following_sibling(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![];
 
     let mut next = node.next_sibling();
@@ -531,7 +531,7 @@ fn following_sibling(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
     nodes
 }
 
-fn preceding(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
+fn preceding(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![];
 
     for p in preceding_sibling(node) {
@@ -543,7 +543,7 @@ fn preceding(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
     nodes
 }
 
-fn preceding_sibling(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
+fn preceding_sibling(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![];
 
     let mut prev = node.previous_sibling();
@@ -557,7 +557,7 @@ fn preceding_sibling(node: dom::XmlNode<'_>) -> Vec<dom::XmlNode<'_>> {
 
 // -----------------------------------------------------------------------------------------------
 
-fn equal_value<'a>(a: &model::Value<'a>, b: &model::Value<'a>) -> bool {
+fn equal_value(a: &model::Value, b: &model::Value) -> error::Result<bool> {
     if a.is_node() || b.is_node() {
         let (node, value) = if a.is_node() { (a, b) } else { (b, a) };
         let nodes = if let model::Value::Node(n) = node {
@@ -567,33 +567,59 @@ fn equal_value<'a>(a: &model::Value<'a>, b: &model::Value<'a>) -> bool {
         };
         equal_node(value, nodes)
     } else if a.is_bool() || b.is_bool() {
-        a == &bool::from(b)
+        Ok(a == &bool::try_from(b)?)
     } else if a.is_number() || b.is_number() {
-        a == &f64::from(b)
+        Ok(a == &f64::try_from(b)?)
     } else {
-        a == &String::from(b)
+        Ok(a == &String::try_from(b)?)
     }
 }
 
-fn equal_node<'a>(a: &model::Value<'a>, b: &[dom::XmlNode<'a>]) -> bool {
+fn equal_node(a: &model::Value, b: &[dom::XmlNode]) -> error::Result<bool> {
     match a {
-        model::Value::Boolean(a) => *a != b.is_empty(),
-        model::Value::Node(values) => b.iter().any(|b| {
-            values.iter().any(|a| {
-                equal_value(
-                    &a.as_string_value().as_value(),
-                    &b.as_string_value().as_value(),
-                )
-            })
-        }),
-        model::Value::Number(a) => b.iter().any(|b| b.as_string_value().as_value() == *a),
-        model::Value::Text(a) => b.iter().any(|b| b.as_string_value().as_value() == *a),
+        model::Value::Boolean(a) => Ok(*a != b.is_empty()),
+        model::Value::Node(values) => {
+            for i in b {
+                for j in values {
+                    if equal_value(
+                        &j.as_string_value()?.as_value(),
+                        &i.as_string_value()?.as_value(),
+                    )? {
+                        return Ok(true);
+                    }
+                }
+            }
+
+            Ok(false)
+        }
+        model::Value::Number(a) => equal_node_number(a, b),
+        model::Value::Text(a) => equal_node_text(a, b),
     }
+}
+
+fn equal_node_number(a: &f64, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() == *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn equal_node_text(a: &String, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() == *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 // -----------------------------------------------------------------------------------------------
 
-fn not_equal_value<'a>(a: &model::Value<'a>, b: &model::Value<'a>) -> bool {
+fn not_equal_value(a: &model::Value, b: &model::Value) -> error::Result<bool> {
     if a.is_node() || b.is_node() {
         let (node, value) = if a.is_node() { (a, b) } else { (b, a) };
         let nodes = if let model::Value::Node(n) = node {
@@ -603,140 +629,270 @@ fn not_equal_value<'a>(a: &model::Value<'a>, b: &model::Value<'a>) -> bool {
         };
         not_equal_node(value, nodes)
     } else if a.is_bool() || b.is_bool() {
-        a != &bool::from(b)
+        Ok(a != &bool::try_from(b)?)
     } else if a.is_number() || b.is_number() {
-        a != &f64::from(b)
+        Ok(a != &f64::try_from(b)?)
     } else {
-        a != &String::from(b)
+        Ok(a != &String::try_from(b)?)
     }
 }
 
-fn not_equal_node<'a>(a: &model::Value<'a>, b: &[dom::XmlNode<'a>]) -> bool {
+fn not_equal_node(a: &model::Value, b: &[dom::XmlNode]) -> error::Result<bool> {
     match a {
-        model::Value::Boolean(a) => *a == b.is_empty(),
-        model::Value::Node(values) => b.iter().any(|b| {
-            values.iter().any(|a| {
-                not_equal_value(
-                    &a.as_string_value().as_value(),
-                    &b.as_string_value().as_value(),
-                )
-            })
-        }),
-        model::Value::Number(a) => b.iter().any(|b| b.as_string_value().as_value() != *a),
-        model::Value::Text(a) => b.iter().any(|b| b.as_string_value().as_value() != *a),
+        model::Value::Boolean(a) => Ok(*a == b.is_empty()),
+        model::Value::Node(values) => {
+            for i in b {
+                for j in values {
+                    if not_equal_value(
+                        &j.as_string_value()?.as_value(),
+                        &i.as_string_value()?.as_value(),
+                    )? {
+                        return Ok(true);
+                    }
+                }
+            }
+
+            Ok(false)
+        }
+        model::Value::Number(a) => not_equal_node_number(a, b),
+        model::Value::Text(a) => not_equal_node_text(a, b),
     }
+}
+
+fn not_equal_node_number(a: &f64, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() != *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn not_equal_node_text(a: &String, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() != *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 // -----------------------------------------------------------------------------------------------
 
-fn greater_eq_value<'a>(a: &model::Value<'a>, b: &model::Value<'a>) -> bool {
+fn greater_eq_value(a: &model::Value, b: &model::Value) -> error::Result<bool> {
     match b {
         model::Value::Node(nodes) => greater_eq_node(a, nodes),
         _ => match a {
             model::Value::Node(nodes) => less_eq_node(b, nodes),
-            _ => f64::from(a) >= f64::from(b),
+            _ => Ok(f64::try_from(a)? >= f64::try_from(b)?),
         },
     }
 }
 
-fn greater_eq_node<'a>(a: &model::Value<'a>, b: &[dom::XmlNode<'a>]) -> bool {
+fn greater_eq_node(a: &model::Value, b: &[dom::XmlNode]) -> error::Result<bool> {
     match a {
-        model::Value::Boolean(a) => *a >= !b.is_empty(),
-        model::Value::Node(values) => b.iter().any(|b| {
-            values.iter().any(|a| {
-                greater_eq_value(
-                    &a.as_string_value().as_value(),
-                    &b.as_string_value().as_value(),
-                )
-            })
-        }),
-        model::Value::Number(a) => b.iter().any(|b| b.as_string_value().as_value() <= *a),
-        model::Value::Text(a) => b.iter().any(|b| b.as_string_value().as_value() <= *a),
+        model::Value::Boolean(a) => Ok(*a >= !b.is_empty()),
+        model::Value::Node(values) => {
+            for i in b {
+                for j in values {
+                    if greater_eq_value(
+                        &j.as_string_value()?.as_value(),
+                        &i.as_string_value()?.as_value(),
+                    )? {
+                        return Ok(true);
+                    }
+                }
+            }
+
+            Ok(false)
+        }
+        model::Value::Number(a) => greater_eq_node_number(a, b),
+        model::Value::Text(a) => greater_eq_node_text(a, b),
     }
+}
+
+fn greater_eq_node_number(a: &f64, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() <= *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn greater_eq_node_text(a: &String, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() <= *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 // -----------------------------------------------------------------------------------------------
 
-fn greater_than_value<'a>(a: &model::Value<'a>, b: &model::Value<'a>) -> bool {
+fn greater_than_value(a: &model::Value, b: &model::Value) -> error::Result<bool> {
     match b {
         model::Value::Node(nodes) => greater_than_node(a, nodes),
         _ => match a {
             model::Value::Node(nodes) => less_than_node(b, nodes),
-            _ => f64::from(a) > f64::from(b),
+            _ => Ok(f64::try_from(a)? > f64::try_from(b)?),
         },
     }
 }
 
-fn greater_than_node<'a>(a: &model::Value<'a>, b: &[dom::XmlNode<'a>]) -> bool {
+fn greater_than_node(a: &model::Value, b: &[dom::XmlNode]) -> error::Result<bool> {
     match a {
-        model::Value::Boolean(a) => *a & b.is_empty(),
-        model::Value::Node(values) => b.iter().any(|b| {
-            values.iter().any(|a| {
-                greater_than_value(
-                    &a.as_string_value().as_value(),
-                    &b.as_string_value().as_value(),
-                )
-            })
-        }),
-        model::Value::Number(a) => b.iter().any(|b| b.as_string_value().as_value() < *a),
-        model::Value::Text(a) => b.iter().any(|b| b.as_string_value().as_value() < *a),
+        model::Value::Boolean(a) => Ok(*a & b.is_empty()),
+        model::Value::Node(values) => {
+            for i in b {
+                for j in values {
+                    if greater_than_value(
+                        &j.as_string_value()?.as_value(),
+                        &i.as_string_value()?.as_value(),
+                    )? {
+                        return Ok(true);
+                    }
+                }
+            }
+
+            Ok(false)
+        }
+        model::Value::Number(a) => greater_than_node_number(a, b),
+        model::Value::Text(a) => greater_than_node_text(a, b),
     }
+}
+
+fn greater_than_node_number(a: &f64, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() < *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn greater_than_node_text(a: &String, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() < *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 // -----------------------------------------------------------------------------------------------
 
-fn less_eq_value<'a>(a: &model::Value<'a>, b: &model::Value<'a>) -> bool {
+fn less_eq_value(a: &model::Value, b: &model::Value) -> error::Result<bool> {
     match b {
         model::Value::Node(nodes) => less_eq_node(a, nodes),
         _ => match a {
             model::Value::Node(nodes) => greater_eq_node(b, nodes),
-            _ => f64::from(a) <= f64::from(b),
+            _ => Ok(f64::try_from(a)? <= f64::try_from(b)?),
         },
     }
 }
 
-fn less_eq_node<'a>(a: &model::Value<'a>, b: &[dom::XmlNode<'a>]) -> bool {
+fn less_eq_node(a: &model::Value, b: &[dom::XmlNode]) -> error::Result<bool> {
     match a {
-        model::Value::Boolean(a) => *a <= !b.is_empty(),
-        model::Value::Node(values) => b.iter().any(|b| {
-            values.iter().any(|a| {
-                less_eq_value(
-                    &a.as_string_value().as_value(),
-                    &b.as_string_value().as_value(),
-                )
-            })
-        }),
-        model::Value::Number(a) => b.iter().any(|b| b.as_string_value().as_value() >= *a),
-        model::Value::Text(a) => b.iter().any(|b| b.as_string_value().as_value() >= *a),
+        model::Value::Boolean(a) => Ok(*a <= !b.is_empty()),
+        model::Value::Node(values) => {
+            for i in b {
+                for j in values {
+                    if less_eq_value(
+                        &j.as_string_value()?.as_value(),
+                        &i.as_string_value()?.as_value(),
+                    )? {
+                        return Ok(true);
+                    }
+                }
+            }
+
+            Ok(false)
+        }
+        model::Value::Number(a) => less_eq_node_number(a, b),
+        model::Value::Text(a) => less_eq_node_text(a, b),
     }
+}
+
+fn less_eq_node_number(a: &f64, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() >= *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn less_eq_node_text(a: &String, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() >= *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 // -----------------------------------------------------------------------------------------------
 
-fn less_than_value<'a>(a: &model::Value<'a>, b: &model::Value<'a>) -> bool {
+fn less_than_value(a: &model::Value, b: &model::Value) -> error::Result<bool> {
     match b {
         model::Value::Node(nodes) => less_than_node(a, nodes),
         _ => match a {
             model::Value::Node(nodes) => greater_than_node(b, nodes),
-            _ => f64::from(a) < f64::from(b),
+            _ => Ok(f64::try_from(a)? < f64::try_from(b)?),
         },
     }
 }
 
-fn less_than_node<'a>(a: &model::Value<'a>, b: &[dom::XmlNode<'a>]) -> bool {
+fn less_than_node(a: &model::Value, b: &[dom::XmlNode]) -> error::Result<bool> {
     match a {
-        model::Value::Boolean(a) => !(*a) & !b.is_empty(),
-        model::Value::Node(values) => b.iter().any(|b| {
-            values.iter().any(|a| {
-                less_than_value(
-                    &a.as_string_value().as_value(),
-                    &b.as_string_value().as_value(),
-                )
-            })
-        }),
-        model::Value::Number(a) => b.iter().any(|b| b.as_string_value().as_value() > *a),
-        model::Value::Text(a) => b.iter().any(|b| b.as_string_value().as_value() > *a),
+        model::Value::Boolean(a) => Ok(!(*a) & !b.is_empty()),
+        model::Value::Node(values) => {
+            for i in b {
+                for j in values {
+                    if less_than_value(
+                        &j.as_string_value()?.as_value(),
+                        &i.as_string_value()?.as_value(),
+                    )? {
+                        return Ok(true);
+                    }
+                }
+            }
+
+            Ok(false)
+        }
+        model::Value::Number(a) => less_than_node_number(a, b),
+        model::Value::Text(a) => less_than_node_text(a, b),
     }
+}
+
+fn less_than_node_number(a: &f64, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() > *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn less_than_node_text(a: &String, b: &[dom::XmlNode]) -> error::Result<bool> {
+    for i in b {
+        if i.as_string_value()?.as_value() > *a {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -757,7 +913,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -778,8 +934,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let root = doc.get_elements_by_tag_name("root").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc
+            .get_elements_by_tag_name("root")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -800,8 +961,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let root = doc.get_elements_by_tag_name("root").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc
+            .get_elements_by_tag_name("root")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -822,8 +988,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let root = doc.get_elements_by_tag_name("root").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc
+            .get_elements_by_tag_name("root")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -844,8 +1015,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -866,8 +1042,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let ee2 = doc.get_elements_by_tag_name("ee2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let ee2 = doc
+            .get_elements_by_tag_name("ee2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -888,8 +1069,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let root = doc.get_elements_by_tag_name("root").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc
+            .get_elements_by_tag_name("root")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -910,8 +1096,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let root = doc.get_elements_by_tag_name("root").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc
+            .get_elements_by_tag_name("root")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -932,8 +1123,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -954,8 +1150,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -976,8 +1177,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let ee2 = doc.get_elements_by_tag_name("ee2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let ee2 = doc
+            .get_elements_by_tag_name("ee2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -998,8 +1204,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let ee2 = doc.get_elements_by_tag_name("ee2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let ee2 = doc
+            .get_elements_by_tag_name("ee2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1020,8 +1231,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let ee3 = doc.get_elements_by_tag_name("ee3").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let ee3 = doc
+            .get_elements_by_tag_name("ee3")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1042,8 +1258,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e3 = doc.get_elements_by_tag_name("e3").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e3 = doc
+            .get_elements_by_tag_name("e3")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1065,8 +1286,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc.get_elements_by_tag_name("e2").unwrap().iter().next().unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1088,8 +1309,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let root = doc.get_elements_by_tag_name("root").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc
+            .get_elements_by_tag_name("root")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1110,8 +1336,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let ee1 = doc.get_elements_by_tag_name("ee1").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let ee1 = doc
+            .get_elements_by_tag_name("ee1")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1132,8 +1363,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e1 = doc.get_elements_by_tag_name("e1").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e1 = doc
+            .get_elements_by_tag_name("e1")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1154,8 +1390,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1176,8 +1417,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let ee2 = doc.get_elements_by_tag_name("ee2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let ee2 = doc
+            .get_elements_by_tag_name("ee2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1198,8 +1444,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1220,8 +1471,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1242,8 +1498,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let root = doc.get_elements_by_tag_name("root").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc
+            .get_elements_by_tag_name("root")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1261,7 +1522,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let mut ctx = model::Context::default();
         ctx.push_size(1);
@@ -1281,7 +1542,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let mut ctx = model::Context::default();
         ctx.push_position(1);
@@ -1304,7 +1565,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Number(n) = r {
@@ -1322,7 +1583,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1340,7 +1601,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1358,7 +1619,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1376,7 +1637,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1394,7 +1655,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1412,7 +1673,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1430,7 +1691,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1448,7 +1709,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1466,7 +1727,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1484,7 +1745,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1502,7 +1763,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1520,7 +1781,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1538,7 +1799,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1556,7 +1817,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1574,7 +1835,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1592,7 +1853,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Boolean(b) = r {
@@ -1610,7 +1871,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Number(n) = r {
@@ -1628,7 +1889,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Number(n) = r {
@@ -1646,7 +1907,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Number(n) = r {
@@ -1664,7 +1925,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Number(n) = r {
@@ -1682,7 +1943,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Number(n) = r {
@@ -1700,7 +1961,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Number(n) = r {
@@ -1718,7 +1979,7 @@ mod tests {
 
         let (rest, tree) = xml_parser::document("<root></root>").unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let ret = if let model::Value::Text(t) = r {
@@ -1741,9 +2002,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let comment = doc
             .get_elements_by_tag_name("e2")
+            .unwrap()
             .iter()
             .next()
             .unwrap()
@@ -1769,9 +2031,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let text = doc
             .get_elements_by_tag_name("ee2")
+            .unwrap()
             .iter()
             .next()
             .unwrap()
@@ -1802,8 +2065,13 @@ mod tests {
         )
         .unwrap();
         assert_eq!("", rest);
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let ee2 = doc.get_elements_by_tag_name("ee2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let ee2 = doc
+            .get_elements_by_tag_name("ee2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1820,12 +2088,22 @@ mod tests {
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let root = doc.get_elements_by_tag_name("root").iter().next().unwrap();
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc
+            .get_elements_by_tag_name("root")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let n = ancestor(e2);
-        assert_eq!(vec![root], n);
+        assert_eq!(vec![root, doc.as_node()], n);
     }
 
     #[test]
@@ -1834,12 +2112,22 @@ mod tests {
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let root = doc.get_elements_by_tag_name("root").iter().next().unwrap();
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc
+            .get_elements_by_tag_name("root")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let n = ancestor_and_self(e2.clone());
-        assert_eq!(vec![e2, root], n);
+        assert_eq!(vec![e2, root, doc.as_node()], n);
     }
 
     #[test]
@@ -1848,8 +2136,13 @@ mod tests {
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let n = attributes(e2);
         assert!(n.is_empty());
@@ -1861,8 +2154,13 @@ mod tests {
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
         let ee2 = e2.first_child().unwrap();
 
         let n = child(e2);
@@ -1875,8 +2173,13 @@ mod tests {
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
         let ee2 = e2.first_child().unwrap();
         let text2 = ee2.first_child().unwrap();
 
@@ -1890,8 +2193,13 @@ mod tests {
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
         let ee2 = e2.first_child().unwrap();
         let text2 = ee2.first_child().unwrap();
 
@@ -1905,10 +2213,25 @@ mod tests {
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
-        let e3 = doc.get_elements_by_tag_name("e3").iter().next().unwrap();
-        let ee3 = doc.get_elements_by_tag_name("ee3").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        let e3 = doc
+            .get_elements_by_tag_name("e3")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        let ee3 = doc
+            .get_elements_by_tag_name("ee3")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
         let text3 = ee3.first_child().unwrap();
 
         let n = following(e2);
@@ -1921,9 +2244,19 @@ mod tests {
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
-        let e3 = doc.get_elements_by_tag_name("e3").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        let e3 = doc
+            .get_elements_by_tag_name("e3")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let n = following_sibling(e2);
         assert_eq!(vec![e3], n);
@@ -1935,11 +2268,26 @@ mod tests {
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e1 = doc.get_elements_by_tag_name("e1").iter().next().unwrap();
-        let ee1 = doc.get_elements_by_tag_name("ee1").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e1 = doc
+            .get_elements_by_tag_name("e1")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        let ee1 = doc
+            .get_elements_by_tag_name("ee1")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
         let text1 = ee1.first_child().unwrap();
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let n = preceding(e2);
         assert_eq!(vec![text1, ee1, e1], n);
@@ -1951,9 +2299,19 @@ mod tests {
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
-        let e1 = doc.get_elements_by_tag_name("e1").iter().next().unwrap();
-        let e2 = doc.get_elements_by_tag_name("e2").iter().next().unwrap();
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let e1 = doc
+            .get_elements_by_tag_name("e1")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
 
         let n = preceding_sibling(e2);
         assert_eq!(vec![e1], n);
@@ -1963,611 +2321,611 @@ mod tests {
     fn test_bool_eq_bool_bool() {
         let a = false.as_value();
         let b = false.as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
 
         let a = false.as_value();
         let b = true.as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = false.as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = true.as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_eq_bool_node() {
         let a = false.as_value();
         let b = vec![].as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
 
         let a = false.as_value();
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = vec![].as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_eq_bool_number() {
         let a = false.as_value();
         let b = 0f64.as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
 
         let a = false.as_value();
         let b = 1f64.as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = 0f64.as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = 1f64.as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_eq_bool_text() {
         let a = false.as_value();
         let b = "".as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
 
         let a = false.as_value();
         let b = "1".as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = "".as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = "1".as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_cmp_bool_bool() {
         let a = false.as_value();
         let b = false.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = false.as_value();
         let b = true.as_value();
-        assert!(!greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(less_than_value(&a, &b));
+        assert!(!greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(less_than_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = false.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(greater_than_value(&a, &b));
-        assert!(!less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(greater_than_value(&a, &b).unwrap());
+        assert!(!less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = true.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_cmp_bool_node() {
         let a = false.as_value();
         let b = vec![].as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = false.as_value();
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(!greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(less_than_value(&a, &b));
+        assert!(!greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(less_than_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = vec![].as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(greater_than_value(&a, &b));
-        assert!(!less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(greater_than_value(&a, &b).unwrap());
+        assert!(!less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_cmp_bool_number() {
         let a = false.as_value();
         let b = 0f64.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = false.as_value();
         let b = 1f64.as_value();
-        assert!(!greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(less_than_value(&a, &b));
+        assert!(!greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(less_than_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = 0f64.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(greater_than_value(&a, &b));
-        assert!(!less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(greater_than_value(&a, &b).unwrap());
+        assert!(!less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = 1f64.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_cmp_bool_text() {
         let a = false.as_value();
         let b = "0".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = false.as_value();
         let b = "1".as_value();
-        assert!(!greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(less_than_value(&a, &b));
+        assert!(!greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(less_than_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = "0".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(greater_than_value(&a, &b));
-        assert!(!less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(greater_than_value(&a, &b).unwrap());
+        assert!(!less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = true.as_value();
         let b = "1".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_eq_node_node() {
         let (_, tree) = xml_parser::document("<root>a</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let (_, tree) = xml_parser::document("<root>a</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>a</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let (_, tree) = xml_parser::document("<root>b</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>b</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let (_, tree) = xml_parser::document("<root>a</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>b</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let (_, tree) = xml_parser::document("<root>b</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_eq_node_number() {
         let (_, tree) = xml_parser::document("<root>0</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = 0f64.as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>0</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = 1f64.as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = 0f64.as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = 1f64.as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_eq_node_text() {
         let (_, tree) = xml_parser::document("<root>a</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = "a".as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>a</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = "b".as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>b</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = "a".as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>b</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = "b".as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_cmp_node_node() {
         let (_, tree) = xml_parser::document("<root>0</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let (_, tree) = xml_parser::document("<root>0</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>0</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(!greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(less_than_value(&a, &b));
+        assert!(!greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(less_than_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let (_, tree) = xml_parser::document("<root>0</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(greater_than_value(&a, &b));
-        assert!(!less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(greater_than_value(&a, &b).unwrap());
+        assert!(!less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let b = doc.as_node().as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_cmp_node_number() {
         let (_, tree) = xml_parser::document("<root>0</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = 0f64.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>0</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = 1f64.as_value();
-        assert!(!greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(less_than_value(&a, &b));
+        assert!(!greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(less_than_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = 0f64.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(greater_than_value(&a, &b));
-        assert!(!less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(greater_than_value(&a, &b).unwrap());
+        assert!(!less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = 1f64.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_cmp_node_text() {
         let (_, tree) = xml_parser::document("<root>0</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = "0".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>0</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = "1".as_value();
-        assert!(!greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(less_than_value(&a, &b));
+        assert!(!greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(less_than_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = "0".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(greater_than_value(&a, &b));
-        assert!(!less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(greater_than_value(&a, &b).unwrap());
+        assert!(!less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let (_, tree) = xml_parser::document("<root>1</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(&tree);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
         let a = doc.as_node().as_value();
         let b = "1".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_eq_number_number() {
         let a = 0f64.as_value();
         let b = 0f64.as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
 
         let a = 0f64.as_value();
         let b = 1f64.as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = 1f64.as_value();
         let b = 0f64.as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = 1f64.as_value();
         let b = 1f64.as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_eq_number_text() {
         let a = 0f64.as_value();
         let b = "0".as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
 
         let a = 0f64.as_value();
         let b = "1".as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = 1f64.as_value();
         let b = "0".as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = 1f64.as_value();
         let b = "1".as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_cmp_number_number() {
         let a = 0f64.as_value();
         let b = 0f64.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = 0f64.as_value();
         let b = 1f64.as_value();
-        assert!(!greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(less_than_value(&a, &b));
+        assert!(!greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(less_than_value(&a, &b).unwrap());
 
         let a = 1f64.as_value();
         let b = 0f64.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(greater_than_value(&a, &b));
-        assert!(!less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(greater_than_value(&a, &b).unwrap());
+        assert!(!less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = 1f64.as_value();
         let b = 1f64.as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_cmp_number_text() {
         let a = 0f64.as_value();
         let b = "0".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = 0f64.as_value();
         let b = "1".as_value();
-        assert!(!greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(less_than_value(&a, &b));
+        assert!(!greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(less_than_value(&a, &b).unwrap());
 
         let a = 1f64.as_value();
         let b = "0".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(greater_than_value(&a, &b));
-        assert!(!less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(greater_than_value(&a, &b).unwrap());
+        assert!(!less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = 1f64.as_value();
         let b = "1".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_eq_text_text() {
         let a = "".as_value();
         let b = "".as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
 
         let a = "".as_value();
         let b = "1".as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = "1".as_value();
         let b = "".as_value();
-        assert!(!equal_value(&a, &b));
-        assert!(not_equal_value(&a, &b));
+        assert!(!equal_value(&a, &b).unwrap());
+        assert!(not_equal_value(&a, &b).unwrap());
 
         let a = "1".as_value();
         let b = "1".as_value();
-        assert!(equal_value(&a, &b));
-        assert!(!not_equal_value(&a, &b));
+        assert!(equal_value(&a, &b).unwrap());
+        assert!(!not_equal_value(&a, &b).unwrap());
     }
 
     #[test]
     fn test_bool_cmp_text_text() {
         let a = "0".as_value();
         let b = "0".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = "0".as_value();
         let b = "1".as_value();
-        assert!(!greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(less_than_value(&a, &b));
+        assert!(!greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(less_than_value(&a, &b).unwrap());
 
         let a = "1".as_value();
         let b = "0".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(greater_than_value(&a, &b));
-        assert!(!less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(greater_than_value(&a, &b).unwrap());
+        assert!(!less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
 
         let a = "1".as_value();
         let b = "1".as_value();
-        assert!(greater_eq_value(&a, &b));
-        assert!(!greater_than_value(&a, &b));
-        assert!(less_eq_value(&a, &b));
-        assert!(!less_than_value(&a, &b));
+        assert!(greater_eq_value(&a, &b).unwrap());
+        assert!(!greater_than_value(&a, &b).unwrap());
+        assert!(less_eq_value(&a, &b).unwrap());
+        assert!(!less_than_value(&a, &b).unwrap());
     }
 }
