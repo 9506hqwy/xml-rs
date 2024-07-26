@@ -7,7 +7,7 @@ use xml_info::{
     Attribute as InfoAttribute, Character as InfoCharacter, Comment as InfoComment,
     Document as InfoDocument, DocumentTypeDeclaration as InfoDocumentTypeDeclaration,
     Element as InfoElement, HasQName as InfoHasQName, Notation as InfoNotation,
-    ProcessingInstruction as InfoProcessingInstruction,
+    ProcessingInstruction as InfoProcessingInstruction, Sortable as InfoSortable,
 };
 
 // TODO: read only.
@@ -425,6 +425,23 @@ impl AsStringValue for XmlNode {
 }
 
 impl XmlNode {
+    pub fn order(&self) -> i64 {
+        match self {
+            XmlNode::Attribute(v) => v.attribute.borrow().order(),
+            XmlNode::CData(v) => v.data.borrow().order(),
+            XmlNode::Comment(v) => v.data.borrow().order(),
+            XmlNode::Document(v) => v.document.borrow().order(),
+            XmlNode::DocumentFragment(v) => v.document.borrow().order(),
+            XmlNode::DocumentType(v) => v.declaration.borrow().order(),
+            XmlNode::Element(v) => v.element.borrow().order(),
+            XmlNode::Entity(_) => 0,
+            XmlNode::EntityReference(v) => v.order,
+            XmlNode::Notation(_) => 0,
+            XmlNode::PI(_) => 0,
+            XmlNode::Text(v) => v.data.borrow().order(),
+        }
+    }
+
     fn previous_sibling_child(&self, node: XmlNode) -> Option<XmlNode> {
         let children = match &self {
             XmlNode::Element(v) => v.children(),
@@ -1914,6 +1931,7 @@ impl fmt::Display for XmlEntity {
 #[derive(Clone, PartialEq)]
 pub struct XmlEntityReference {
     reference: info::XmlNode<info::XmlReference>,
+    order: i64,
 }
 
 impl EntityReference for XmlEntityReference {}
@@ -1996,21 +2014,26 @@ impl HasChild for XmlEntityReference {
 
 impl From<info::XmlNode<info::XmlCharReference>> for XmlEntityReference {
     fn from(value: info::XmlNode<info::XmlCharReference>) -> Self {
+        let order = value.borrow().order();
         let reference = info::XmlReference::new_from_char_ref(value);
-        XmlEntityReference { reference }
+        XmlEntityReference { reference, order }
     }
 }
 
 impl From<info::XmlNode<info::XmlReference>> for XmlEntityReference {
     fn from(value: info::XmlNode<info::XmlReference>) -> Self {
-        XmlEntityReference { reference: value }
+        XmlEntityReference {
+            reference: value,
+            order: 0,
+        }
     }
 }
 
 impl From<info::XmlNode<info::XmlUnexpandedEntityReference>> for XmlEntityReference {
     fn from(value: info::XmlNode<info::XmlUnexpandedEntityReference>) -> Self {
+        let order = value.borrow().order();
         let reference = info::XmlReference::new_from_ref(value.borrow().entity());
-        XmlEntityReference { reference }
+        XmlEntityReference { reference, order }
     }
 }
 

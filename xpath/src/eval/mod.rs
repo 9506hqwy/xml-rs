@@ -292,6 +292,8 @@ fn eval_filtered_loc_expr(
         collected.append(&mut eval_loc_expr(location, n.clone(), context)?);
     }
 
+    collected.sort_by_cached_key(|v| v.order());
+
     Ok(collected)
 }
 
@@ -372,6 +374,23 @@ fn eval_axis_node_test(
     };
 
     nodes.retain(|n| eval_node_test(test, n.clone(), context));
+
+    match axis {
+        expr::AxisSpecifier::Abbreviated(_) => {
+            nodes.sort_by_cached_key(|v| v.order());
+        }
+        expr::AxisSpecifier::Name(specifier) => match specifier {
+            expr::AxisName::Ancestor
+            | expr::AxisName::AncestorOrSelf
+            | expr::AxisName::Preceding
+            | expr::AxisName::PrecedingSibling => {
+                nodes.sort_by_cached_key(|v| -v.order());
+            }
+            _ => {
+                nodes.sort_by_cached_key(|v| v.order());
+            }
+        },
+    }
 
     for predicate in predicates {
         context.push_size(nodes.len());

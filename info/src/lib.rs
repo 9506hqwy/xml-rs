@@ -33,6 +33,18 @@ pub trait HasQName {
 
 // -----------------------------------------------------------------------------------------------
 
+pub trait Numbering {
+    fn next(&mut self) -> i64;
+}
+
+pub trait Sortable {
+    fn order(&self) -> i64;
+
+    fn set_order(&mut self, numbering: &mut impl Numbering);
+}
+
+// -----------------------------------------------------------------------------------------------
+
 pub trait Attribute: HasQName {
     fn namespace_name(&self) -> error::Result<Option<NamespaceUri>>;
 
@@ -190,6 +202,7 @@ pub struct XmlAttribute {
     values: Vec<XmlAttributeValue>,
     parent: Option<XmlNode<XmlElement>>,
     owner: XmlNode<XmlDocument>,
+    order: i64,
 }
 
 impl HasQName for XmlAttribute {
@@ -199,6 +212,16 @@ impl HasQName for XmlAttribute {
 
     fn prefix(&self) -> Option<&str> {
         self.prefix.as_deref()
+    }
+}
+
+impl Sortable for XmlAttribute {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
     }
 }
 
@@ -278,6 +301,7 @@ impl XmlAttribute {
             values: vec![],
             parent: Some(parent),
             owner: owner.clone(),
+            order: 0,
         });
 
         for value in value.value.as_slice() {
@@ -350,6 +374,17 @@ pub struct XmlCData {
     data: String,
     parent: Option<XmlNode<XmlElement>>,
     owner: XmlNode<XmlDocument>,
+    order: i64,
+}
+
+impl Sortable for XmlCData {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
 }
 
 impl Character for XmlCData {
@@ -384,6 +419,7 @@ impl XmlCData {
             data,
             parent: Some(parent),
             owner,
+            order: 0,
         })
     }
 
@@ -409,6 +445,17 @@ pub struct XmlCharReference {
     radix: u32,
     parent: Option<XmlNode<XmlElement>>,
     owner: XmlNode<XmlDocument>,
+    order: i64,
+}
+
+impl Sortable for XmlCharReference {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
 }
 
 impl Character for XmlCharReference {
@@ -452,6 +499,7 @@ impl XmlCharReference {
             radix,
             parent: Some(parent),
             owner,
+            order: 0,
         }))
     }
 
@@ -475,6 +523,17 @@ pub struct XmlComment {
     comment: String,
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
+    order: i64,
+}
+
+impl Sortable for XmlComment {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
 }
 
 impl Comment for XmlComment {
@@ -500,6 +559,7 @@ impl XmlComment {
             comment,
             parent: Some(parent),
             owner,
+            order: 0,
         })
     }
 
@@ -642,6 +702,37 @@ pub struct XmlDocument {
     standalone: Option<bool>,
     version: Option<String>,
     all_declarations_processed: bool,
+    order: i64,
+}
+
+impl Sortable for XmlDocument {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+
+        for child in self.prolog.borrow_mut().head.as_mut_slice() {
+            child.set_order(numbering);
+        }
+
+        if let Some(declaration) = self.prolog.borrow_mut().declaration() {
+            declaration.borrow_mut().set_order(numbering);
+        }
+
+        for child in self.prolog.borrow_mut().tail.as_mut_slice() {
+            child.set_order(numbering);
+        }
+
+        if let Some(root) = self.root.as_mut() {
+            root.borrow_mut().set_order(numbering);
+        }
+
+        for child in self.epilog.borrow_mut().head.as_mut_slice() {
+            child.set_order(numbering);
+        }
+    }
 }
 
 impl Document for XmlDocument {
@@ -748,6 +839,7 @@ impl XmlDocument {
             standalone: xml_standalone(value),
             version: xml_version(value),
             all_declarations_processed: true,
+            order: 0,
         });
 
         let prolog = XmlDocumentProlog::new(&value.prolog, document.clone());
@@ -758,6 +850,8 @@ impl XmlDocument {
 
         let epilog = XmlDocumentEpilog::new(value, document.clone());
         document.borrow_mut().set_epilog(epilog);
+
+        document.borrow_mut().set_order(&mut CountUp::default());
 
         Ok(document)
     }
@@ -880,6 +974,7 @@ pub struct XmlDocumentTypeDeclaration {
     pis: Vec<XmlNode<XmlProcessingInstruction>>,
     notations: Vec<XmlNode<XmlNotation>>,
     parent: XmlNode<XmlDocument>,
+    order: i64,
 }
 
 impl HasQName for XmlDocumentTypeDeclaration {
@@ -889,6 +984,16 @@ impl HasQName for XmlDocumentTypeDeclaration {
 
     fn prefix(&self) -> Option<&str> {
         self.prefix.as_deref()
+    }
+}
+
+impl Sortable for XmlDocumentTypeDeclaration {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
     }
 }
 
@@ -945,6 +1050,7 @@ impl XmlDocumentTypeDeclaration {
             pis: vec![],
             notations: vec![],
             parent: parent.clone(),
+            order: 0,
         });
 
         for subset in &value.internal_subset {
@@ -1041,6 +1147,7 @@ pub struct XmlElement {
     base_uri: String,
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
+    order: i64,
 }
 
 impl HasQName for XmlElement {
@@ -1050,6 +1157,28 @@ impl HasQName for XmlElement {
 
     fn prefix(&self) -> Option<&str> {
         self.prefix.as_deref()
+    }
+}
+
+impl Sortable for XmlElement {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+
+        for child in self.namespace_attributes().iter() {
+            child.borrow_mut().set_order(numbering);
+        }
+
+        for child in self.attributes().iter() {
+            child.borrow_mut().set_order(numbering);
+        }
+
+        for mut child in self.children().iter() {
+            child.set_order(numbering);
+        }
     }
 }
 
@@ -1160,6 +1289,7 @@ impl XmlElement {
             base_uri: String::new(),
             parent: Some(parent),
             owner: owner.clone(),
+            order: 0,
         });
 
         if let Some(content) = &value.content {
@@ -1408,6 +1538,46 @@ pub enum XmlItem {
     Text(XmlNode<XmlText>),
     Unexpanded(XmlNode<XmlUnexpandedEntityReference>),
     Unparsed(XmlNode<XmlUnparsedEntity>),
+}
+
+impl Sortable for XmlItem {
+    fn order(&self) -> i64 {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().order(),
+            XmlItem::CData(v) => v.borrow().order(),
+            XmlItem::CharReference(v) => v.borrow().order(),
+            XmlItem::Comment(v) => v.borrow().order(),
+            XmlItem::Document(v) => v.borrow().order(),
+            XmlItem::DocumentType(v) => v.borrow().order(),
+            XmlItem::Element(v) => v.borrow().order(),
+            XmlItem::Entity(_) => 0,
+            XmlItem::Namespace(_) => 0,
+            XmlItem::Notation(_) => 0,
+            XmlItem::PI(_) => 0,
+            XmlItem::Text(v) => v.borrow().order(),
+            XmlItem::Unexpanded(v) => v.borrow().order(),
+            XmlItem::Unparsed(_) => 0,
+        }
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        match self {
+            XmlItem::Attribute(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::CData(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::CharReference(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::Comment(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::Document(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::DocumentType(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::Element(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::Entity(_) => {}
+            XmlItem::Namespace(_) => {}
+            XmlItem::Notation(_) => {}
+            XmlItem::PI(_) => {}
+            XmlItem::Text(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::Unexpanded(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::Unparsed(_) => {}
+        }
+    }
 }
 
 impl From<XmlNode<XmlAttribute>> for XmlItem {
@@ -1934,6 +2104,17 @@ pub struct XmlText {
     text: String,
     parent: Option<XmlNode<XmlElement>>,
     owner: XmlNode<XmlDocument>,
+    order: i64,
+}
+
+impl Sortable for XmlText {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
 }
 
 impl Character for XmlText {
@@ -1968,6 +2149,7 @@ impl XmlText {
             text,
             parent: Some(parent),
             owner,
+            order: 0,
         })
     }
 
@@ -1995,6 +2177,17 @@ pub struct XmlUnexpandedEntityReference {
     declaration_base_uri: String,
     parent: XmlNode<XmlElement>,
     owner: XmlNode<XmlDocument>,
+    order: i64,
+}
+
+impl Sortable for XmlUnexpandedEntityReference {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
 }
 
 impl UnexpandedEntityReference for XmlUnexpandedEntityReference {
@@ -2047,6 +2240,7 @@ impl XmlUnexpandedEntityReference {
             declaration_base_uri,
             parent,
             owner,
+            order: 0,
         })
     }
 
@@ -2306,6 +2500,20 @@ where
 {
     Unknown,
     V(T),
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Default)]
+struct CountUp {
+    number: i64,
+}
+
+impl Numbering for CountUp {
+    fn next(&mut self) -> i64 {
+        self.number += 1;
+        self.number
+    }
 }
 
 // -----------------------------------------------------------------------------------------------

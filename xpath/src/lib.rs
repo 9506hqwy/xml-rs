@@ -2,7 +2,6 @@ pub mod eval;
 pub mod expr;
 
 // FIXME: add namespace node support.
-// FIXME: incorrect document order.
 // FIXME: remove duplicate node from nodeset.
 // FIXME: function call.
 
@@ -312,7 +311,6 @@ mod tests {
         assert_eq!("<chapter>2</chapter>", format!("{}", r));
     }
 
-    /* FIXME
     #[test]
     fn test_eg_location_path_preceding_chapter_1_rev() {
         let (rest, tree) =
@@ -328,7 +326,6 @@ mod tests {
         let r = eval::document(&expr, doc, &mut eval::model::Context::default()).unwrap();
         assert_eq!("<chapter>1</chapter>", format!("{}", r));
     }
-    */
 
     #[test]
     fn test_eg_location_path_root_figure_42() {
@@ -607,12 +604,10 @@ mod tests {
         assert_eq!("", rest);
 
         let r = eval::document(&expr, doc, &mut eval::model::Context::default()).unwrap();
-        /* FIXME
         assert_eq!(
             "<para>1</para><para>2</para><para>3</para>",
             format!("{}", r)
         );
-        */
     }
 
     #[test]
@@ -628,12 +623,10 @@ mod tests {
         assert_eq!("", rest);
 
         let r = eval::document(&expr, doc, &mut eval::model::Context::default()).unwrap();
-        /* FIXME
         assert_eq!(
             "<para>1</para><para>2</para><para>3</para>",
             format!("{}", r)
         );
-        */
     }
 
     #[test]
@@ -678,12 +671,10 @@ mod tests {
         assert_eq!("", rest);
 
         let r = eval::document(&expr, doc, &mut eval::model::Context::default()).unwrap();
-        /* FIXME
         assert_eq!(
             "<para>1</para><para>2</para><para>3</para>",
             format!("{}", r)
         );
-        */
     }
 
     #[test]
