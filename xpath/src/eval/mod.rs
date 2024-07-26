@@ -3,6 +3,7 @@ pub mod model;
 
 use super::expr::model as expr;
 use model::AsValue;
+use std::collections::HashSet;
 use xml_dom::{self as dom, AsNode, AsStringValue, Node};
 use xml_nom::{self as nom};
 
@@ -164,7 +165,14 @@ fn eval_union_expr(
 
     let rest = uni.operands().iter().skip(1);
     if rest.len() == 0 {
-        return Ok(value);
+        if let model::Value::Node(mut nodes) = value {
+            let mut set = HashSet::new();
+            nodes.retain(|v| set.insert(v.order()));
+
+            return Ok(nodes.as_value());
+        } else {
+            return Ok(value);
+        }
     } else if let model::Value::Node(mut n) = value {
         nodes.append(&mut n);
     } else {
@@ -180,6 +188,9 @@ fn eval_union_expr(
             return Err(error::Error::InvalidType);
         };
     }
+
+    let mut set = HashSet::new();
+    nodes.retain(|v| set.insert(v.order()));
 
     Ok(nodes.as_value())
 }

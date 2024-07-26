@@ -2,7 +2,6 @@ pub mod eval;
 pub mod expr;
 
 // FIXME: add namespace node support.
-// FIXME: remove duplicate node from nodeset.
 // FIXME: function call.
 
 #[cfg(test)]
@@ -123,9 +122,7 @@ mod tests {
         assert_eq!("", rest);
 
         let r = eval::document(&expr, doc, &mut eval::model::Context::default()).unwrap();
-        /*
         assert_eq!("<div><para></para></div>", format!("{}", r));
-        */
     }
 
     #[test]
