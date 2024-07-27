@@ -1213,24 +1213,7 @@ impl Element for XmlElement {
     }
 
     fn in_scope_namespace(&self) -> error::Result<UnorderedSet<XmlNode<XmlNamespace>>> {
-        let mut items = vec![];
-
-        for attr in self.namespace_attributes().iter() {
-            let namespace_name = attr.borrow().normalized_value()?;
-            if !namespace_name.is_empty() {
-                if attr.borrow().local_name() == "xmlns" {
-                    items.push(node(XmlNamespace {
-                        prefix: None,
-                        namespace_name,
-                    }));
-                } else {
-                    items.push(node(XmlNamespace {
-                        prefix: Some(attr.borrow().local_name().to_string()),
-                        namespace_name,
-                    }));
-                }
-            }
-        }
+        let mut items = self.namespaces()?;
 
         if let Some(parent) = self.parent.as_ref() {
             if let Some(parent) = parent.as_element() {
@@ -1244,6 +1227,8 @@ impl Element for XmlElement {
                 let implicity = node(XmlNamespace {
                     prefix: Some("xml".to_string()),
                     namespace_name: "http://www.w3.org/XML/1998/namespace".to_string(),
+                    implicit: true,
+                    order: -1,
                 });
                 let exist = items.iter().any(|v| *v == implicity);
                 if !exist {
@@ -1353,6 +1338,33 @@ impl XmlElement {
         }
 
         Ok(element)
+    }
+
+    pub fn namespaces(&self) -> error::Result<Vec<XmlNode<XmlNamespace>>> {
+        let mut items = vec![];
+
+        for attr in self.namespace_attributes().iter() {
+            let namespace_name = attr.borrow().normalized_value()?;
+            if !namespace_name.is_empty() {
+                if attr.borrow().local_name() == "xmlns" {
+                    items.push(node(XmlNamespace {
+                        prefix: None,
+                        namespace_name,
+                        implicit: false,
+                        order: attr.borrow().order(),
+                    }));
+                } else {
+                    items.push(node(XmlNamespace {
+                        prefix: Some(attr.borrow().local_name().to_string()),
+                        namespace_name,
+                        implicit: false,
+                        order: attr.borrow().order(),
+                    }));
+                }
+            }
+        }
+
+        Ok(items)
     }
 
     pub fn owner(&self) -> XmlNode<XmlDocument> {
@@ -1868,6 +1880,18 @@ impl XmlItem {
 pub struct XmlNamespace {
     prefix: Option<String>,
     namespace_name: String,
+    implicit: bool,
+    order: i64,
+}
+
+impl Sortable for XmlNamespace {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
 }
 
 impl Namespace for XmlNamespace {
@@ -1877,6 +1901,12 @@ impl Namespace for XmlNamespace {
 
     fn namespace_name(&self) -> &str {
         self.namespace_name.as_str()
+    }
+}
+
+impl XmlNamespace {
+    pub fn implicit(&self) -> bool {
+        self.implicit
     }
 }
 

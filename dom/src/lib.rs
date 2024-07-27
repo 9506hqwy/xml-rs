@@ -6,8 +6,9 @@ use xml_info as info;
 use xml_info::{
     Attribute as InfoAttribute, Character as InfoCharacter, Comment as InfoComment,
     Document as InfoDocument, DocumentTypeDeclaration as InfoDocumentTypeDeclaration,
-    Element as InfoElement, HasQName as InfoHasQName, Notation as InfoNotation,
-    ProcessingInstruction as InfoProcessingInstruction, Sortable as InfoSortable,
+    Element as InfoElement, HasQName as InfoHasQName, Namespace as InfoNamespace,
+    Notation as InfoNotation, ProcessingInstruction as InfoProcessingInstruction,
+    Sortable as InfoSortable,
 };
 
 // TODO: read only.
@@ -197,6 +198,7 @@ pub enum XmlNode {
     DocumentType(XmlDocumentType),
     DocumentFragment(XmlDocumentFragment),
     Notation(XmlNotation),
+    Namespace(XmlNamespace),
 }
 
 impl Node for XmlNode {
@@ -214,6 +216,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.node_name(),
             XmlNode::DocumentFragment(v) => v.node_name(),
             XmlNode::Notation(v) => v.node_name(),
+            XmlNode::Namespace(v) => v.node_name(),
         }
     }
 
@@ -231,6 +234,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.node_value(),
             XmlNode::DocumentFragment(v) => v.node_value(),
             XmlNode::Notation(v) => v.node_value(),
+            XmlNode::Namespace(v) => v.node_value(),
         }
     }
 
@@ -248,6 +252,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.node_type(),
             XmlNode::DocumentFragment(v) => v.node_type(),
             XmlNode::Notation(v) => v.node_type(),
+            XmlNode::Namespace(v) => v.node_type(),
         }
     }
 
@@ -265,6 +270,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.parent_node(),
             XmlNode::DocumentFragment(v) => v.parent_node(),
             XmlNode::Notation(v) => v.parent_node(),
+            XmlNode::Namespace(v) => v.parent_node(),
         }
     }
 
@@ -282,6 +288,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.child_nodes(),
             XmlNode::DocumentFragment(v) => v.child_nodes(),
             XmlNode::Notation(v) => v.child_nodes(),
+            XmlNode::Namespace(v) => v.child_nodes(),
         }
     }
 
@@ -299,6 +306,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.first_child(),
             XmlNode::DocumentFragment(v) => v.first_child(),
             XmlNode::Notation(v) => v.first_child(),
+            XmlNode::Namespace(v) => v.first_child(),
         }
     }
 
@@ -316,6 +324,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.last_child(),
             XmlNode::DocumentFragment(v) => v.last_child(),
             XmlNode::Notation(v) => v.last_child(),
+            XmlNode::Namespace(v) => v.last_child(),
         }
     }
 
@@ -333,6 +342,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.previous_sibling(),
             XmlNode::DocumentFragment(v) => v.previous_sibling(),
             XmlNode::Notation(v) => v.previous_sibling(),
+            XmlNode::Namespace(v) => v.previous_sibling(),
         }
     }
 
@@ -350,6 +360,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.next_sibling(),
             XmlNode::DocumentFragment(v) => v.next_sibling(),
             XmlNode::Notation(v) => v.next_sibling(),
+            XmlNode::Namespace(v) => v.next_sibling(),
         }
     }
 
@@ -367,6 +378,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.attributes(),
             XmlNode::DocumentFragment(v) => v.attributes(),
             XmlNode::Notation(v) => v.attributes(),
+            XmlNode::Namespace(v) => v.attributes(),
         }
     }
 
@@ -384,6 +396,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.owner_document(),
             XmlNode::DocumentFragment(v) => v.owner_document(),
             XmlNode::Notation(v) => v.owner_document(),
+            XmlNode::Namespace(v) => v.owner_document(),
         }
     }
 
@@ -401,6 +414,7 @@ impl Node for XmlNode {
             XmlNode::DocumentType(v) => v.has_child(),
             XmlNode::DocumentFragment(v) => v.has_child(),
             XmlNode::Notation(v) => v.has_child(),
+            XmlNode::Namespace(v) => v.has_child(),
         }
     }
 }
@@ -420,6 +434,7 @@ impl AsStringValue for XmlNode {
             XmlNode::DocumentType(_) => Ok("".to_string()),
             XmlNode::DocumentFragment(v) => v.as_string_value(),
             XmlNode::Notation(_) => Ok("".to_string()),
+            XmlNode::Namespace(v) => v.as_string_value(),
         }
     }
 }
@@ -436,6 +451,7 @@ impl XmlNode {
             XmlNode::Element(v) => v.element.borrow().order(),
             XmlNode::Entity(_) => 0,
             XmlNode::EntityReference(v) => v.order,
+            XmlNode::Namespace(v) => v.namespace.borrow().order(),
             XmlNode::Notation(_) => 0,
             XmlNode::PI(_) => 0,
             XmlNode::Text(v) => v.data.borrow().order(),
@@ -486,7 +502,7 @@ impl From<info::XmlItem> for XmlNode {
             info::XmlItem::Document(v) => XmlDocument::from(v).as_node(),
             info::XmlItem::DocumentType(v) => XmlDocumentType::from(v).as_node(),
             info::XmlItem::Element(v) => XmlElement::from(v).as_node(),
-            info::XmlItem::Namespace(_) => unimplemented!("Not supported namespace node."),
+            info::XmlItem::Namespace(v) => XmlNamespace::from(v).as_node(),
             info::XmlItem::Notation(v) => XmlNotation::from(v).as_node(),
             info::XmlItem::PI(v) => XmlProcessingInstruction::from(v).as_node(),
             info::XmlItem::Text(v) => XmlText::from(v).as_node(),
@@ -512,6 +528,7 @@ impl fmt::Display for XmlNode {
             XmlNode::DocumentType(v) => v.fmt(f),
             XmlNode::DocumentFragment(v) => v.fmt(f),
             XmlNode::Notation(v) => v.fmt(f),
+            XmlNode::Namespace(v) => v.fmt(f),
         }
     }
 }
@@ -1172,6 +1189,7 @@ impl AsStringValue for XmlElement {
                 XmlNode::Element(v) => s.push_str(&v.as_string_value()?),
                 XmlNode::Entity(_) => {}
                 XmlNode::EntityReference(_) => {}
+                XmlNode::Namespace(_) => {}
                 XmlNode::Notation(_) => {}
                 XmlNode::PI(_) => {}
                 XmlNode::Text(v) => s.push_str(&v.as_string_value()?),
@@ -1193,6 +1211,16 @@ impl HasChild for XmlElement {
 }
 
 impl XmlElement {
+    pub fn in_scope_namespace(&self) -> error::Result<Vec<XmlNamespace>> {
+        Ok(self
+            .element
+            .borrow()
+            .in_scope_namespace()?
+            .iter()
+            .map(XmlNamespace::from)
+            .collect())
+    }
+
     fn elements_by_tag_name(&self, tag_name: &str) -> Vec<XmlElement> {
         let mut elems = vec![];
 
@@ -1213,6 +1241,16 @@ impl XmlElement {
     fn match_tag_name(&self, tag_name: &str) -> bool {
         tag_name == "*" || self.node_name() == tag_name
     }
+
+    fn namespaces(&self) -> error::Result<Vec<XmlNamespace>> {
+        Ok(self
+            .element
+            .borrow()
+            .namespaces()?
+            .into_iter()
+            .map(XmlNamespace::from)
+            .collect())
+    }
 }
 
 impl From<info::XmlNode<info::XmlElement>> for XmlElement {
@@ -1230,6 +1268,11 @@ impl fmt::Debug for XmlElement {
 impl fmt::Display for XmlElement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "<{}", self.node_name())?;
+        for ns in self.namespaces().map_err(|_| fmt::Error)? {
+            if !ns.implicit() {
+                write!(f, " {}", ns)?;
+            }
+        }
         if let Some(attrs) = self.attributes() {
             for attr in attrs.iter() {
                 write!(f, " {}", attr)?;
@@ -2152,6 +2195,122 @@ impl fmt::Display for XmlProcessingInstruction {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone, PartialEq)]
+pub struct XmlNamespace {
+    namespace: info::XmlNode<info::XmlNamespace>,
+}
+
+impl Node for XmlNamespace {
+    fn node_name(&self) -> String {
+        self.namespace
+            .borrow()
+            .prefix()
+            .unwrap_or("xmlns")
+            .to_string()
+    }
+
+    fn node_value(&self) -> error::Result<Option<String>> {
+        Ok(Some(self.namespace.borrow().namespace_name().to_string()))
+    }
+
+    fn node_type(&self) -> NodeType {
+        NodeType::Attribute
+    }
+
+    fn parent_node(&self) -> Option<XmlNode> {
+        None
+    }
+
+    fn child_nodes(&self) -> XmlNodeList {
+        XmlNodeList { nodes: vec![] }
+    }
+
+    fn first_child(&self) -> Option<XmlNode> {
+        None
+    }
+
+    fn last_child(&self) -> Option<XmlNode> {
+        None
+    }
+
+    fn previous_sibling(&self) -> Option<XmlNode> {
+        None
+    }
+
+    fn next_sibling(&self) -> Option<XmlNode> {
+        None
+    }
+
+    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+        None::<XmlNamedNodeMap>
+    }
+
+    fn owner_document(&self) -> Option<XmlDocument> {
+        None
+    }
+
+    fn has_child(&self) -> bool {
+        false
+    }
+}
+
+impl AsNode for XmlNamespace {
+    fn as_node(&self) -> XmlNode {
+        XmlNode::Namespace(self.clone())
+    }
+}
+
+impl AsStringValue for XmlNamespace {
+    fn as_string_value(&self) -> error::Result<String> {
+        Ok(self.namespace.borrow().namespace_name().to_string())
+    }
+}
+
+impl From<info::XmlNode<info::XmlNamespace>> for XmlNamespace {
+    fn from(value: info::XmlNode<info::XmlNamespace>) -> Self {
+        XmlNamespace { namespace: value }
+    }
+}
+
+impl fmt::Debug for XmlNamespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(
+            f,
+            "XmlNamespace {{ {} }}",
+            self.node_value().map_err(|_| fmt::Error)?.unwrap()
+        )
+    }
+}
+
+impl fmt::Display for XmlNamespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        if self.implicit() {
+            Ok(())
+        } else {
+            let qname = if self.node_name() == "xmlns" {
+                "xmlns".to_string()
+            } else {
+                format!("xmlns:{}", self.node_name())
+            };
+
+            write!(
+                f,
+                "{}=\"{}\"",
+                qname,
+                self.node_value().map_err(|_| fmt::Error)?.unwrap(),
+            )
+        }
+    }
+}
+
+impl XmlNamespace {
+    pub fn implicit(&self) -> bool {
+        self.namespace.borrow().implicit()
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2572,6 +2731,51 @@ mod tests {
 
         // AsStringValue
         assert_eq!("&<>\"", cdata.as_string_value().unwrap());
+    }
+
+    #[test]
+    fn test_namespace() {
+        let (_, tree) = xml_parser::document("<root xmlns:a='http://test/a'></root>").unwrap();
+        let document = info::XmlDocument::new(&tree).unwrap();
+        let doc = XmlDocument::from(document);
+        let root = doc.element().unwrap();
+        let namespaces = root.namespaces().unwrap();
+        let ns = namespaces.first().unwrap();
+
+        // Node
+        assert_eq!("a", ns.node_name());
+        assert_eq!(Some("http://test/a".to_string()), ns.node_value().unwrap());
+        assert_eq!(NodeType::Attribute, ns.node_type());
+        assert_eq!(None, ns.parent_node());
+        assert_eq!(XmlNodeList::empty(), ns.child_nodes());
+        assert_eq!(None, ns.first_child());
+        assert_eq!(None, ns.last_child());
+        assert_eq!(None, ns.previous_sibling());
+        assert_eq!(None, ns.next_sibling());
+        assert_eq!(None, ns.attributes());
+        assert_eq!(None, ns.owner_document());
+        assert!(!ns.has_child());
+
+        // XmlNode
+        let node = ns.as_node();
+        assert_eq!("a", node.node_name());
+        assert_eq!(
+            Some("http://test/a".to_string()),
+            node.node_value().unwrap()
+        );
+        assert_eq!(NodeType::Attribute, node.node_type());
+        assert_eq!(None, node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(None, node.owner_document());
+        assert!(!node.has_child());
+
+        // AsStringValue
+        assert_eq!("http://test/a", ns.as_string_value().unwrap());
     }
 }
 

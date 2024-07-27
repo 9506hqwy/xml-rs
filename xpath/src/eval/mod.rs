@@ -376,7 +376,7 @@ fn eval_axis_node_test(
             expr::AxisName::DescendantOrSelf => descendant_and_self(node),
             expr::AxisName::Following => following(node),
             expr::AxisName::FollowingSibling => following_sibling(node),
-            expr::AxisName::Namespace => unimplemented!("Not support `AxisName::Namespace`."),
+            expr::AxisName::Namespace => namespace(node),
             expr::AxisName::Parent => vec![node.parent_node().unwrap()],
             expr::AxisName::Preceding => preceding(node),
             expr::AxisName::PrecedingSibling => preceding_sibling(node),
@@ -556,6 +556,19 @@ fn following_sibling(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     while let Some(n) = next {
         nodes.push(n.clone());
         next = n.next_sibling();
+    }
+
+    nodes
+}
+
+fn namespace(node: dom::XmlNode) -> Vec<dom::XmlNode> {
+    let mut nodes = vec![];
+
+    if let dom::XmlNode::Element(element) = node {
+        // FIXME:
+        for ns in element.in_scope_namespace().unwrap() {
+            nodes.push(ns.as_node());
+        }
     }
 
     nodes
@@ -1305,19 +1318,22 @@ mod tests {
         assert_eq!(e3, nodes[0]);
     }
 
-    /* FIXME:
     #[test]
     fn test_step_axis_namespace() {
         let (rest, expr) = parse("root/e2[namespace::a]").unwrap();
         assert_eq!("", rest);
 
-        let (rest, tree) = xml_parser::document(
-            "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        let (rest, tree) =
+            xml_parser::document("<root><e2 /><a:e2 xmlns:a='http://test/a' /><e2 /></root>")
+                .unwrap();
         assert_eq!("", rest);
         let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
-        let e2 = doc.get_elements_by_tag_name("e2").unwrap().iter().next().unwrap();
+        let e2 = doc
+            .get_elements_by_tag_name("e2")
+            .unwrap()
+            .iter()
+            .nth(1)
+            .unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1327,7 +1343,6 @@ mod tests {
         };
         assert_eq!(e2, nodes[0]);
     }
-    */
 
     #[test]
     fn test_step_axis_parent() {

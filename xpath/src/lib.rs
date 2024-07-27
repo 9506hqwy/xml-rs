@@ -1,8 +1,9 @@
 pub mod eval;
 pub mod expr;
 
-// FIXME: add namespace node support.
 // FIXME: function call.
+// FIXME: Entity Reference to test node.
+// FIXME: add QName support.
 
 #[cfg(test)]
 mod tests {
@@ -793,6 +794,59 @@ mod tests {
             "<employee secretary=\"a\" assistant=\"b\"></employee>",
             format!("{}", r)
         );
+    }
+
+    #[test]
+    fn test_eg_namespace_predicate() {
+        let (rest, tree) = xml_parser::document(
+            "<root xmlns:b='http://test/b'><e2 xmlns='http://test/' /><e2 xmlns:a='http://test/a' /><e2 /></root>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let (rest, expr) = expr::parse("root/e2[namespace::a]").unwrap();
+        assert_eq!("", rest);
+
+        let r = eval::document(&expr, doc, &mut eval::model::Context::default()).unwrap();
+        assert_eq!("<e2 xmlns:a=\"http://test/a\"></e2>", format!("{}", r));
+    }
+
+    #[test]
+    fn test_eg_namespace_value() {
+        let (rest, tree) = xml_parser::document(
+            "<root xmlns:b='http://test/b'><e2 xmlns='http://test/' /><e2 xmlns:a='http://test/a' /><e2 /></root>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let (rest, expr) = expr::parse("root/e2/namespace::a").unwrap();
+        assert_eq!("", rest);
+
+        let r = eval::document(&expr, doc, &mut eval::model::Context::default()).unwrap();
+        assert_eq!("xmlns:a=\"http://test/a\"", format!("{}", r));
+    }
+
+    #[test]
+    fn test_eg_namespace_default() {
+        let (rest, tree) = xml_parser::document(
+            "<root xmlns:b='http://test/b'><e2 xmlns='http://test/' /><e2 xmlns:a='http://test/a' /><e2 /></root>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let (rest, expr) = expr::parse("root/e2[namespace::xml]").unwrap();
+        assert_eq!("", rest);
+
+        let r = eval::document(&expr, doc, &mut eval::model::Context::default()).unwrap();
+        /* FIXME:
+        assert_eq!(
+            "<e2 xmlns:a=\"http://test/a\"></e2><e2></e2>",
+            format!("{}", r)
+        );
+        */
     }
 
     #[test]
