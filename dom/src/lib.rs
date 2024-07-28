@@ -14,6 +14,8 @@ use xml_info::{
 // TODO: read only.
 // TODO: equality node.
 
+pub type ExpandedName = (String, Option<String>, Option<String>);
+
 // -----------------------------------------------------------------------------------------------
 
 pub trait DomImplementation {
@@ -419,6 +421,26 @@ impl Node for XmlNode {
     }
 }
 
+impl AsExpandedName for XmlNode {
+    fn as_expanded_name(&self) -> error::Result<Option<ExpandedName>> {
+        match self {
+            XmlNode::Element(v) => v.as_expanded_name(),
+            XmlNode::Attribute(v) => v.as_expanded_name(),
+            XmlNode::Text(_) => Ok(None),
+            XmlNode::CData(_) => Ok(None),
+            XmlNode::EntityReference(_) => Ok(None),
+            XmlNode::Entity(_) => Ok(None),
+            XmlNode::PI(v) => v.as_expanded_name(),
+            XmlNode::Comment(_) => Ok(None),
+            XmlNode::Document(_) => Ok(None),
+            XmlNode::DocumentType(_) => Ok(None),
+            XmlNode::DocumentFragment(_) => Ok(None),
+            XmlNode::Notation(_) => Ok(None),
+            XmlNode::Namespace(v) => v.as_expanded_name(),
+        }
+    }
+}
+
 impl AsStringValue for XmlNode {
     fn as_string_value(&self) -> error::Result<String> {
         match self {
@@ -541,6 +563,12 @@ pub trait AsNode {
     fn as_boxed_node(&self) -> Box<XmlNode> {
         Box::new(self.as_node())
     }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+pub trait AsExpandedName {
+    fn as_expanded_name(&self) -> error::Result<Option<ExpandedName>>;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -1011,6 +1039,29 @@ impl AsNode for XmlAttr {
     }
 }
 
+impl AsExpandedName for XmlAttr {
+    fn as_expanded_name(&self) -> error::Result<Option<ExpandedName>> {
+        let local_name = self.attribute.borrow().local_name().to_string();
+        let (prefix, ns) = if let Some(XmlNode::Element(element)) = self.parent_node() {
+            let prefix = self
+                .attribute
+                .borrow()
+                .prefix()
+                .unwrap_or("xmlns")
+                .to_string();
+            let namespaces = element.in_scope_namespace()?;
+            if let Some(ns) = namespaces.iter().find(|v| v.node_name() == prefix) {
+                (Some(prefix), ns.node_value()?)
+            } else {
+                (Some(prefix), None)
+            }
+        } else {
+            (None, None)
+        };
+        Ok(Some((local_name, prefix, ns)))
+    }
+}
+
 impl AsStringValue for XmlAttr {
     fn as_string_value(&self) -> error::Result<String> {
         self.value()
@@ -1172,6 +1223,25 @@ impl Node for XmlElement {
 impl AsNode for XmlElement {
     fn as_node(&self) -> XmlNode {
         XmlNode::Element(self.clone())
+    }
+}
+
+impl AsExpandedName for XmlElement {
+    fn as_expanded_name(&self) -> error::Result<Option<ExpandedName>> {
+        let local_name = self.element.borrow().local_name().to_string();
+        let prefix = self
+            .element
+            .borrow()
+            .prefix()
+            .unwrap_or("xmlns")
+            .to_string();
+        let namespaces = self.in_scope_namespace()?;
+        let ns = if let Some(ns) = namespaces.iter().find(|v| v.node_name() == prefix) {
+            ns.node_value()?
+        } else {
+            None
+        };
+        Ok(Some((local_name, Some(prefix), ns)))
     }
 }
 
@@ -2169,6 +2239,12 @@ impl AsNode for XmlProcessingInstruction {
     }
 }
 
+impl AsExpandedName for XmlProcessingInstruction {
+    fn as_expanded_name(&self) -> error::Result<Option<ExpandedName>> {
+        Ok(Some((self.node_name(), None, None)))
+    }
+}
+
 impl AsStringValue for XmlProcessingInstruction {
     fn as_string_value(&self) -> error::Result<String> {
         Ok(self.pi.borrow().content().to_string())
@@ -2257,6 +2333,12 @@ impl Node for XmlNamespace {
 impl AsNode for XmlNamespace {
     fn as_node(&self) -> XmlNode {
         XmlNode::Namespace(self.clone())
+    }
+}
+
+impl AsExpandedName for XmlNamespace {
+    fn as_expanded_name(&self) -> error::Result<Option<ExpandedName>> {
+        Ok(Some((self.node_name(), None, None)))
     }
 }
 
