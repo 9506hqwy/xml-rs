@@ -1,7 +1,6 @@
 pub mod eval;
 pub mod expr;
 
-// FIXME: function call.
 // FIXME: Entity Reference to test node.
 // FIXME: add QName support.
 

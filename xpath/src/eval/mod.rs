@@ -1,4 +1,5 @@
 pub mod error;
+pub mod func;
 pub mod model;
 
 use super::expr::model as expr;
@@ -461,21 +462,23 @@ fn eval_func_expr(
         nom::model::QName::Prefixed(p) => p.local_part, // FIXME: namespace
         nom::model::QName::Unprefixed(u) => u,
     };
-    // TODO: check arg.
-    match name {
-        "last" => Ok(context.get_size().as_value()),
-        "position" => Ok(context.get_position().as_value()),
-        "count" => {
-            let arg = func.args().first().unwrap();
-            let nodes = eval_expr(arg, node.clone(), context)?;
-            if let model::Value::Node(n) = nodes {
-                Ok(n.len().as_value())
-            } else {
-                unimplemented!()
-            }
-        }
-        _ => unimplemented!(),
+
+    let table = func::table();
+    let entry = table
+        .iter()
+        .find(|v| v.name() == name)
+        .ok_or_else(|| error::Error::NotFoundFunction(name.to_string()))?;
+
+    if func.args().len() < entry.min_args() || entry.max_args() < func.args().len() {
+        return Err(error::Error::InvalidArgumentCount(name.to_string()));
     }
+
+    let mut args = vec![];
+    for i in func.args() {
+        args.push(eval_expr(i, node.clone(), context)?)
+    }
+
+    entry.exec(args, node.clone(), context)
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -1619,6 +1622,427 @@ mod tests {
             unreachable!()
         };
         assert_eq!(3f64, ret);
+    }
+
+    #[test]
+    fn test_func_local_name() {
+        let (rest, expr) = parse("local-name(/root)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root></root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Text(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!("root", ret);
+    }
+
+    #[test]
+    fn test_func_namespace_uri() {
+        let (rest, expr) = parse("namespace-uri(/root)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root xmlns='http://test/'></root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Text(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!("http://test/", ret);
+    }
+
+    #[test]
+    fn test_func_name() {
+        let (rest, expr) = parse("name(/root)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) =
+            xml_parser::document("<a:root xmlns:a='http://test/a'></a:root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Text(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!("a:root", ret);
+    }
+
+    #[test]
+    fn test_func_string() {
+        let (rest, expr) = parse("string(/root)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root>text1</root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Text(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!("text1", ret);
+    }
+
+    #[test]
+    fn test_func_concat() {
+        let (rest, expr) = parse("concat(/root, '2')").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root>text1</root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Text(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!("text12", ret);
+    }
+
+    #[test]
+    fn test_func_starts_with() {
+        let (rest, expr) = parse("starts-with(/root, 'te')").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root>text1</root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Boolean(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert!(ret);
+    }
+
+    #[test]
+    fn test_func_contains() {
+        let (rest, expr) = parse("contains(/root, 'ex')").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root>text1</root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Boolean(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert!(ret);
+    }
+
+    #[test]
+    fn test_func_substring_before() {
+        let (rest, expr) = parse("substring-before(/root, 'ex')").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root>text1</root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Text(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!("t", ret);
+    }
+
+    #[test]
+    fn test_func_substring_after() {
+        let (rest, expr) = parse("substring-after(/root, 'ex')").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root>text1</root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Text(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!("t1", ret);
+    }
+
+    #[test]
+    fn test_func_substring() {
+        let (rest, expr) = parse("substring(/root, 2, 3)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root>text1</root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Text(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!("ext", ret);
+    }
+
+    #[test]
+    fn test_func_string_length() {
+        let (rest, expr) = parse("string-length(/root)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root>text1</root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Number(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(5f64, ret);
+    }
+
+    #[test]
+    fn test_func_normalize_space() {
+        let (rest, expr) = parse("normalize-space(/root)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root> te  x t   1 </root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Text(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!("te x t 1", ret);
+    }
+
+    #[test]
+    fn test_func_translate() {
+        let (rest, expr) = parse("translate(/root, 'abc-', 'ABC')").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root>--abcd--</root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Text(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!("ABCd", ret);
+    }
+
+    #[test]
+    fn test_func_boolean() {
+        let (rest, expr) = parse("boolean(true())").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root />").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Boolean(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert!(ret);
+    }
+
+    #[test]
+    fn test_func_not() {
+        let (rest, expr) = parse("not(false())").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root />").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Boolean(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert!(ret);
+    }
+
+    #[test]
+    fn test_func_true() {
+        let (rest, expr) = parse("true()").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root />").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Boolean(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert!(ret);
+    }
+
+    #[test]
+    fn test_func_false() {
+        let (rest, expr) = parse("false()").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root />").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Boolean(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert!(!ret);
+    }
+
+    #[test]
+    fn test_func_lang() {
+        let (rest, expr) = parse("root[lang('ja')]").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root xml:lang='ja'/>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc
+            .get_elements_by_tag_name("root")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let nodes = if let model::Value::Node(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(root, nodes[0]);
+    }
+
+    #[test]
+    fn test_func_number() {
+        let (rest, expr) = parse("number(1)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root />").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Number(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(1f64, ret);
+    }
+
+    #[test]
+    fn test_func_sum() {
+        let (rest, expr) = parse("sum(/root/e)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root><e>1</e><e>3</e><e>5</e></root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Number(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(9f64, ret);
+    }
+
+    #[test]
+    fn test_func_floor() {
+        let (rest, expr) = parse("floor(3.6)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root />").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Number(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(3f64, ret);
+    }
+
+    #[test]
+    fn test_func_ceiling() {
+        let (rest, expr) = parse("ceiling(3.6)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root />").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Number(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(4f64, ret);
+    }
+
+    #[test]
+    fn test_func_round() {
+        let (rest, expr) = parse("round(3.6)").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root />").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let ret = if let model::Value::Number(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(4f64, ret);
     }
 
     #[test]

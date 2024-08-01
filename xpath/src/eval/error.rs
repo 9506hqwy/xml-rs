@@ -2,6 +2,8 @@
 pub enum Error {
     Dom(xml_dom::error::Error),
     InvalidType,
+    InvalidArgumentCount(String),
+    NotFoundFunction(String),
 }
 
 impl From<xml_dom::error::Error> for Error {

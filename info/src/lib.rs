@@ -1345,6 +1345,7 @@ impl XmlElement {
 
         for attr in self.namespace_attributes().iter() {
             let namespace_name = attr.borrow().normalized_value()?;
+            // FIXME:
             if !namespace_name.is_empty() {
                 if attr.borrow().local_name() == "xmlns" {
                     items.push(node(XmlNamespace {
