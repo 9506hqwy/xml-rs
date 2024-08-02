@@ -521,6 +521,7 @@ impl From<info::XmlItem> for XmlNode {
             info::XmlItem::CData(v) => XmlCDataSection::from(v).as_node(),
             info::XmlItem::CharReference(v) => XmlEntityReference::from(v).as_node(),
             info::XmlItem::Comment(v) => XmlComment::from(v).as_node(),
+            info::XmlItem::DeclarationAttList(_) => unimplemented!("declaration attribute"),
             info::XmlItem::Document(v) => XmlDocument::from(v).as_node(),
             info::XmlItem::DocumentType(v) => XmlDocumentType::from(v).as_node(),
             info::XmlItem::Element(v) => XmlElement::from(v).as_node(),

@@ -7,6 +7,8 @@ use std::rc::Rc;
 use xml_parser::model as parser;
 
 // TODO: Base URI is always empty string.
+// TODO: White Space Handling.
+// TODO: Parameter Entity Reference.
 
 // -----------------------------------------------------------------------------------------------
 
@@ -54,7 +56,7 @@ pub trait Attribute: HasQName {
 
     fn attribute_type(&self) -> Value<Option<XmlDeclarationAttType>>;
 
-    fn references(&self) -> Value<Option<OrderedList<XmlItem>>>;
+    fn references(&self) -> error::Result<Value<Option<OrderedList<XmlItem>>>>;
 
     fn owner_element(&self) -> error::Result<XmlNode<XmlElement>>;
 }
@@ -200,6 +202,7 @@ pub struct XmlAttribute {
     local_name: String,
     prefix: Option<String>,
     values: Vec<XmlAttributeValue>,
+    from_dtd: bool,
     parent: Option<XmlNode<XmlElement>>,
     owner: XmlNode<XmlDocument>,
     order: i64,
@@ -228,7 +231,7 @@ impl Sortable for XmlAttribute {
 impl Attribute for XmlAttribute {
     fn namespace_name(&self) -> error::Result<Option<NamespaceUri>> {
         if self.namespace() {
-            return Ok(Some(NamespaceUri::from("http://www.w3.org/2000/xmlns/")));
+            return Ok(Some(NamespaceUri::xmlns()));
         }
 
         if let Some(prefix) = self.prefix.as_deref() {
@@ -248,8 +251,8 @@ impl Attribute for XmlAttribute {
         for value in self.values.as_slice() {
             match value {
                 XmlAttributeValue::Reference(v) => {
-                    let v = str_from_reference(v.clone(), &self.owner)?;
-                    normalized.push_str(normalize_ws(v.as_str()).as_str());
+                    let v = attr_value_from_reference(v.clone(), &self.owner)?;
+                    normalized.push_str(v.as_str());
                 }
                 XmlAttributeValue::Text(ref v) => {
                     normalized.push_str(normalize_ws(v).as_str());
@@ -257,22 +260,107 @@ impl Attribute for XmlAttribute {
             }
         }
 
-        // TODO: attr type
+        if let Some(ty) = self.declaration_type() {
+            match ty {
+                XmlDeclarationAttType::CData => {}
+                _ => {
+                    normalized = normalized
+                        .split(' ')
+                        .filter(|v| !v.is_empty())
+                        .collect::<Vec<&str>>()
+                        .join(" ");
+                }
+            }
+        }
+
         Ok(normalized)
     }
 
     fn specified(&self) -> bool {
-        // TODO:
-        true
+        !self.from_dtd
     }
 
     fn attribute_type(&self) -> Value<Option<XmlDeclarationAttType>> {
-        Value::V(self.find_delcaration_type())
+        Value::V(self.declaration_type())
     }
 
-    fn references(&self) -> Value<Option<OrderedList<XmlItem>>> {
-        // TODO:
-        Value::V(None)
+    fn references(&self) -> error::Result<Value<Option<OrderedList<XmlItem>>>> {
+        match self.declaration_type() {
+            Some(ty) => match ty {
+                XmlDeclarationAttType::CData
+                | XmlDeclarationAttType::Id
+                | XmlDeclarationAttType::NmToken
+                | XmlDeclarationAttType::NmTokens
+                | XmlDeclarationAttType::Enumeration(_) => Ok(Value::V(None)),
+                XmlDeclarationAttType::IdRef => {
+                    let value = self.normalized_value()?;
+                    let root = self.owner.borrow().document_element()?;
+                    let names = vec![value.as_str()];
+                    let e = retrieve_element_by_id(&root, names.as_slice())?;
+                    if e.is_empty() {
+                        Ok(Value::V(None))
+                    } else {
+                        let e = e.iter().map(|v| v.clone().into()).collect();
+                        Ok(Value::V(Some(OrderedList::new(e))))
+                    }
+                }
+                XmlDeclarationAttType::IdRefs => {
+                    let value = self.normalized_value()?;
+                    let root = self.owner.borrow().document_element()?;
+                    let names = value.split_whitespace().collect::<Vec<&str>>();
+                    let e = retrieve_element_by_id(&root, names.as_slice())?;
+                    if e.is_empty() {
+                        Ok(Value::V(None))
+                    } else {
+                        let e = e.iter().map(|v| v.clone().into()).collect();
+                        Ok(Value::V(Some(OrderedList::new(e))))
+                    }
+                }
+                XmlDeclarationAttType::Entity => {
+                    let value = self.normalized_value()?;
+                    let entity = self
+                        .owner
+                        .borrow()
+                        .unparsed_entities()
+                        .iter()
+                        .find(|v| v.borrow().name() == value);
+                    if let Some(e) = entity {
+                        Ok(Value::V(Some(OrderedList::new(vec![e.into()]))))
+                    } else {
+                        Ok(Value::V(None))
+                    }
+                }
+                XmlDeclarationAttType::Entities => {
+                    let value = self.normalized_value()?;
+                    let unparsed = self.owner.borrow().unparsed_entities();
+                    let mut entities = vec![];
+                    for value in value.split_whitespace() {
+                        let entity = unparsed.iter().find(|v| v.borrow().name() == value);
+                        if let Some(e) = entity {
+                            entities.push(e.into());
+                        }
+                    }
+                    if entities.is_empty() {
+                        Ok(Value::V(None))
+                    } else {
+                        Ok(Value::V(Some(OrderedList::new(entities))))
+                    }
+                }
+                XmlDeclarationAttType::Notation(_) => {
+                    let value = self.normalized_value()?;
+                    if let Some(notations) = self.owner.borrow().notations() {
+                        if let Some(e) = notations.iter().find(|v| v.borrow().name() == value) {
+                            Ok(Value::V(Some(OrderedList::new(vec![e.into()]))))
+                        } else {
+                            Ok(Value::V(None))
+                        }
+                    } else {
+                        Ok(Value::V(None))
+                    }
+                }
+            },
+            _ => Ok(Value::Unknown),
+        }
     }
 
     fn owner_element(&self) -> error::Result<XmlNode<XmlElement>> {
@@ -299,26 +387,40 @@ impl XmlAttribute {
             local_name,
             prefix,
             values: vec![],
+            from_dtd: false,
             parent: Some(parent),
             owner: owner.clone(),
             order: 0,
         });
 
         for value in value.value.as_slice() {
-            match value {
-                parser::AttributeValue::Reference(v) => {
-                    let value = XmlAttributeValue::Reference(XmlReference::new(
-                        v,
-                        attribute.clone().into(),
-                        owner.clone(),
-                    ));
-                    attribute.borrow_mut().push_value(value);
-                }
-                parser::AttributeValue::Text(v) => {
-                    if !v.is_empty() {
-                        let value = XmlAttributeValue::Text(v.to_string());
-                        attribute.borrow_mut().push_value(value);
-                    }
+            if let Some(v) = XmlAttributeValue::new(value, attribute.clone().into(), owner.clone())
+            {
+                attribute.borrow_mut().push_value(v);
+            }
+        }
+
+        attribute
+    }
+
+    pub fn new_from_declaration(
+        value: &XmlDeclarationAttDef,
+        owner: XmlNode<XmlDocument>,
+    ) -> XmlNode<Self> {
+        let attribute = node(XmlAttribute {
+            local_name: value.local_name().to_string(),
+            prefix: value.prefix().map(|v| v.to_string()),
+            values: vec![],
+            from_dtd: true,
+            parent: None,
+            owner: owner.clone(),
+            order: -1,
+        });
+
+        if let XmlDeclarationAttDefault::Value(_, values) = &value.value {
+            for value in values.as_slice() {
+                if let Some(v) = XmlAttributeValue::new_from_declaration(value) {
+                    attribute.borrow_mut().push_value(v);
                 }
             }
         }
@@ -334,20 +436,20 @@ impl XmlAttribute {
         self.values.as_slice()
     }
 
-    fn find_delcaration_type(&self) -> Option<XmlDeclarationAttType> {
-        let element = self.parent.as_ref()?;
-        let doc = self.owner.borrow();
-        let prolog = doc.prolog.borrow();
-        let declaration = prolog.declaration()?.borrow();
-        let elem = declaration
-            .attributes()
-            .iter()
-            .find(|v| equal_qname(v.qname(), element.borrow().qname()))?;
-        let def = elem
+    fn declaration_def(&self) -> Option<XmlDeclarationAttDef> {
+        self.parent
+            .as_ref()?
+            .borrow()
+            .declaration_att_list()?
+            .borrow()
             .atts
             .iter()
-            .find(|v| equal_qname(v.qname(), self.qname()))?;
-        Some(def.ty.clone())
+            .find(|v| equal_qname(v.qname(), self.qname()))
+            .cloned()
+    }
+
+    fn declaration_type(&self) -> Option<XmlDeclarationAttType> {
+        Some(self.declaration_def()?.ty)
     }
 
     fn namespace(&self) -> bool {
@@ -365,6 +467,40 @@ impl XmlAttribute {
 pub enum XmlAttributeValue {
     Text(String),
     Reference(XmlNode<XmlReference>),
+}
+
+impl XmlAttributeValue {
+    fn new(
+        value: &parser::AttributeValue,
+        parent: XmlItem,
+        owner: XmlNode<XmlDocument>,
+    ) -> Option<Self> {
+        match value {
+            parser::AttributeValue::Reference(v) => Some(XmlAttributeValue::Reference(
+                XmlReference::new(v, parent, owner),
+            )),
+            parser::AttributeValue::Text(v) if !v.is_empty() => {
+                Some(XmlAttributeValue::Text(v.to_string()))
+            }
+            _ => None,
+        }
+    }
+
+    fn new_from_declaration(value: &XmlAttributeValue) -> Option<Self> {
+        match value {
+            XmlAttributeValue::Reference(v) => {
+                let parent = v.borrow().parent().ok();
+                let owner = v.borrow().owner();
+                Some(XmlAttributeValue::Reference(
+                    XmlReference::new_from_declaration(v.clone(), parent, owner),
+                ))
+            }
+            XmlAttributeValue::Text(v) if !v.is_empty() => {
+                Some(XmlAttributeValue::Text(v.to_string()))
+            }
+            _ => None,
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -393,7 +529,7 @@ impl Character for XmlCData {
     }
 
     fn element_content_whitespace(&self) -> Value<Option<bool>> {
-        // TODO
+        // TODO: White Space Handling
         Value::V(None)
     }
 
@@ -464,7 +600,7 @@ impl Character for XmlCharReference {
     }
 
     fn element_content_whitespace(&self) -> Value<Option<bool>> {
-        // TODO
+        // TODO: White Space Handling
         Value::V(None)
     }
 
@@ -583,6 +719,7 @@ pub struct XmlDeclarationAttDef {
     local_name: String,
     prefix: Option<String>,
     ty: XmlDeclarationAttType,
+    value: XmlDeclarationAttDefault,
 }
 
 impl HasQName for XmlDeclarationAttDef {
@@ -595,8 +732,12 @@ impl HasQName for XmlDeclarationAttDef {
     }
 }
 
-impl From<&parser::DeclarationAttDef<'_>> for XmlDeclarationAttDef {
-    fn from(value: &parser::DeclarationAttDef<'_>) -> Self {
+impl XmlDeclarationAttDef {
+    fn new(
+        value: &parser::DeclarationAttDef<'_>,
+        parent: XmlItem,
+        owner: XmlNode<XmlDocument>,
+    ) -> Self {
         let (local_name, prefix) = match &value.name {
             parser::DeclarationAttName::Attr(v) => qname(v),
             parser::DeclarationAttName::Namsspace(v) => attribute_name(v),
@@ -604,10 +745,43 @@ impl From<&parser::DeclarationAttDef<'_>> for XmlDeclarationAttDef {
 
         let ty = XmlDeclarationAttType::from(&value.ty);
 
+        let value = XmlDeclarationAttDefault::new(&value.value, parent, owner);
+
         XmlDeclarationAttDef {
             local_name,
             prefix,
             ty,
+            value,
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum XmlDeclarationAttDefault {
+    Required,
+    Implied,
+    Value(Option<String>, Vec<XmlAttributeValue>),
+}
+
+impl XmlDeclarationAttDefault {
+    fn new(
+        value: &parser::DeclarationAttDefault<'_>,
+        parent: XmlItem,
+        owner: XmlNode<XmlDocument>,
+    ) -> Self {
+        match value {
+            parser::DeclarationAttDefault::Required => XmlDeclarationAttDefault::Required,
+            parser::DeclarationAttDefault::Implied => XmlDeclarationAttDefault::Implied,
+            parser::DeclarationAttDefault::Value(f, vs) => {
+                let fixed = f.map(|v| v.to_string());
+                let value = vs
+                    .iter()
+                    .filter_map(|v| XmlAttributeValue::new(v, parent.clone(), owner.clone()))
+                    .collect();
+                XmlDeclarationAttDefault::Value(fixed, value)
+            }
         }
     }
 }
@@ -619,6 +793,7 @@ pub struct XmlDeclarationAttList {
     local_name: String,
     prefix: Option<String>,
     atts: Vec<XmlDeclarationAttDef>,
+    order: i64,
 }
 
 impl HasQName for XmlDeclarationAttList {
@@ -631,6 +806,16 @@ impl HasQName for XmlDeclarationAttList {
     }
 }
 
+impl Sortable for XmlDeclarationAttList {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
+}
+
 impl PartialEq<XmlDeclarationAttList> for XmlDeclarationAttList {
     fn eq(&self, other: &XmlDeclarationAttList) -> bool {
         self.local_name == other.local_name
@@ -640,15 +825,24 @@ impl PartialEq<XmlDeclarationAttList> for XmlDeclarationAttList {
 }
 
 impl XmlDeclarationAttList {
-    pub fn new(value: &parser::DeclarationAtt<'_>) -> Self {
+    pub fn new(
+        value: &parser::DeclarationAtt<'_>,
+        parent: XmlItem,
+        owner: XmlNode<XmlDocument>,
+    ) -> Self {
         let (local_name, prefix) = qname(&value.name);
 
-        let atts = value.defs.iter().map(XmlDeclarationAttDef::from).collect();
+        let atts = value
+            .defs
+            .iter()
+            .map(|v| XmlDeclarationAttDef::new(v, parent.clone(), owner.clone()))
+            .collect();
 
         XmlDeclarationAttList {
             local_name,
             prefix,
             atts,
+            order: 0,
         }
     }
 }
@@ -657,7 +851,7 @@ impl XmlDeclarationAttList {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum XmlDeclarationAttType {
-    Cdata,
+    CData,
     Entities,
     Entity,
     Id,
@@ -672,7 +866,7 @@ pub enum XmlDeclarationAttType {
 impl From<&parser::DeclarationAttType<'_>> for XmlDeclarationAttType {
     fn from(value: &parser::DeclarationAttType<'_>) -> Self {
         match value {
-            parser::DeclarationAttType::Cdata => XmlDeclarationAttType::Cdata,
+            parser::DeclarationAttType::Cdata => XmlDeclarationAttType::CData,
             parser::DeclarationAttType::Entities => XmlDeclarationAttType::Entities,
             parser::DeclarationAttType::Entity => XmlDeclarationAttType::Entity,
             parser::DeclarationAttType::Id => XmlDeclarationAttType::Id,
@@ -969,10 +1163,7 @@ pub struct XmlDocumentTypeDeclaration {
     prefix: Option<String>,
     system_identifier: Option<String>,
     public_identifier: Option<String>,
-    attributes: Vec<XmlDeclarationAttList>,
-    entities: Vec<XmlNode<XmlEntity>>,
-    pis: Vec<XmlNode<XmlProcessingInstruction>>,
-    notations: Vec<XmlNode<XmlNotation>>,
+    children: Vec<XmlItem>,
     parent: XmlNode<XmlDocument>,
     order: i64,
 }
@@ -994,6 +1185,10 @@ impl Sortable for XmlDocumentTypeDeclaration {
 
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
+
+        for child in self.children.as_mut_slice() {
+            child.set_order(numbering);
+        }
     }
 }
 
@@ -1007,7 +1202,8 @@ impl DocumentTypeDeclaration for XmlDocumentTypeDeclaration {
     }
 
     fn children(&self) -> OrderedList<XmlNode<XmlProcessingInstruction>> {
-        OrderedList::new(self.pis.clone())
+        let pis = self.children.iter().filter_map(|v| v.as_pi()).collect();
+        OrderedList::new(pis)
     }
 
     fn parent(&self) -> XmlNode<XmlDocument> {
@@ -1021,10 +1217,7 @@ impl PartialEq<XmlDocumentTypeDeclaration> for XmlDocumentTypeDeclaration {
             && self.prefix == other.prefix
             && self.system_identifier == other.system_identifier
             && self.public_identifier == other.public_identifier
-            && self.attributes == other.attributes
-            && self.entities == other.entities
-            && self.pis == other.pis
-            && self.notations == other.notations
+            && self.children == other.children
     }
 }
 
@@ -1045,10 +1238,7 @@ impl XmlDocumentTypeDeclaration {
             prefix,
             system_identifier,
             public_identifier,
-            attributes: vec![],
-            entities: vec![],
-            pis: vec![],
-            notations: vec![],
+            children: vec![],
             parent: parent.clone(),
             order: 0,
         });
@@ -1057,8 +1247,12 @@ impl XmlDocumentTypeDeclaration {
             match subset {
                 parser::InternalSubset::Markup(v) => match v {
                     parser::DeclarationMarkup::Attributes(v) => {
-                        let attribute = XmlDeclarationAttList::new(v);
-                        declaration.borrow_mut().push_attribute(attribute);
+                        let attribute = XmlDeclarationAttList::new(
+                            v,
+                            declaration.clone().into(),
+                            parent.clone(),
+                        );
+                        declaration.borrow_mut().push_child(attribute.into());
                     }
                     parser::DeclarationMarkup::Commnect(_) => {
                         // drop
@@ -1070,7 +1264,7 @@ impl XmlDocumentTypeDeclaration {
                         parser::DeclarationEntity::GeneralEntity(v) => {
                             let entity =
                                 XmlEntity::new(v, declaration.clone().into(), parent.clone());
-                            declaration.borrow_mut().push_entity(entity);
+                            declaration.borrow_mut().push_child(entity.into());
                         }
                         parser::DeclarationEntity::ParameterEntity(_) => {
                             unimplemented!("Not support parameter entity reference.")
@@ -1079,7 +1273,7 @@ impl XmlDocumentTypeDeclaration {
                     parser::DeclarationMarkup::Notation(v) => {
                         let notation =
                             XmlNotation::new(v, declaration.clone().into(), parent.clone());
-                        declaration.borrow_mut().push_notation(notation);
+                        declaration.borrow_mut().push_child(notation.into());
                     }
                     parser::DeclarationMarkup::PI(v) => {
                         let pi = XmlProcessingInstruction::new(
@@ -1087,7 +1281,7 @@ impl XmlDocumentTypeDeclaration {
                             declaration.clone().into(),
                             parent.clone(),
                         );
-                        declaration.borrow_mut().push_pi(pi);
+                        declaration.borrow_mut().push_child(pi.into());
                     }
                 },
                 parser::InternalSubset::ParameterEntityReference(_) => {
@@ -1099,40 +1293,35 @@ impl XmlDocumentTypeDeclaration {
         declaration
     }
 
-    pub fn attributes(&self) -> &[XmlDeclarationAttList] {
-        self.attributes.as_slice()
+    pub fn attributes(&self) -> Vec<XmlNode<XmlDeclarationAttList>> {
+        self.children
+            .iter()
+            .filter_map(|v| v.as_declaration_att_list())
+            .collect()
     }
 
-    pub fn entities(&self) -> &[XmlNode<XmlEntity>] {
-        self.entities.as_slice()
+    pub fn entities(&self) -> Vec<XmlNode<XmlEntity>> {
+        self.children.iter().filter_map(|v| v.as_entity()).collect()
     }
 
     pub fn notations(&self) -> Vec<XmlNode<XmlNotation>> {
-        self.notations.clone()
+        self.children
+            .iter()
+            .filter_map(|v| v.as_notation())
+            .collect()
     }
 
     pub fn unparsed_entities(&self) -> Vec<XmlNode<XmlUnparsedEntity>> {
-        self.entities
+        self.children
             .iter()
+            .filter_map(|v| v.as_entity())
             .filter(|v| v.borrow().notation_name.is_some())
             .map(|v| XmlUnparsedEntity::new(v.clone()))
             .collect()
     }
 
-    fn push_attribute(&mut self, attribute: XmlDeclarationAttList) {
-        self.attributes.push(attribute);
-    }
-
-    fn push_entity(&mut self, entity: XmlNode<XmlEntity>) {
-        self.entities.push(entity);
-    }
-
-    fn push_notation(&mut self, notation: XmlNode<XmlNotation>) {
-        self.notations.push(notation);
-    }
-
-    fn push_pi(&mut self, pi: XmlNode<XmlProcessingInstruction>) {
-        self.pis.push(pi);
+    fn push_child(&mut self, child: XmlItem) {
+        self.children.push(child);
     }
 }
 
@@ -1172,7 +1361,7 @@ impl Sortable for XmlElement {
             child.borrow_mut().set_order(numbering);
         }
 
-        for child in self.attributes().iter() {
+        for child in self.attributes_specified().iter() {
             child.borrow_mut().set_order(numbering);
         }
 
@@ -1193,12 +1382,23 @@ impl Element for XmlElement {
     }
 
     fn attributes(&self) -> UnorderedSet<XmlNode<XmlAttribute>> {
-        let items = self
-            .attributes
-            .iter()
-            .filter(|v| !v.borrow().namespace())
-            .cloned()
-            .collect();
+        let mut items = self.attributes_specified();
+
+        if let Some(attrs) = self.declaration_att_list() {
+            for attr in attrs.borrow().atts.as_slice() {
+                if attr.value != XmlDeclarationAttDefault::Implied
+                    && !items
+                        .iter()
+                        .any(|v| equal_qname(v.borrow().qname(), attr.qname()))
+                {
+                    items.push(XmlAttribute::new_from_declaration(
+                        attr,
+                        self.owner().clone(),
+                    ));
+                }
+            }
+        }
+
         UnorderedSet::new(items)
     }
 
@@ -1218,24 +1418,25 @@ impl Element for XmlElement {
         if let Some(parent) = self.parent.as_ref() {
             if let Some(parent) = parent.as_element() {
                 for ns in parent.borrow().in_scope_namespace()?.iter() {
-                    let exist = items.iter().any(|v| *v == ns);
-                    if !exist {
+                    if !items
+                        .iter()
+                        .any(|v| v.borrow().prefix() == ns.borrow().prefix())
+                    {
                         items.push(ns);
                     }
                 }
             } else if parent.as_document().is_some() {
-                let implicity = node(XmlNamespace {
-                    prefix: Some("xml".to_string()),
-                    namespace_name: "http://www.w3.org/XML/1998/namespace".to_string(),
-                    implicit: true,
-                    order: -1,
-                });
-                let exist = items.iter().any(|v| *v == implicity);
-                if !exist {
+                let implicity = XmlNamespace::xml();
+                if !items
+                    .iter()
+                    .any(|v| v.borrow().prefix() == implicity.borrow().prefix())
+                {
                     items.push(implicity);
                 }
             }
         }
+
+        items.retain(|v| !v.borrow().namespace_name().is_empty());
 
         Ok(UnorderedSet::new(items))
     }
@@ -1345,23 +1546,21 @@ impl XmlElement {
 
         for attr in self.namespace_attributes().iter() {
             let namespace_name = attr.borrow().normalized_value()?;
-            // FIXME:
-            if !namespace_name.is_empty() {
-                if attr.borrow().local_name() == "xmlns" {
-                    items.push(node(XmlNamespace {
-                        prefix: None,
-                        namespace_name,
-                        implicit: false,
-                        order: attr.borrow().order(),
-                    }));
-                } else {
-                    items.push(node(XmlNamespace {
-                        prefix: Some(attr.borrow().local_name().to_string()),
-                        namespace_name,
-                        implicit: false,
-                        order: attr.borrow().order(),
-                    }));
-                }
+
+            if attr.borrow().local_name() == "xmlns" {
+                items.push(node(XmlNamespace {
+                    prefix: None,
+                    namespace_name,
+                    implicit: false,
+                    order: attr.borrow().order(),
+                }));
+            } else {
+                items.push(node(XmlNamespace {
+                    prefix: Some(attr.borrow().local_name().to_string()),
+                    namespace_name,
+                    implicit: false,
+                    order: attr.borrow().order(),
+                }));
             }
         }
 
@@ -1374,6 +1573,50 @@ impl XmlElement {
 
     pub fn set_local_name(&mut self, local_name: &str) {
         self.local_name = local_name.to_string();
+    }
+
+    fn attributes_id(&self) -> Vec<XmlNode<XmlAttribute>> {
+        if let Some(attlist) = self.declaration_att_list() {
+            let ids = attlist
+                .borrow()
+                .atts
+                .iter()
+                .filter(|v| v.ty == XmlDeclarationAttType::Id)
+                .cloned()
+                .collect::<Vec<XmlDeclarationAttDef>>();
+            self.attributes
+                .iter()
+                .filter(|v| !v.borrow().namespace())
+                .filter(|v| {
+                    ids.iter()
+                        .any(|i| equal_qname(v.borrow().qname(), i.qname()))
+                })
+                .cloned()
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    fn attributes_specified(&self) -> Vec<XmlNode<XmlAttribute>> {
+        self.attributes
+            .iter()
+            .filter(|v| !v.borrow().namespace())
+            .cloned()
+            .collect()
+    }
+
+    fn declaration_att_list(&self) -> Option<XmlNode<XmlDeclarationAttList>> {
+        self.owner
+            .borrow()
+            .prolog
+            .borrow()
+            .declaration()?
+            .borrow()
+            .attributes()
+            .iter()
+            .find(|v| equal_qname(v.borrow().qname(), self.qname()))
+            .cloned()
     }
 
     fn find_nameapce_uri(&self, prefix: &str) -> error::Result<Option<NamespaceUri>> {
@@ -1412,6 +1655,17 @@ pub struct XmlEntity {
     notation_name: Option<String>,
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
+    order: i64,
+}
+
+impl Sortable for XmlEntity {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
 }
 
 impl From<(&str, &str, XmlNode<XmlDocument>)> for XmlEntity {
@@ -1425,6 +1679,7 @@ impl From<(&str, &str, XmlNode<XmlDocument>)> for XmlEntity {
             notation_name: None,
             parent: None,
             owner,
+            order: 0,
         }
     }
 }
@@ -1453,6 +1708,7 @@ impl XmlEntity {
             notation_name: None,
             parent: Some(parent),
             owner: owner.clone(),
+            order: 0,
         });
 
         let (values, system_identifier, public_identifier, notation_name) = match &value.def {
@@ -1541,6 +1797,7 @@ pub enum XmlItem {
     CData(XmlNode<XmlCData>),
     CharReference(XmlNode<XmlCharReference>),
     Comment(XmlNode<XmlComment>),
+    DeclarationAttList(XmlNode<XmlDeclarationAttList>),
     Document(XmlNode<XmlDocument>),
     DocumentType(XmlNode<XmlDocumentTypeDeclaration>),
     Element(XmlNode<XmlElement>),
@@ -1560,13 +1817,14 @@ impl Sortable for XmlItem {
             XmlItem::CData(v) => v.borrow().order(),
             XmlItem::CharReference(v) => v.borrow().order(),
             XmlItem::Comment(v) => v.borrow().order(),
+            XmlItem::DeclarationAttList(v) => v.borrow().order(),
             XmlItem::Document(v) => v.borrow().order(),
             XmlItem::DocumentType(v) => v.borrow().order(),
             XmlItem::Element(v) => v.borrow().order(),
-            XmlItem::Entity(_) => 0,
-            XmlItem::Namespace(_) => 0,
-            XmlItem::Notation(_) => 0,
-            XmlItem::PI(_) => 0,
+            XmlItem::Entity(v) => v.borrow().order(),
+            XmlItem::Namespace(v) => v.borrow().order(),
+            XmlItem::Notation(v) => v.borrow().order(),
+            XmlItem::PI(v) => v.borrow().order(),
             XmlItem::Text(v) => v.borrow().order(),
             XmlItem::Unexpanded(v) => v.borrow().order(),
             XmlItem::Unparsed(_) => 0,
@@ -1579,13 +1837,14 @@ impl Sortable for XmlItem {
             XmlItem::CData(v) => v.borrow_mut().set_order(numbering),
             XmlItem::CharReference(v) => v.borrow_mut().set_order(numbering),
             XmlItem::Comment(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::DeclarationAttList(v) => v.borrow_mut().set_order(numbering),
             XmlItem::Document(v) => v.borrow_mut().set_order(numbering),
             XmlItem::DocumentType(v) => v.borrow_mut().set_order(numbering),
             XmlItem::Element(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::Entity(_) => {}
-            XmlItem::Namespace(_) => {}
-            XmlItem::Notation(_) => {}
-            XmlItem::PI(_) => {}
+            XmlItem::Entity(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::Namespace(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::Notation(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::PI(v) => v.borrow_mut().set_order(numbering),
             XmlItem::Text(v) => v.borrow_mut().set_order(numbering),
             XmlItem::Unexpanded(v) => v.borrow_mut().set_order(numbering),
             XmlItem::Unparsed(_) => {}
@@ -1614,6 +1873,12 @@ impl From<XmlNode<XmlCharReference>> for XmlItem {
 impl From<XmlNode<XmlComment>> for XmlItem {
     fn from(value: XmlNode<XmlComment>) -> Self {
         XmlItem::Comment(value)
+    }
+}
+
+impl From<XmlNode<XmlDeclarationAttList>> for XmlItem {
+    fn from(value: XmlNode<XmlDeclarationAttList>) -> Self {
+        XmlItem::DeclarationAttList(value)
     }
 }
 
@@ -1697,6 +1962,12 @@ impl From<XmlCharReference> for XmlItem {
 
 impl From<XmlComment> for XmlItem {
     fn from(value: XmlComment) -> Self {
+        XmlItem::from(node(value))
+    }
+}
+
+impl From<XmlDeclarationAttList> for XmlItem {
+    fn from(value: XmlDeclarationAttList) -> Self {
         XmlItem::from(node(value))
     }
 }
@@ -1788,6 +2059,14 @@ impl XmlItem {
 
     pub fn as_comment(&self) -> Option<XmlNode<XmlComment>> {
         if let XmlItem::Comment(v) = self {
+            Some(v.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_declaration_att_list(&self) -> Option<XmlNode<XmlDeclarationAttList>> {
+        if let XmlItem::DeclarationAttList(v) = self {
             Some(v.clone())
         } else {
             None
@@ -1906,6 +2185,15 @@ impl Namespace for XmlNamespace {
 }
 
 impl XmlNamespace {
+    pub fn xml() -> XmlNode<Self> {
+        node(XmlNamespace {
+            prefix: Some("xml".to_string()),
+            namespace_name: "http://www.w3.org/XML/1998/namespace".to_string(),
+            implicit: true,
+            order: -1,
+        })
+    }
+
     pub fn implicit(&self) -> bool {
         self.implicit
     }
@@ -1921,6 +2209,17 @@ pub struct XmlNotation {
     declaration_base_uri: String,
     parent: XmlItem,
     owner: XmlNode<XmlDocument>,
+    order: i64,
+}
+
+impl Sortable for XmlNotation {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
 }
 
 impl Notation for XmlNotation {
@@ -1974,6 +2273,7 @@ impl XmlNotation {
             declaration_base_uri,
             parent,
             owner,
+            order: 0,
         })
     }
 
@@ -1995,6 +2295,17 @@ pub struct XmlProcessingInstruction {
     base_uri: String,
     parent: XmlItem,
     owner: XmlNode<XmlDocument>,
+    order: i64,
+}
+
+impl Sortable for XmlProcessingInstruction {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
 }
 
 impl ProcessingInstruction for XmlProcessingInstruction {
@@ -2043,6 +2354,7 @@ impl XmlProcessingInstruction {
             base_uri,
             parent,
             owner,
+            order: 0,
         })
     }
 
@@ -2095,6 +2407,18 @@ impl XmlReference {
             value: XmlReferenceValue::Entity(name),
             parent: value.borrow().parent(),
             owner: value.borrow().owner(),
+        })
+    }
+
+    pub fn new_from_declaration(
+        value: XmlNode<XmlReference>,
+        parent: Option<XmlItem>,
+        owner: XmlNode<XmlDocument>,
+    ) -> XmlNode<Self> {
+        node(XmlReference {
+            value: value.borrow().value(),
+            parent,
+            owner,
         })
     }
 
@@ -2154,7 +2478,7 @@ impl Character for XmlText {
     }
 
     fn element_content_whitespace(&self) -> Value<Option<bool>> {
-        // TODO
+        // TODO: White Space Handling
         Value::V(None)
     }
 
@@ -2389,6 +2713,10 @@ impl TryFrom<&XmlNode<XmlAttribute>> for NamespaceUri {
 }
 
 impl NamespaceUri {
+    pub fn xmlns() -> Self {
+        NamespaceUri::from("http://www.w3.org/2000/xmlns/")
+    }
+
     pub fn value(&self) -> &str {
         self.value.as_str()
     }
@@ -2557,6 +2885,38 @@ fn attribute_name(name: &parser::AttributeName) -> (String, Option<String>) {
     }
 }
 
+fn attr_value_from_name(name: &str, owner: &XmlNode<XmlDocument>) -> error::Result<String> {
+    let entity = entity(owner, name)?;
+    let mut parsed = String::new();
+    for value in entity.borrow().values().unwrap_or_default() {
+        match &value {
+            XmlEntityValue::Parameter(_) => {
+                unimplemented!("Not support parameter entity reference.")
+            }
+            XmlEntityValue::Reference(v) => {
+                let v = attr_value_from_reference(v.clone(), owner)?;
+                parsed.push_str(v.as_str());
+            }
+            XmlEntityValue::Text(v) => parsed.push_str(normalize_ws(v).as_str()),
+        }
+    }
+    Ok(parsed)
+}
+
+fn attr_value_from_reference(
+    value: XmlNode<XmlReference>,
+    owner: &XmlNode<XmlDocument>,
+) -> error::Result<String> {
+    match &value.borrow().value {
+        XmlReferenceValue::Character(v, r) => match r {
+            10 => char_from_char10(v).map(|v| v.to_string()),
+            16 => char_from_char16(v).map(|v| v.to_string()),
+            _ => unreachable!(),
+        },
+        XmlReferenceValue::Entity(v) => attr_value_from_name(v, owner),
+    }
+}
+
 fn char_from_char10(value: &str) -> error::Result<char> {
     let num = value
         .parse::<u32>()
@@ -2655,36 +3015,25 @@ fn qname(name: &xml_nom::model::QName<'_>) -> (String, Option<String>) {
     }
 }
 
-fn str_from_name(name: &str, owner: &XmlNode<XmlDocument>) -> error::Result<String> {
-    let entity = entity(owner, name)?;
-    let mut parsed = String::new();
-    for value in entity.borrow().values().unwrap_or_default() {
-        match &value {
-            XmlEntityValue::Parameter(_) => {
-                unimplemented!("Not support parameter entity reference.")
-            }
-            XmlEntityValue::Reference(v) => {
-                let v = str_from_reference(v.clone(), owner)?;
-                parsed.push_str(v.as_str());
-            }
-            XmlEntityValue::Text(v) => parsed.push_str(v),
+fn retrieve_element_by_id(
+    element: &XmlNode<XmlElement>,
+    names: &[&str],
+) -> error::Result<Vec<XmlNode<XmlElement>>> {
+    let mut elements = vec![];
+    for id in element.borrow().attributes_id() {
+        let value = id.borrow().normalized_value()?;
+        if names.iter().any(|n| value == *n) {
+            elements.push(element.clone());
         }
     }
-    Ok(parsed)
-}
 
-fn str_from_reference(
-    value: XmlNode<XmlReference>,
-    owner: &XmlNode<XmlDocument>,
-) -> error::Result<String> {
-    match &value.borrow().value {
-        XmlReferenceValue::Character(v, r) => match r {
-            10 => char_from_char10(v).map(|v| v.to_string()),
-            16 => char_from_char16(v).map(|v| v.to_string()),
-            _ => unreachable!(),
-        },
-        XmlReferenceValue::Entity(v) => str_from_name(v, owner),
+    for child in element.borrow().children().iter() {
+        if let Some(child_element) = child.as_element() {
+            elements.append(&mut retrieve_element_by_id(&child_element, names)?);
+        }
     }
+
+    Ok(elements)
 }
 
 fn xml_encoding(value: &parser::Document) -> String {
@@ -2754,7 +3103,10 @@ mod tests {
         let all_declarations_processed = doc.borrow().all_declarations_processed();
         assert!(all_declarations_processed);
 
-        //PartialEq
+        // Sortable
+        assert_eq!(1, doc.borrow().order());
+
+        // PartialEq
         assert_eq!(doc, doc);
     }
 
@@ -2793,7 +3145,10 @@ mod tests {
         let all_declarations_processed = doc.borrow().all_declarations_processed();
         assert!(all_declarations_processed);
 
-        //PartialEq
+        // Sortable
+        assert_eq!(1, doc.borrow().order());
+
+        // PartialEq
         assert_eq!(doc, doc);
     }
 
@@ -2835,7 +3190,10 @@ mod tests {
         let p3 = children.get(7).unwrap().as_pi().unwrap();
         assert_eq!("p3", p3.borrow().target());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(1, doc.borrow().order());
+
+        // PartialEq
         assert_eq!(doc, doc);
     }
 
@@ -2853,8 +3211,74 @@ mod tests {
         let notations = doc.borrow().notations();
         assert!(notations.is_none());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(1, doc.borrow().order());
+
+        // PartialEq
         assert_eq!(doc, doc);
+    }
+
+    #[test]
+    fn test_doc_type_min() {
+        let (rest, tree) = xml_parser::document("<!DOCTYPE root><root />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let prolog = doc.borrow().prolog();
+        let declaration = prolog.borrow().declaration().cloned().unwrap();
+
+        // XmlDocumentTypeDeclaration
+        assert_eq!(None, declaration.borrow().system_identifier());
+
+        assert_eq!(None, declaration.borrow().public_identifier());
+
+        assert_eq!(0, declaration.borrow().children().iter().len());
+
+        assert_eq!(doc, declaration.borrow().parent());
+
+        // HasQName
+        assert_eq!("root", declaration.borrow().local_name());
+
+        assert_eq!(None, declaration.borrow().prefix());
+
+        // Sortable
+        assert_eq!(2, declaration.borrow().order());
+
+        // PartialEq
+        assert_eq!(declaration, declaration);
+    }
+
+    #[test]
+    fn test_doc_type_max() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE a:root PUBLIC 'aaa' 'bbb' [<!ELEMENT a:root EMPTY>]><a:root />",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let prolog = doc.borrow().prolog();
+        let declaration = prolog.borrow().declaration().cloned().unwrap();
+
+        // XmlDocumentTypeDeclaration
+        assert_eq!(Some("bbb"), declaration.borrow().system_identifier());
+
+        assert_eq!(Some("aaa"), declaration.borrow().public_identifier());
+
+        assert_eq!(0, declaration.borrow().children().iter().len());
+
+        assert_eq!(doc, declaration.borrow().parent());
+
+        // HasQName
+        assert_eq!("root", declaration.borrow().local_name());
+
+        assert_eq!(Some("a"), declaration.borrow().prefix());
+
+        // Sortable
+        assert_eq!(2, declaration.borrow().order());
+
+        // PartialEq
+        assert_eq!(declaration, declaration);
     }
 
     #[test]
@@ -2893,7 +3317,10 @@ mod tests {
         let parent = root.borrow().parent().unwrap();
         assert!(parent.as_document().is_some());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(2, root.borrow().order());
+
+        // PartialEq
         assert_eq!(root, root);
     }
 
@@ -2935,6 +3362,9 @@ mod tests {
         let parent = root.borrow().parent().unwrap();
         assert!(parent.as_document().is_some());
 
+        // Sortable
+        assert_eq!(2, root.borrow().order());
+
         // Child
         let child = children.get(0).unwrap().as_element().unwrap();
 
@@ -2965,7 +3395,10 @@ mod tests {
         let parent = child.borrow().parent().unwrap();
         assert!(parent.as_element().is_some());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(5, child.borrow().order());
+
+        // PartialEq
         assert_eq!(root, root);
     }
 
@@ -3011,7 +3444,10 @@ mod tests {
         let t2 = children.get(8).unwrap().as_text().unwrap();
         assert_eq!("t2", t2.borrow().character_code());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(2, root.borrow().order());
+
+        // PartialEq
         assert_eq!(root, root);
     }
 
@@ -3039,7 +3475,10 @@ mod tests {
         assert_eq!("c", c.borrow().local_name());
         assert_eq!(Some("d"), c.borrow().prefix());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(2, root.borrow().order());
+
+        // PartialEq
         assert_eq!(root, root);
     }
 
@@ -3092,7 +3531,10 @@ mod tests {
                 .map(|v| v.value().to_string())
         );
 
-        //PartialEq
+        // Sortable
+        assert_eq!(2, root.borrow().order());
+
+        // PartialEq
         assert_eq!(root, root);
     }
 
@@ -3123,8 +3565,272 @@ mod tests {
             s.borrow().namespace_name()
         );
 
-        //PartialEq
+        // Sortable
+        assert_eq!(2, root.borrow().order());
+
+        // PartialEq
         assert_eq!(root, root);
+    }
+
+    #[test]
+    fn test_element_namespaces_inherit_e1() {
+        let (rest, tree) =
+            xml_parser::document("<root xmlns='http://test/'><e1 /></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let e1 = root
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // Element[namespaces inherit]
+        let in_scope_namespace = e1.borrow().in_scope_namespace().unwrap();
+        assert_eq!(2, in_scope_namespace.iter().len());
+
+        let mut i = in_scope_namespace.iter();
+        let d = i.next().unwrap();
+        assert_eq!(None, d.borrow().prefix());
+        assert_eq!("http://test/", d.borrow().namespace_name());
+
+        // Sortable
+        assert_eq!(4, e1.borrow().order());
+
+        // PartialEq
+        assert_eq!(e1, e1);
+    }
+
+    #[test]
+    fn test_element_namespaces_inherit_e2() {
+        let (rest, tree) =
+            xml_parser::document("<root xmlns='http://test/'><e1 xmlns=''><e2 /></e1></root>")
+                .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let e1 = root
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let e2 = e1
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // Element[namespaces inherit]
+        let in_scope_namespace = e2.borrow().in_scope_namespace().unwrap();
+        dbg!(&in_scope_namespace);
+        assert_eq!(1, in_scope_namespace.iter().len());
+
+        let mut i = in_scope_namespace.iter();
+        let s = i.next().unwrap();
+        assert_eq!(Some("xml"), s.borrow().prefix());
+        assert_eq!(
+            "http://www.w3.org/XML/1998/namespace",
+            s.borrow().namespace_name()
+        );
+
+        // Sortable
+        assert_eq!(4, e1.borrow().order());
+
+        // PartialEq
+        assert_eq!(e1, e1);
+    }
+
+    #[test]
+    fn test_element_namespaces_inherit_e3() {
+        let (rest, tree) = xml_parser::document(
+            "<root xmlns='http://test/'><e1 xmlns=''><e2 xmlns='http://test/e2'><e3 /></e2></e1></root>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let e1 = root
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let e2 = e1
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let e3 = e2
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // Element[namespaces inherit]
+        let in_scope_namespace = e3.borrow().in_scope_namespace().unwrap();
+        assert_eq!(2, in_scope_namespace.iter().len());
+
+        let mut i = in_scope_namespace.iter();
+        let d = i.next().unwrap();
+        assert_eq!(None, d.borrow().prefix());
+        assert_eq!("http://test/e2", d.borrow().namespace_name());
+
+        // Sortable
+        assert_eq!(4, e1.borrow().order());
+
+        // PartialEq
+        assert_eq!(e1, e1);
+    }
+
+    #[test]
+    fn test_element_namespaces_inherit_ns_e1() {
+        let (rest, tree) =
+            xml_parser::document("<root xmlns:ns='http://test/ns'><ns:e1 /></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let e1 = root
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // Element[namespaces inherit]
+        let in_scope_namespace = e1.borrow().in_scope_namespace().unwrap();
+        assert_eq!(2, in_scope_namespace.iter().len());
+
+        let mut i = in_scope_namespace.iter();
+        let d = i.next().unwrap();
+        assert_eq!(Some("ns"), d.borrow().prefix());
+        assert_eq!("http://test/ns", d.borrow().namespace_name());
+
+        // Sortable
+        assert_eq!(4, e1.borrow().order());
+
+        // PartialEq
+        assert_eq!(e1, e1);
+    }
+
+    #[test]
+    fn test_element_namespaces_inherit_ns_e2() {
+        let (rest, tree) = xml_parser::document(
+            "<root xmlns:ns='http://test/ns'><e1 xmlns:ns=''><ns:e2 /></e1></root>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let e1 = root
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let e2 = e1
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // Element[namespaces inherit]
+        let in_scope_namespace = e2.borrow().in_scope_namespace().unwrap();
+        dbg!(&in_scope_namespace);
+        assert_eq!(1, in_scope_namespace.iter().len());
+
+        let mut i = in_scope_namespace.iter();
+        let s = i.next().unwrap();
+        assert_eq!(Some("xml"), s.borrow().prefix());
+        assert_eq!(
+            "http://www.w3.org/XML/1998/namespace",
+            s.borrow().namespace_name()
+        );
+
+        // Sortable
+        assert_eq!(4, e1.borrow().order());
+
+        // PartialEq
+        assert_eq!(e1, e1);
+    }
+
+    #[test]
+    fn test_element_namespaces_inherit_ns_e3() {
+        let (rest, tree) = xml_parser::document(
+            "<root xmlns:ns='http://test/ns'><e1 xmlns:ns=''><e2 xmlns:ns='http://test/ns/e2'><ns:e3 /></e2></e1></root>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let e1 = root
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let e2 = e1
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let e3 = e2
+            .borrow()
+            .children()
+            .iter()
+            .next()
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // Element[namespaces inherit]
+        let in_scope_namespace = e3.borrow().in_scope_namespace().unwrap();
+        assert_eq!(2, in_scope_namespace.iter().len());
+
+        let mut i = in_scope_namespace.iter();
+        let d = i.next().unwrap();
+        assert_eq!(Some("ns"), d.borrow().prefix());
+        assert_eq!("http://test/ns/e2", d.borrow().namespace_name());
+
+        // Sortable
+        assert_eq!(4, e1.borrow().order());
+
+        // PartialEq
+        assert_eq!(e1, e1);
     }
 
     #[test]
@@ -3158,22 +3864,23 @@ mod tests {
             unreachable!();
         }
 
-        if let Value::V(references) = attr.borrow().references() {
-            assert!(references.is_none());
-        } else {
+        if let Value::V(_) = attr.borrow().references().unwrap() {
             unreachable!();
         }
 
         let parent = attr.borrow().owner_element().unwrap();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, attr.borrow().order());
+
+        // PartialEq
         assert_eq!(attr, attr);
     }
 
     #[test]
     fn test_attribute_max() {
-        let (rest, tree) = xml_parser::document("<!DOCTYPE root [<!ATTLIST root b:a ID #REQUIRED>]><root b:a=' 1 ' xmlns:b='http://test/b'/>").unwrap();
+        let (rest, tree) = xml_parser::document("<!DOCTYPE root [<!ATTLIST root b:a CDATA #REQUIRED>]><root b:a=' 1 ' xmlns:b='http://test/b'/>").unwrap();
         assert_eq!("", rest);
 
         let doc = XmlDocument::new(&tree).unwrap();
@@ -3197,12 +3904,12 @@ mod tests {
         assert!(specified);
 
         if let Value::V(attribute_type) = attr.borrow().attribute_type() {
-            assert_eq!(Some(XmlDeclarationAttType::Id), attribute_type);
+            assert_eq!(Some(XmlDeclarationAttType::CData), attribute_type);
         } else {
             unreachable!();
         }
 
-        if let Value::V(references) = attr.borrow().references() {
+        if let Value::V(references) = attr.borrow().references().unwrap() {
             assert!(references.is_none());
         } else {
             unreachable!();
@@ -3211,7 +3918,10 @@ mod tests {
         let parent = attr.borrow().owner_element().unwrap();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(6, attr.borrow().order());
+
+        // PartialEq
         assert_eq!(attr, attr);
     }
 
@@ -3228,7 +3938,552 @@ mod tests {
         let value = attr.borrow().normalized_value().unwrap();
         assert_eq!("a &bあ c", value);
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_normalized_ws() {
+        let (rest, tree) = xml_parser::document("<root a='&#x20;&#xD;&#xA;&#x9;' />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[normalized value]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!(" \r\n\t", value);
+
+        // Sortable
+        assert_eq!(3, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_normalized_entity() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!ENTITY aaa 'bbb'>]><root a='&aaa;' />")
+                .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[normalized value]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("bbb", value);
+
+        // Sortable
+        assert_eq!(5, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_normalized_value_defined_lt() {
+        let (rest, tree) = xml_parser::document("<root a='&lt;' />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[normalized value]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("<", value);
+
+        // Sortable
+        assert_eq!(3, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_normalized_value_defined_gt() {
+        let (rest, tree) = xml_parser::document("<root a='&gt;' />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[normalized value]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!(">", value);
+
+        // Sortable
+        assert_eq!(3, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_normalized_value_defined_amp() {
+        let (rest, tree) = xml_parser::document("<root a='&amp;' />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[normalized value]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("&", value);
+
+        // Sortable
+        assert_eq!(3, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_normalized_value_defined_apos() {
+        let (rest, tree) = xml_parser::document("<root a='&apos;' />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[normalized value]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("'", value);
+
+        // Sortable
+        assert_eq!(3, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_normalized_value_defined_quot() {
+        let (rest, tree) = xml_parser::document("<root a='&quot;' />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[normalized value]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("\"", value);
+
+        // Sortable
+        assert_eq!(3, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_specified_required() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root b CDATA #REQUIRED>]> <root a='1'/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root
+            .borrow()
+            .attributes()
+            .iter()
+            .find(|v| v.borrow().local_name() == "b")
+            .unwrap();
+
+        // Attribute[specified]
+        let specified = attr.borrow().specified();
+        assert!(!specified);
+
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("", value);
+
+        // Sortable
+        assert_eq!(-1, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_specified_implied() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root b CDATA #IMPLIED>]> <root a='1'/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root
+            .borrow()
+            .attributes()
+            .iter()
+            .find(|v| v.borrow().local_name() == "b");
+        assert!(attr.is_none());
+    }
+
+    #[test]
+    fn test_attribute_specified_fixed() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root b CDATA #FIXED '2'>]> <root a='1'/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root
+            .borrow()
+            .attributes()
+            .iter()
+            .find(|v| v.borrow().local_name() == "b")
+            .unwrap();
+
+        // Attribute[specified]
+        let specified = attr.borrow().specified();
+        assert!(!specified);
+
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("2", value);
+
+        // Sortable
+        assert_eq!(-1, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_type_cdata() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root a CDATA #REQUIRED>]><root a=' 1  1 '/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[attribbute type]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!(" 1  1 ", value);
+
+        if let Value::V(attribute_type) = attr.borrow().attribute_type() {
+            assert_eq!(Some(XmlDeclarationAttType::CData), attribute_type);
+        } else {
+            unreachable!();
+        }
+
+        if let Value::V(references) = attr.borrow().references().unwrap() {
+            assert!(references.is_none());
+        } else {
+            unreachable!();
+        }
+
+        // Sortable
+        assert_eq!(5, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_type_entities() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root a ENTITIES #REQUIRED><!ENTITY 1 PUBLIC 'a' 'b' NDATA c>]><root a=' 1  1 '/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let entity = doc.borrow().unparsed_entities().iter().next().unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[attribbute type]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("1 1", value);
+
+        if let Value::V(attribute_type) = attr.borrow().attribute_type() {
+            assert_eq!(Some(XmlDeclarationAttType::Entities), attribute_type);
+        } else {
+            unreachable!();
+        }
+
+        if let Value::V(Some(references)) = attr.borrow().references().unwrap() {
+            assert_eq!(entity, references.get(0).unwrap().as_unparsed().unwrap());
+        } else {
+            unreachable!();
+        }
+
+        // Sortable
+        assert_eq!(6, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_type_entity() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root a ENTITY #REQUIRED><!ENTITY 1 PUBLIC 'a' 'b' NDATA c>]><root a='1 '/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let entity = doc.borrow().unparsed_entities().iter().next().unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[attribbute type]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("1", value);
+
+        if let Value::V(attribute_type) = attr.borrow().attribute_type() {
+            assert_eq!(Some(XmlDeclarationAttType::Entity), attribute_type);
+        } else {
+            unreachable!();
+        }
+
+        if let Value::V(Some(references)) = attr.borrow().references().unwrap() {
+            assert_eq!(entity, references.get(0).unwrap().as_unparsed().unwrap());
+        } else {
+            unreachable!();
+        }
+
+        // Sortable
+        assert_eq!(6, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_type_idref() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root a IDREF #REQUIRED><!ATTLIST e b ID #REQUIRED>]><root a='1'><e b='1'/></root>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let e = root.borrow().children().iter().next().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[attribbute type]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("1", value);
+
+        if let Value::V(attribute_type) = attr.borrow().attribute_type() {
+            assert_eq!(Some(XmlDeclarationAttType::IdRef), attribute_type);
+        } else {
+            unreachable!();
+        }
+
+        if let Value::V(Some(references)) = attr.borrow().references().unwrap() {
+            assert_eq!(e, references.get(0).unwrap().clone());
+        } else {
+            unreachable!();
+        }
+
+        // Sortable
+        assert_eq!(6, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_type_idrefs() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root a IDREFS #REQUIRED><!ATTLIST e b ID #REQUIRED>]><root a='  1  2'><e b='1'/></root>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let e = root.borrow().children().iter().next().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[attribbute type]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("1 2", value);
+
+        if let Value::V(attribute_type) = attr.borrow().attribute_type() {
+            assert_eq!(Some(XmlDeclarationAttType::IdRefs), attribute_type);
+        } else {
+            unreachable!();
+        }
+
+        if let Value::V(Some(references)) = attr.borrow().references().unwrap() {
+            assert_eq!(e, references.get(0).unwrap().clone());
+        } else {
+            unreachable!();
+        }
+
+        // Sortable
+        assert_eq!(6, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_type_nmtoken() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root a NMTOKEN #REQUIRED>]><root a='1 2'/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[attribbute type]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("1 2", value);
+
+        if let Value::V(attribute_type) = attr.borrow().attribute_type() {
+            assert_eq!(Some(XmlDeclarationAttType::NmToken), attribute_type);
+        } else {
+            unreachable!();
+        }
+
+        // Sortable
+        assert_eq!(5, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_type_nmtokens() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root a NMTOKENS #REQUIRED>]><root a='1'/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[attribbute type]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("1", value);
+
+        if let Value::V(attribute_type) = attr.borrow().attribute_type() {
+            assert_eq!(Some(XmlDeclarationAttType::NmTokens), attribute_type);
+        } else {
+            unreachable!();
+        }
+
+        if let Value::V(references) = attr.borrow().references().unwrap() {
+            assert!(references.is_none());
+        } else {
+            unreachable!();
+        }
+
+        // Sortable
+        assert_eq!(5, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_type_notation() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root a NOTATION (a) #REQUIRED><!NOTATION 1 SYSTEM 'a'>]><root a='1'/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let notation = doc.borrow().notations().unwrap().iter().next().unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[attribbute type]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("1", value);
+
+        if let Value::V(attribute_type) = attr.borrow().attribute_type() {
+            assert_eq!(
+                Some(XmlDeclarationAttType::Notation(vec!["a".to_string()])),
+                attribute_type
+            );
+        } else {
+            unreachable!();
+        }
+
+        if let Value::V(Some(references)) = attr.borrow().references().unwrap() {
+            assert_eq!(notation, references.get(0).unwrap().as_notation().unwrap());
+        } else {
+            unreachable!();
+        }
+
+        // Sortable
+        assert_eq!(6, attr.borrow().order());
+
+        // PartialEq
+        assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_attribute_type_enumeration() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ATTLIST root a (a) #REQUIRED>]><root a='1 2 '/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // Attribute[attribbute type]
+        let value = attr.borrow().normalized_value().unwrap();
+        assert_eq!("1 2", value);
+
+        if let Value::V(attribute_type) = attr.borrow().attribute_type() {
+            assert_eq!(
+                Some(XmlDeclarationAttType::Enumeration(vec!["a".to_string()])),
+                attribute_type
+            );
+        } else {
+            unreachable!();
+        }
+
+        if let Value::V(references) = attr.borrow().references().unwrap() {
+            assert!(references.is_none());
+        } else {
+            unreachable!();
+        }
+
+        // Sortable
+        assert_eq!(5, attr.borrow().order());
+
+        // PartialEq
         assert_eq!(attr, attr);
     }
 
@@ -3260,7 +4515,10 @@ mod tests {
         let parent = pi.borrow().parent().as_element().unwrap();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, pi.borrow().order());
+
+        // PartialEq
         assert_eq!(pi, pi);
     }
 
@@ -3295,7 +4553,10 @@ mod tests {
         let parent = pi.borrow().parent().as_element().unwrap();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(5, pi.borrow().order());
+
+        // PartialEq
         assert_eq!(pi, pi);
     }
 
@@ -3318,7 +4579,10 @@ mod tests {
             unreachable!();
         }
 
-        //PartialEq
+        // Sortable
+        assert_eq!(6, pi.borrow().order());
+
+        // PartialEq
         assert_eq!(pi, pi);
     }
 
@@ -3359,7 +4623,10 @@ mod tests {
         let parent = amp.borrow().parent();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, amp.borrow().order());
+
+        // PartialEq
         assert_eq!(amp, amp);
     }
 
@@ -3403,7 +4670,10 @@ mod tests {
         let parent = amp.borrow().parent();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(5, amp.borrow().order());
+
+        // PartialEq
         assert_eq!(amp, amp);
     }
 
@@ -3429,8 +4699,14 @@ mod tests {
         let parent = cdata.borrow().parent().unwrap();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, cdata.borrow().order());
+
+        // PartialEq
         assert_eq!(cdata, cdata);
+
+        // XmlCData
+        assert!(!cdata.borrow().is_empty());
     }
 
     #[test]
@@ -3462,8 +4738,16 @@ mod tests {
         let parent = char_ref.borrow().parent().unwrap();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, char_ref.borrow().order());
+
+        // PartialEq
         assert_eq!(char_ref, char_ref);
+
+        // XmlCharReference
+        assert_eq!("12354", char_ref.borrow().num());
+
+        assert_eq!(10, char_ref.borrow().radix());
     }
 
     #[test]
@@ -3495,8 +4779,16 @@ mod tests {
         let parent = char_ref.borrow().parent().unwrap();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, char_ref.borrow().order());
+
+        // PartialEq
         assert_eq!(char_ref, char_ref);
+
+        // XmlCharReference
+        assert_eq!("3042", char_ref.borrow().num());
+
+        assert_eq!(16, char_ref.borrow().radix());
     }
 
     #[test]
@@ -3521,7 +4813,10 @@ mod tests {
         let parent = text.borrow().parent().unwrap();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, text.borrow().order());
+
+        // PartialEq
         assert_eq!(text, text);
     }
 
@@ -3547,8 +4842,14 @@ mod tests {
         let parent = comment.borrow().parent().unwrap().as_element().unwrap();
         assert_eq!("root", parent.borrow().local_name());
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, comment.borrow().order());
+
+        // PartialEq
         assert_eq!(comment, comment);
+
+        // XmlComment
+        assert!(!comment.borrow().is_empty());
     }
 
     #[test]
@@ -3580,7 +4881,10 @@ mod tests {
             unreachable!();
         }
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, entity.borrow().entity().borrow().order());
+
+        // PartialEq
         assert_eq!(entity, entity);
     }
 
@@ -3613,7 +4917,10 @@ mod tests {
             unreachable!();
         }
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, entity.borrow().entity().borrow().order());
+
+        // PartialEq
         assert_eq!(entity, entity);
     }
 
@@ -3634,7 +4941,10 @@ mod tests {
             unreachable!();
         }
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, entity.borrow().entity().borrow().order());
+
+        // PartialEq
         assert_eq!(entity, entity);
     }
 
@@ -3660,7 +4970,10 @@ mod tests {
         let declaration_base_uri = notation.borrow().declaration_base_uri().to_string();
         assert_eq!("", declaration_base_uri);
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, notation.borrow().order());
+
+        // PartialEq
         assert_eq!(notation, notation);
     }
 
@@ -3687,7 +5000,10 @@ mod tests {
         let declaration_base_uri = notation.borrow().declaration_base_uri().to_string();
         assert_eq!("", declaration_base_uri);
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, notation.borrow().order());
+
+        // PartialEq
         assert_eq!(notation, notation);
     }
 
@@ -3713,7 +5029,10 @@ mod tests {
         let namespace_name = ns.borrow().namespace_name().to_string();
         assert_eq!("http://test", namespace_name);
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, ns.borrow().order());
+
+        // PartialEq
         assert_eq!(ns, ns);
     }
 
@@ -3739,7 +5058,10 @@ mod tests {
         let namespace_name = ns.borrow().namespace_name().to_string();
         assert_eq!("http://test/aaa", namespace_name);
 
-        //PartialEq
+        // Sortable
+        assert_eq!(3, ns.borrow().order());
+
+        // PartialEq
         assert_eq!(ns, ns);
     }
 }
