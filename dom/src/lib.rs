@@ -12,7 +12,6 @@ use xml_info::{
 };
 
 // TODO: read only.
-// TODO: equality node.
 
 pub type ExpandedName = (String, Option<String>, Option<String>);
 
@@ -33,7 +32,7 @@ pub trait Document: Node {
 
     fn implementation(&self) -> XmlDomImplementation;
 
-    fn element(&self) -> error::Result<XmlElement>;
+    fn document_element(&self) -> error::Result<XmlElement>;
 
     fn get_elements_by_tag_name(&self, tag_name: &str) -> error::Result<XmlNodeList>;
 }
@@ -109,7 +108,7 @@ pub trait CharacterData: Node {
 
     fn length(&self) -> usize;
 
-    fn substring(&self, offset: usize, count: usize) -> String;
+    fn substring_data(&self, offset: usize, count: usize) -> String;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -125,6 +124,8 @@ pub trait Attr: Node {
 // -----------------------------------------------------------------------------------------------
 
 pub trait Element: Node {
+    fn tag_name(&self) -> String;
+
     fn get_attribute(&self, name: &str) -> error::Result<String>;
 
     fn get_attribute_node(&self, name: &str) -> Option<XmlAttr>;
@@ -494,7 +495,7 @@ impl XmlNode {
         children
             .iter()
             .rev()
-            .skip_while(|&v| *v != node)
+            .skip_while(|&v| v.order() != node.order())
             .nth(1)
             .cloned()
     }
@@ -510,7 +511,11 @@ impl XmlNode {
             _ => return None,
         };
 
-        children.iter().skip_while(|&v| *v != node).nth(1).cloned()
+        children
+            .iter()
+            .skip_while(|&v| v.order() != node.order())
+            .nth(1)
+            .cloned()
     }
 }
 
@@ -560,10 +565,6 @@ impl fmt::Display for XmlNode {
 
 pub trait AsNode {
     fn as_node(&self) -> XmlNode;
-
-    fn as_boxed_node(&self) -> Box<XmlNode> {
-        Box::new(self.as_node())
-    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -667,7 +668,7 @@ impl Node for XmlDocumentFragment {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -743,7 +744,7 @@ impl Document for XmlDocument {
         XmlDomImplementation {}
     }
 
-    fn element(&self) -> error::Result<XmlElement> {
+    fn document_element(&self) -> error::Result<XmlElement> {
         self.root_element()
     }
 
@@ -798,11 +799,11 @@ impl Node for XmlDocument {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
-        None::<XmlDocument>
+        None
     }
 
     fn has_child(&self) -> bool {
@@ -969,7 +970,6 @@ pub struct XmlAttr {
 
 impl Attr for XmlAttr {
     fn name(&self) -> String {
-        // TODO: namespace
         self.attribute.borrow().local_name().to_string()
     }
 
@@ -1022,7 +1022,7 @@ impl Node for XmlAttr {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -1126,6 +1126,10 @@ pub struct XmlElement {
 }
 
 impl Element for XmlElement {
+    fn tag_name(&self) -> String {
+        self.element.borrow().local_name().to_string()
+    }
+
     fn get_attribute(&self, name: &str) -> error::Result<String> {
         let attr = self.get_attribute_node(name);
         if let Some(attr) = attr {
@@ -1136,7 +1140,6 @@ impl Element for XmlElement {
     }
 
     fn get_attribute_node(&self, name: &str) -> Option<XmlAttr> {
-        // TODO: namespace
         self.element
             .borrow()
             .attributes()
@@ -1157,8 +1160,7 @@ impl Element for XmlElement {
 
 impl Node for XmlElement {
     fn node_name(&self) -> String {
-        // TODO: namespace
-        self.element.borrow().local_name().to_string()
+        self.tag_name()
     }
 
     fn node_value(&self) -> error::Result<Option<String>> {
@@ -1375,7 +1377,7 @@ impl CharacterData for XmlText {
         self.data.borrow().len()
     }
 
-    fn substring(&self, offset: usize, count: usize) -> String {
+    fn substring_data(&self, offset: usize, count: usize) -> String {
         self.data.borrow().character_code()[offset..(offset + count)].to_string()
     }
 }
@@ -1427,7 +1429,7 @@ impl Node for XmlText {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -1487,7 +1489,7 @@ impl CharacterData for XmlComment {
         self.data.borrow().len()
     }
 
-    fn substring(&self, offset: usize, count: usize) -> String {
+    fn substring_data(&self, offset: usize, count: usize) -> String {
         self.data.borrow().comment()[offset..(offset + count)].to_string()
     }
 }
@@ -1534,7 +1536,7 @@ impl Node for XmlComment {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -1596,7 +1598,7 @@ impl CharacterData for XmlCDataSection {
         self.data.borrow().len()
     }
 
-    fn substring(&self, offset: usize, count: usize) -> String {
+    fn substring_data(&self, offset: usize, count: usize) -> String {
         self.data.borrow().character_code()[offset..(offset + count)].to_string()
     }
 }
@@ -1648,7 +1650,7 @@ impl Node for XmlCDataSection {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -1703,7 +1705,6 @@ pub struct XmlDocumentType {
 
 impl DocumentType for XmlDocumentType {
     fn name(&self) -> String {
-        // TODO: namespace
         self.declaration.borrow().local_name().to_string()
     }
 
@@ -1778,7 +1779,7 @@ impl Node for XmlDocumentType {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -1852,7 +1853,7 @@ impl Node for XmlNotation {
     }
 
     fn parent_node(&self) -> Option<XmlNode> {
-        Some(XmlNode::from(self.notation.borrow().parent()))
+        None
     }
 
     fn child_nodes(&self) -> XmlNodeList {
@@ -1868,19 +1869,17 @@ impl Node for XmlNotation {
     }
 
     fn previous_sibling(&self) -> Option<XmlNode> {
-        self.parent_node()
-            .as_ref()
-            .and_then(|parent| parent.previous_sibling_child(self.as_node()))
+        let parent = XmlNode::from(self.notation.borrow().parent());
+        parent.previous_sibling_child(self.as_node())
     }
 
     fn next_sibling(&self) -> Option<XmlNode> {
-        self.parent_node()
-            .as_ref()
-            .and_then(|parent| parent.next_sibling_child(self.as_node()))
+        let parent = XmlNode::from(self.notation.borrow().parent());
+        parent.next_sibling_child(self.as_node())
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -1958,7 +1957,7 @@ impl Node for XmlEntity {
     }
 
     fn parent_node(&self) -> Option<XmlNode> {
-        self.entity.borrow().parent().map(XmlNode::from)
+        None
     }
 
     fn child_nodes(&self) -> XmlNodeList {
@@ -1976,19 +1975,17 @@ impl Node for XmlEntity {
     }
 
     fn previous_sibling(&self) -> Option<XmlNode> {
-        self.parent_node()
-            .as_ref()
-            .and_then(|parent| parent.previous_sibling_child(self.as_node()))
+        let parent = self.entity.borrow().parent().map(XmlNode::from);
+        parent.and_then(|parent| parent.previous_sibling_child(self.as_node()))
     }
 
     fn next_sibling(&self) -> Option<XmlNode> {
-        self.parent_node()
-            .as_ref()
-            .and_then(|parent| parent.next_sibling_child(self.as_node()))
+        let parent = self.entity.borrow().parent().map(XmlNode::from);
+        parent.and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -2101,7 +2098,7 @@ impl Node for XmlEntityReference {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -2138,7 +2135,7 @@ impl From<info::XmlNode<info::XmlReference>> for XmlEntityReference {
     fn from(value: info::XmlNode<info::XmlReference>) -> Self {
         XmlEntityReference {
             reference: value,
-            order: 0,
+            order: -1,
         }
     }
 }
@@ -2159,6 +2156,7 @@ impl fmt::Debug for XmlEntityReference {
 
 impl fmt::Display for XmlEntityReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        // TODO:
         write!(f, "&{};", self.node_name())
     }
 }
@@ -2222,7 +2220,7 @@ impl Node for XmlProcessingInstruction {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -2319,7 +2317,7 @@ impl Node for XmlNamespace {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap> {
-        None::<XmlNamedNodeMap>
+        None
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -2479,7 +2477,7 @@ mod tests {
         // Document
         assert_eq!(None, m.doc_type());
         assert_eq!(XmlDomImplementation {}, m.implementation());
-        assert_eq!(elem, m.element().unwrap());
+        assert_eq!(elem, m.document_element().unwrap());
         for child in m.get_elements_by_tag_name("root").unwrap().iter() {
             assert_eq!(root, child);
         }
@@ -2526,7 +2524,7 @@ mod tests {
         let (_, tree) = xml_parser::document("<root a='b'></root>").unwrap();
         let document = info::XmlDocument::new(&tree).unwrap();
         let doc = XmlDocument::from(document.clone());
-        let elem = doc.element().unwrap();
+        let elem = doc.document_element().unwrap();
         let attr = elem.get_attribute_node("a").unwrap();
         let text = XmlNode::Text(XmlText {
             data: info::XmlText::new(
@@ -2584,7 +2582,7 @@ mod tests {
         .unwrap();
         let document = info::XmlDocument::new(&tree).unwrap();
         let doc = XmlDocument::from(document.clone());
-        let root = doc.element().unwrap();
+        let root = doc.document_element().unwrap();
         let elem1 =
             if let XmlNode::Element(e) = root.get_elements_by_tag_name("elem1").item(0).unwrap() {
                 e.clone()
@@ -2674,7 +2672,7 @@ mod tests {
         let (_, tree) = xml_parser::document("<root>text</root>").unwrap();
         let document = info::XmlDocument::new(&tree).unwrap();
         let doc = XmlDocument::from(document);
-        let root = doc.element().unwrap();
+        let root = doc.document_element().unwrap();
         let text = if let XmlNode::Text(e) = root.child_nodes().item(0).unwrap() {
             e.clone()
         } else {
@@ -2683,7 +2681,7 @@ mod tests {
 
         // CharacterData
         assert_eq!(4, text.length());
-        assert_eq!("ex", text.substring(1, 2));
+        assert_eq!("ex", text.substring_data(1, 2));
 
         // Node
         assert_eq!("#text", text.node_name());
@@ -2723,7 +2721,7 @@ mod tests {
         let (_, tree) = xml_parser::document("<root><!-- comment --></root>").unwrap();
         let document = info::XmlDocument::new(&tree).unwrap();
         let doc = XmlDocument::from(document);
-        let root = doc.element().unwrap();
+        let root = doc.document_element().unwrap();
         let comment = if let XmlNode::Comment(e) = root.child_nodes().item(0).unwrap() {
             e.clone()
         } else {
@@ -2732,7 +2730,7 @@ mod tests {
 
         // CharacterData
         assert_eq!(9, comment.length());
-        assert_eq!("co", comment.substring(1, 2));
+        assert_eq!("co", comment.substring_data(1, 2));
 
         // Node
         assert_eq!("#comment", comment.node_name());
@@ -2772,7 +2770,7 @@ mod tests {
         let (_, tree) = xml_parser::document("<root><![CDATA[&<>\"]]></root>").unwrap();
         let document = info::XmlDocument::new(&tree).unwrap();
         let doc = XmlDocument::from(document);
-        let root = doc.element().unwrap();
+        let root = doc.document_element().unwrap();
         let cdata = if let XmlNode::CData(e) = root.child_nodes().item(0).unwrap() {
             e.clone()
         } else {
@@ -2781,7 +2779,7 @@ mod tests {
 
         // CharacterData
         assert_eq!(4, cdata.length());
-        assert_eq!("<>", cdata.substring(1, 2));
+        assert_eq!("<>", cdata.substring_data(1, 2));
 
         // Node
         assert_eq!("#cdata-section", cdata.node_name());
@@ -2821,7 +2819,7 @@ mod tests {
         let (_, tree) = xml_parser::document("<root xmlns:a='http://test/a'></root>").unwrap();
         let document = info::XmlDocument::new(&tree).unwrap();
         let doc = XmlDocument::from(document);
-        let root = doc.element().unwrap();
+        let root = doc.document_element().unwrap();
         let namespaces = root.namespaces().unwrap();
         let ns = namespaces.first().unwrap();
 
