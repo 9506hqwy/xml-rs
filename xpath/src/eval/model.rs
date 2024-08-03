@@ -1,3 +1,4 @@
+use super::error;
 use std::cmp;
 use std::fmt;
 use std::ops;
@@ -38,6 +39,13 @@ impl Context {
         self.size.push(size);
     }
 
+    pub fn get_ns_uri(&mut self, prefix: Option<&str>) -> Option<&str> {
+        self.namespaces
+            .iter()
+            .find(|v| v.0.as_deref() == prefix)
+            .map(|v| v.1.as_str())
+    }
+
     pub fn add_ns(&mut self, prefix: Option<&str>, uri: &str) {
         self.namespaces.retain(|v| v.0.as_deref() != prefix);
         self.namespaces
@@ -48,17 +56,21 @@ impl Context {
         self.namespaces.retain(|v| v.0.as_deref() != prefix);
     }
 
-    pub fn expanded_name(&self, qname: &nom::model::QName) -> ExpandedName {
+    pub fn expanded_name(&self, qname: &nom::model::QName) -> error::Result<ExpandedName> {
         match qname {
             nom::model::QName::Prefixed(p) => {
                 let local_part = p.local_part.to_string();
                 let prefix = Some(p.prefix.to_string());
-                let uri = self.namespaces.iter().find(|v| v.0 == prefix);
-                (local_part, prefix, uri.map(|v| v.1.to_string()))
+                let (_, uri) = self
+                    .namespaces
+                    .iter()
+                    .find(|v| v.0 == prefix)
+                    .ok_or_else(|| error::Error::NotFoundNamespace(p.prefix.to_string()))?;
+                Ok((local_part, prefix, Some(uri.to_string())))
             }
             nom::model::QName::Unprefixed(u) => {
                 let uri = self.namespaces.iter().find(|v| v.0.is_none());
-                (u.to_string(), None, uri.map(|v| v.1.to_string()))
+                Ok((u.to_string(), None, uri.map(|v| v.1.to_string())))
             }
         }
     }

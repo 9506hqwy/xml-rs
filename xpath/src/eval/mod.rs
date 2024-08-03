@@ -435,7 +435,16 @@ fn eval_node_test(
     match test {
         expr::NodeTest::Name(name) => match name {
             expr::NameTest::All => Ok(true),
-            expr::NameTest::Namespace(_) => unimplemented!("Not support `Namespace`."),
+            expr::NameTest::Namespace(prefix) => {
+                let uri_a = context
+                    .get_ns_uri(Some(prefix))
+                    .ok_or_else(|| error::Error::NotFoundNamespace(prefix.to_string()))?;
+                if let Some((_, _, uri_b)) = node.as_expanded_name()? {
+                    Ok(Some(uri_a) == uri_b.as_deref())
+                } else {
+                    Ok(false)
+                }
+            }
             expr::NameTest::QName(qname) => equal_qname(qname, node, context),
         },
         expr::NodeTest::PI(_) => unimplemented!("Not support `processing-instruction`."),
@@ -465,7 +474,7 @@ fn eval_func_expr(
     node: dom::XmlNode,
     context: &mut model::Context,
 ) -> error::Result<model::Value> {
-    let (local_part, _, uri) = context.expanded_name(func.name());
+    let (local_part, _, uri) = context.expanded_name(func.name())?;
 
     let table = func::table();
     let entry = table
@@ -952,7 +961,7 @@ fn equal_qname(
     context: &model::Context,
 ) -> error::Result<bool> {
     if let Some((local_part_a, _, uri_a)) = node.as_expanded_name()? {
-        let (local_part_b, _, uri_b) = context.expanded_name(qname);
+        let (local_part_b, _, uri_b) = context.expanded_name(qname)?;
         Ok(local_part_a == local_part_b && uri_a == uri_b)
     } else {
         Ok(false)
@@ -2486,7 +2495,34 @@ mod tests {
         assert_eq!("text", ret);
     }
 
-    // TODO: NameTest
+    #[test]
+    fn test_name_test_namespace() {
+        let mut context = model::Context::default();
+        context.add_ns(Some("a"), "http://test/a");
+
+        let (rest, expr) = parse("root/a:*").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) =
+            xml_parser::document("<root xmlns:a='http://test/a'><a:e1 /><a:e2 /><e3 /></root>")
+                .unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc.document_element().unwrap();
+        let mut children = root.child_nodes().iter();
+        let e1 = children.next().unwrap();
+        let e2 = children.next().unwrap();
+
+        let r = document(&expr, doc.clone(), &mut context).unwrap();
+        let nodes = if let model::Value::Node(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(2, nodes.len());
+        assert_eq!(e1, nodes[0]);
+        assert_eq!(e2, nodes[1]);
+    }
 
     #[test]
     fn test_node_type_comment() {

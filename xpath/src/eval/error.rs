@@ -4,6 +4,7 @@ pub enum Error {
     InvalidType,
     InvalidArgumentCount(String),
     NotFoundFunction(String),
+    NotFoundNamespace(String),
 }
 
 impl From<xml_dom::error::Error> for Error {
