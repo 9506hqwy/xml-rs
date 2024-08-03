@@ -276,14 +276,12 @@ fn eval_filtered_loc_expr(
             } else {
                 return Err(error::Error::InvalidType);
             };
-            // FIXME:
             match op {
-                expr::LocationPathOperator::Current => {
-                    nodes.iter().flat_map(|n| child(n.clone())).collect()
-                }
-                expr::LocationPathOperator::DescendantOrSelfNode => {
-                    nodes.iter().flat_map(|n| descendant(n.clone())).collect()
-                }
+                expr::LocationPathOperator::Current => nodes,
+                expr::LocationPathOperator::DescendantOrSelfNode => nodes
+                    .iter()
+                    .flat_map(|n| descendant_and_self(n.clone()))
+                    .collect(),
             }
         } else {
             let root = match node {
@@ -1130,6 +1128,50 @@ mod tests {
             unreachable!()
         };
         assert_eq!(ee2, nodes[0]);
+    }
+
+    #[test]
+    fn test_filter_location_path_current() {
+        let (rest, expr) = parse("(root)/e1").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root><e1><ee1>1</ee1></e1></root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let root = doc.document_element().unwrap();
+        let e1 = root.child_nodes().iter().next().unwrap();
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let nodes = if let model::Value::Node(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(e1, nodes[0]);
+    }
+
+    #[test]
+    fn test_filter_location_path_descendant() {
+        let (rest, expr) = parse("(root)//ee1").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, tree) = xml_parser::document("<root><e1><ee1>1</ee1></e1></root>").unwrap();
+        assert_eq!("", rest);
+        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let ee1 = doc
+            .get_elements_by_tag_name("ee1")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap();
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let nodes = if let model::Value::Node(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(ee1, nodes[0]);
     }
 
     #[test]
@@ -2581,8 +2623,6 @@ mod tests {
         };
         assert_eq!(text, nodes[0]);
     }
-
-    // TODO: predicate
 
     // TODO: NodeType: processing-instruction
     // TODO: NodeType: processing-instruction()
