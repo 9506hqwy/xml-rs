@@ -1,8 +1,8 @@
 use std::cmp;
 use std::fmt;
 use std::ops;
-use xml_dom::AsStringValue;
-use xml_dom::XmlNode;
+use xml_dom::{AsStringValue, ExpandedName, XmlNode};
+use xml_nom as nom;
 
 // -----------------------------------------------------------------------------------------------
 
@@ -10,6 +10,7 @@ use xml_dom::XmlNode;
 pub struct Context {
     size: Vec<usize>,
     position: Vec<usize>,
+    namespaces: Vec<(Option<String>, String)>,
 }
 
 impl Context {
@@ -35,6 +36,31 @@ impl Context {
 
     pub fn push_size(&mut self, size: usize) {
         self.size.push(size);
+    }
+
+    pub fn add_ns(&mut self, prefix: Option<&str>, uri: &str) {
+        self.namespaces.retain(|v| v.0.as_deref() != prefix);
+        self.namespaces
+            .push((prefix.map(|v| v.to_string()), uri.to_string()));
+    }
+
+    pub fn remove_ns(&mut self, prefix: Option<&str>) {
+        self.namespaces.retain(|v| v.0.as_deref() != prefix);
+    }
+
+    pub fn expanded_name(&self, qname: &nom::model::QName) -> ExpandedName {
+        match qname {
+            nom::model::QName::Prefixed(p) => {
+                let local_part = p.local_part.to_string();
+                let prefix = Some(p.prefix.to_string());
+                let uri = self.namespaces.iter().find(|v| v.0 == prefix);
+                (local_part, prefix, uri.map(|v| v.1.to_string()))
+            }
+            nom::model::QName::Unprefixed(u) => {
+                let uri = self.namespaces.iter().find(|v| v.0.is_none());
+                (u.to_string(), None, uri.map(|v| v.1.to_string()))
+            }
+        }
     }
 }
 

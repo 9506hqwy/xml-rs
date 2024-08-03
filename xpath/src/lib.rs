@@ -2,7 +2,6 @@ pub mod eval;
 pub mod expr;
 
 // FIXME: Entity Reference to test node.
-// FIXME: add QName support.
 
 #[cfg(test)]
 mod tests {
@@ -840,12 +839,10 @@ mod tests {
         assert_eq!("", rest);
 
         let r = eval::document(&expr, doc, &mut eval::model::Context::default()).unwrap();
-        /* FIXME:
         assert_eq!(
             "<e2 xmlns:a=\"http://test/a\"></e2><e2></e2>",
             format!("{}", r)
         );
-        */
     }
 
     #[test]

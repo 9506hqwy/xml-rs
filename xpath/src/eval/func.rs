@@ -9,137 +9,164 @@ pub type XPathFunc =
 pub fn table() -> Vec<Entry> {
     vec![
         Entry {
-            name: "last".to_string(),
+            local_part: "last".to_string(),
+            namespace_uri: None,
             args: (0..0),
             call: Box::new(last),
         },
         Entry {
-            name: "position".to_string(),
+            local_part: "position".to_string(),
+            namespace_uri: None,
             args: (0..0),
             call: Box::new(position),
         },
         Entry {
-            name: "count".to_string(),
+            local_part: "count".to_string(),
+            namespace_uri: None,
             args: (1..1),
             call: Box::new(count),
         },
         Entry {
-            name: "id".to_string(),
+            local_part: "id".to_string(),
+            namespace_uri: None,
             args: (1..1),
             call: Box::new(id),
         },
         Entry {
-            name: "local-name".to_string(),
+            local_part: "local-name".to_string(),
+            namespace_uri: None,
             args: (0..1),
             call: Box::new(local_name),
         },
         Entry {
-            name: "namespace-uri".to_string(),
+            local_part: "namespace-uri".to_string(),
+            namespace_uri: None,
             args: (0..1),
             call: Box::new(namespace_uri),
         },
         Entry {
-            name: "name".to_string(),
+            local_part: "name".to_string(),
+            namespace_uri: None,
             args: (0..1),
             call: Box::new(name),
         },
         Entry {
-            name: "string".to_string(),
+            local_part: "string".to_string(),
+            namespace_uri: None,
             args: (0..1),
             call: Box::new(string),
         },
         Entry {
-            name: "concat".to_string(),
+            local_part: "concat".to_string(),
+            namespace_uri: None,
             args: (2..usize::MAX),
             call: Box::new(concat),
         },
         Entry {
-            name: "starts-with".to_string(),
+            local_part: "starts-with".to_string(),
+            namespace_uri: None,
             args: (2..2),
             call: Box::new(starts_with),
         },
         Entry {
-            name: "contains".to_string(),
+            local_part: "contains".to_string(),
+            namespace_uri: None,
             args: (2..2),
             call: Box::new(contains),
         },
         Entry {
-            name: "substring-before".to_string(),
+            local_part: "substring-before".to_string(),
+            namespace_uri: None,
             args: (2..2),
             call: Box::new(substring_before),
         },
         Entry {
-            name: "substring-after".to_string(),
+            local_part: "substring-after".to_string(),
+            namespace_uri: None,
             args: (2..2),
             call: Box::new(substring_after),
         },
         Entry {
-            name: "substring".to_string(),
+            local_part: "substring".to_string(),
+            namespace_uri: None,
             args: (2..3),
             call: Box::new(substring),
         },
         Entry {
-            name: "string-length".to_string(),
+            local_part: "string-length".to_string(),
+            namespace_uri: None,
             args: (0..1),
             call: Box::new(string_length),
         },
         Entry {
-            name: "normalize-space".to_string(),
+            local_part: "normalize-space".to_string(),
+            namespace_uri: None,
             args: (0..1),
             call: Box::new(normalize_space),
         },
         Entry {
-            name: "translate".to_string(),
+            local_part: "translate".to_string(),
+            namespace_uri: None,
             args: (3..3),
             call: Box::new(translate),
         },
         Entry {
-            name: "boolean".to_string(),
+            local_part: "boolean".to_string(),
+            namespace_uri: None,
             args: (1..1),
             call: Box::new(boolean),
         },
         Entry {
-            name: "not".to_string(),
+            local_part: "not".to_string(),
+            namespace_uri: None,
             args: (1..1),
             call: Box::new(not),
         },
         Entry {
-            name: "true".to_string(),
+            local_part: "true".to_string(),
+            namespace_uri: None,
             args: (0..0),
             call: Box::new(ftrue),
         },
         Entry {
-            name: "false".to_string(),
+            local_part: "false".to_string(),
+            namespace_uri: None,
             args: (0..0),
             call: Box::new(ffalse),
         },
         Entry {
-            name: "lang".to_string(),
+            local_part: "lang".to_string(),
+            namespace_uri: None,
             args: (1..1),
             call: Box::new(lang),
         },
         Entry {
-            name: "number".to_string(),
+            local_part: "number".to_string(),
+            namespace_uri: None,
             args: (0..1),
             call: Box::new(number),
         },
         Entry {
-            name: "sum".to_string(),
+            local_part: "sum".to_string(),
+            namespace_uri: None,
             args: (1..1),
             call: Box::new(sum),
         },
         Entry {
-            name: "floor".to_string(),
+            local_part: "floor".to_string(),
+            namespace_uri: None,
             args: (1..1),
             call: Box::new(floor),
         },
         Entry {
-            name: "ceiling".to_string(),
+            local_part: "ceiling".to_string(),
+            namespace_uri: None,
             args: (1..1),
             call: Box::new(ceiling),
         },
         Entry {
-            name: "round".to_string(),
+            local_part: "round".to_string(),
+            namespace_uri: None,
             args: (1..1),
             call: Box::new(round),
         },
@@ -149,14 +176,19 @@ pub fn table() -> Vec<Entry> {
 // -----------------------------------------------------------------------------------------------
 
 pub struct Entry {
-    name: String,
+    local_part: String,
+    namespace_uri: Option<String>,
     args: Range<usize>,
     call: Box<XPathFunc>,
 }
 
 impl Entry {
-    pub fn name(&self) -> &str {
-        self.name.as_str()
+    pub fn local_part(&self) -> &str {
+        self.local_part.as_str()
+    }
+
+    pub fn namespace_uri(&self) -> Option<&str> {
+        self.namespace_uri.as_deref()
     }
 
     pub fn min_args(&self) -> usize {

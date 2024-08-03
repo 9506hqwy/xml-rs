@@ -5,8 +5,8 @@ pub mod model;
 use super::expr::model as expr;
 use model::AsValue;
 use std::collections::HashSet;
-use xml_dom::{self as dom, AsNode, AsStringValue, Node};
-use xml_nom::{self as nom};
+use xml_dom::{self as dom, AsExpandedName, AsNode, AsStringValue, Node};
+use xml_nom as nom;
 
 pub fn document(
     expr: &expr::Expr,
@@ -385,7 +385,13 @@ fn eval_axis_node_test(
         },
     };
 
-    nodes.retain(|n| eval_node_test(test, n.clone(), context));
+    let mut tested = vec![];
+    for node in nodes {
+        if eval_node_test(test, node.clone(), context)? {
+            tested.push(node);
+        }
+    }
+    nodes = tested;
 
     match axis {
         expr::AxisSpecifier::Abbreviated(_) => {
@@ -421,22 +427,23 @@ fn eval_axis_node_test(
     Ok(nodes)
 }
 
-fn eval_node_test(test: &expr::NodeTest, node: dom::XmlNode, _: &mut model::Context) -> bool {
+fn eval_node_test(
+    test: &expr::NodeTest,
+    node: dom::XmlNode,
+    context: &mut model::Context,
+) -> error::Result<bool> {
     match test {
         expr::NodeTest::Name(name) => match name {
-            expr::NameTest::All => true,
+            expr::NameTest::All => Ok(true),
             expr::NameTest::Namespace(_) => unimplemented!("Not support `Namespace`."),
-            expr::NameTest::QName(qname) => match qname {
-                nom::model::QName::Prefixed(p) => node.node_name() == p.local_part, // FIXME: namespace
-                nom::model::QName::Unprefixed(p) => node.node_name() == *p,
-            },
+            expr::NameTest::QName(qname) => equal_qname(qname, node, context),
         },
         expr::NodeTest::PI(_) => unimplemented!("Not support `processing-instruction`."),
         expr::NodeTest::Type(ty) => match ty {
-            expr::NodeType::Comment => node.node_type() == dom::NodeType::Comment,
-            expr::NodeType::Node => true,
-            expr::NodeType::PI => node.node_type() == dom::NodeType::PI,
-            expr::NodeType::Text => node.node_type() == dom::NodeType::Text,
+            expr::NodeType::Comment => Ok(node.node_type() == dom::NodeType::Comment),
+            expr::NodeType::Node => Ok(true),
+            expr::NodeType::PI => Ok(node.node_type() == dom::NodeType::PI),
+            expr::NodeType::Text => Ok(node.node_type() == dom::NodeType::Text),
         },
     }
 }
@@ -458,19 +465,16 @@ fn eval_func_expr(
     node: dom::XmlNode,
     context: &mut model::Context,
 ) -> error::Result<model::Value> {
-    let name = match func.name() {
-        nom::model::QName::Prefixed(p) => p.local_part, // FIXME: namespace
-        nom::model::QName::Unprefixed(u) => u,
-    };
+    let (local_part, _, uri) = context.expanded_name(func.name());
 
     let table = func::table();
     let entry = table
         .iter()
-        .find(|v| v.name() == name)
-        .ok_or_else(|| error::Error::NotFoundFunction(name.to_string()))?;
+        .find(|v| v.local_part() == local_part && v.namespace_uri() == uri.as_deref())
+        .ok_or_else(|| error::Error::NotFoundFunction(local_part.to_string()))?;
 
     if func.args().len() < entry.min_args() || entry.max_args() < func.args().len() {
-        return Err(error::Error::InvalidArgumentCount(name.to_string()));
+        return Err(error::Error::InvalidArgumentCount(local_part.to_string()));
     }
 
     let mut args = vec![];
@@ -568,7 +572,6 @@ fn namespace(node: dom::XmlNode) -> Vec<dom::XmlNode> {
     let mut nodes = vec![];
 
     if let dom::XmlNode::Element(element) = node {
-        // FIXME:
         for ns in element.in_scope_namespace().unwrap() {
             nodes.push(ns.as_node());
         }
@@ -939,6 +942,21 @@ fn less_than_node_text(a: &String, b: &[dom::XmlNode]) -> error::Result<bool> {
     }
 
     Ok(false)
+}
+
+// -----------------------------------------------------------------------------------------------
+
+fn equal_qname(
+    qname: &nom::model::QName,
+    node: dom::XmlNode,
+    context: &model::Context,
+) -> error::Result<bool> {
+    if let Some((local_part_a, _, uri_a)) = node.as_expanded_name()? {
+        let (local_part_b, _, uri_b) = context.expanded_name(qname);
+        Ok(local_part_a == local_part_b && uri_a == uri_b)
+    } else {
+        Ok(false)
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -1323,7 +1341,10 @@ mod tests {
 
     #[test]
     fn test_step_axis_namespace() {
-        let (rest, expr) = parse("root/e2[namespace::a]").unwrap();
+        let mut context = model::Context::default();
+        context.add_ns(Some("a"), "http://test/a");
+
+        let (rest, expr) = parse("root/a:e2[namespace::a]").unwrap();
         assert_eq!("", rest);
 
         let (rest, tree) =
@@ -1338,7 +1359,7 @@ mod tests {
             .nth(1)
             .unwrap();
 
-        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let r = document(&expr, doc.clone(), &mut context).unwrap();
         let nodes = if let model::Value::Node(n) = r {
             n
         } else {
@@ -1644,14 +1665,17 @@ mod tests {
 
     #[test]
     fn test_func_namespace_uri() {
-        let (rest, expr) = parse("namespace-uri(/root)").unwrap();
+        let mut context = model::Context::default();
+        context.add_ns(Some("b"), "http://test/");
+
+        let (rest, expr) = parse("namespace-uri(/b:root)").unwrap();
         assert_eq!("", rest);
 
         let (rest, tree) = xml_parser::document("<root xmlns='http://test/'></root>").unwrap();
         assert_eq!("", rest);
         let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
-        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let r = document(&expr, doc.clone(), &mut context).unwrap();
         let ret = if let model::Value::Text(n) = r {
             n
         } else {
@@ -1662,7 +1686,10 @@ mod tests {
 
     #[test]
     fn test_func_name() {
-        let (rest, expr) = parse("name(/root)").unwrap();
+        let mut context = model::Context::default();
+        context.add_ns(Some("a"), "http://test/a");
+
+        let (rest, expr) = parse("name(/a:root)").unwrap();
         assert_eq!("", rest);
 
         let (rest, tree) =
@@ -1670,7 +1697,7 @@ mod tests {
         assert_eq!("", rest);
         let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
 
-        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let r = document(&expr, doc.clone(), &mut context).unwrap();
         let ret = if let model::Value::Text(n) = r {
             n
         } else {
