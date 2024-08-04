@@ -1386,7 +1386,7 @@ impl CharacterData for XmlText {
     }
 
     fn substring_data(&self, offset: usize, count: usize) -> String {
-        self.data.borrow().character_code()[offset..(offset + count)].to_string()
+        self.data.borrow().substring(offset..(offset + count))
     }
 }
 
@@ -1498,7 +1498,7 @@ impl CharacterData for XmlComment {
     }
 
     fn substring_data(&self, offset: usize, count: usize) -> String {
-        self.data.borrow().comment()[offset..(offset + count)].to_string()
+        self.data.borrow().substring(offset..(offset + count))
     }
 }
 
@@ -1607,7 +1607,7 @@ impl CharacterData for XmlCDataSection {
     }
 
     fn substring_data(&self, offset: usize, count: usize) -> String {
-        self.data.borrow().character_code()[offset..(offset + count)].to_string()
+        self.data.borrow().substring(offset..(offset + count))
     }
 }
 

@@ -2,7 +2,7 @@ pub mod error;
 
 use std::cell::RefCell;
 use std::iter::Iterator;
-use std::ops::Deref;
+use std::ops::{Deref, Range};
 use std::rc::Rc;
 use xml_parser::model as parser;
 
@@ -570,6 +570,14 @@ impl XmlCData {
     pub fn owner(&self) -> XmlNode<XmlDocument> {
         self.owner.clone()
     }
+
+    pub fn substring(&self, range: Range<usize>) -> String {
+        self.data
+            .chars()
+            .skip(range.start)
+            .take(range.end - range.start)
+            .collect()
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -709,6 +717,14 @@ impl XmlComment {
 
     pub fn owner(&self) -> XmlNode<XmlDocument> {
         self.owner.clone()
+    }
+
+    pub fn substring(&self, range: Range<usize>) -> String {
+        self.comment
+            .chars()
+            .skip(range.start)
+            .take(range.end - range.start)
+            .collect()
     }
 }
 
@@ -2518,6 +2534,14 @@ impl XmlText {
 
     pub fn owner(&self) -> XmlNode<XmlDocument> {
         self.owner.clone()
+    }
+
+    pub fn substring(&self, range: Range<usize>) -> String {
+        self.text
+            .chars()
+            .skip(range.start)
+            .take(range.end - range.start)
+            .collect()
     }
 }
 
