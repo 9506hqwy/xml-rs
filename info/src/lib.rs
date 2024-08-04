@@ -564,7 +564,7 @@ impl XmlCData {
     }
 
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.data.chars().count()
     }
 
     pub fn owner(&self) -> XmlNode<XmlDocument> {
@@ -704,7 +704,7 @@ impl XmlComment {
     }
 
     pub fn len(&self) -> usize {
-        self.comment.len()
+        self.comment.chars().count()
     }
 
     pub fn owner(&self) -> XmlNode<XmlDocument> {
@@ -2513,7 +2513,7 @@ impl XmlText {
     }
 
     pub fn len(&self) -> usize {
-        self.text.len()
+        self.text.chars().count()
     }
 
     pub fn owner(&self) -> XmlNode<XmlDocument> {
