@@ -393,8 +393,7 @@ mod tests {
         let v = Value::Node(vec![]);
         assert_eq!("", String::try_from(&v).unwrap());
 
-        let (_, tree) = xml_parser::document("<root>a</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>a</root>").unwrap();
         let v = Value::Node(vec![doc.as_node()]);
         assert_eq!("a", String::try_from(&v).unwrap());
     }
@@ -443,8 +442,7 @@ mod tests {
         let v = Value::Node(vec![]);
         assert!(!bool::try_from(&v).unwrap());
 
-        let (_, tree) = xml_parser::document("<root>a</root>").unwrap();
-        let doc = xml_dom::XmlDocument::from(xml_info::XmlDocument::new(&tree).unwrap());
+        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>a</root>").unwrap();
         let v = Value::Node(vec![doc.as_node()]);
         assert!(bool::try_from(&v).unwrap());
     }

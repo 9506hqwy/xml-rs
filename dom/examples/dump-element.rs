@@ -7,10 +7,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let file_path = env::args().nth(1).ok_or("Missing file path")?;
     let contents = fs::read_to_string(file_path)?;
 
-    let (_, tree) = xml_parser::document(&contents).unwrap();
-    let info = xml_info::XmlDocument::new(&tree)?;
-
-    let dom = xml_dom::XmlDocument::from(info);
+    let (_, dom) = xml_dom::XmlDocument::from_raw(&contents)?;
     let elements = dom.get_elements_by_tag_name("*")?;
 
     for element in elements.iter() {

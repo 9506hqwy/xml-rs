@@ -1,6 +1,7 @@
 #[derive(Debug)]
 pub enum Error {
     Info(xml_info::error::Error),
+    Parse(String),
 }
 
 impl From<xml_info::error::Error> for Error {

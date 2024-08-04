@@ -854,6 +854,14 @@ impl fmt::Display for XmlDocument {
 }
 
 impl XmlDocument {
+    pub fn from_raw(value: &str) -> error::Result<(&str, Self)> {
+        let (rest, tree) =
+            xml_parser::document(value).map_err(|v| error::Error::Parse(v.to_string()))?;
+        let document = info::XmlDocument::new(&tree)?;
+        let dom = XmlDocument::from(document);
+        Ok((rest, dom))
+    }
+
     fn root_element(&self) -> error::Result<XmlElement> {
         let element = self.document.borrow().document_element()?;
         Ok(XmlElement::from(element))
@@ -2464,15 +2472,11 @@ mod tests {
 
     #[test]
     fn test_document() {
-        let (_, tree) = xml_parser::document("<root></root>").unwrap();
-
-        let document = info::XmlDocument::new(&tree).unwrap();
+        let (_, m) = XmlDocument::from_raw("<root></root>").unwrap();
         let elem = XmlElement {
-            element: document.borrow().document_element().unwrap(),
+            element: m.document.borrow().document_element().unwrap(),
         };
         let root = XmlNode::Element(elem.clone());
-
-        let m = XmlDocument::from(document);
 
         // Document
         assert_eq!(None, m.doc_type());
@@ -2521,16 +2525,14 @@ mod tests {
 
     #[test]
     fn test_attr() {
-        let (_, tree) = xml_parser::document("<root a='b'></root>").unwrap();
-        let document = info::XmlDocument::new(&tree).unwrap();
-        let doc = XmlDocument::from(document.clone());
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
         let elem = doc.document_element().unwrap();
         let attr = elem.get_attribute_node("a").unwrap();
         let text = XmlNode::Text(XmlText {
             data: info::XmlText::new(
                 "b",
-                document.borrow().document_element().unwrap(),
-                document.clone(),
+                doc.document.borrow().document_element().unwrap(),
+                doc.document.clone(),
             ),
         });
 
@@ -2576,12 +2578,10 @@ mod tests {
 
     #[test]
     fn test_element() {
-        let (_, tree) = xml_parser::document(
+        let (_, doc) = XmlDocument::from_raw(
             "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
         )
         .unwrap();
-        let document = info::XmlDocument::new(&tree).unwrap();
-        let doc = XmlDocument::from(document.clone());
         let root = doc.document_element().unwrap();
         let elem1 =
             if let XmlNode::Element(e) = root.get_elements_by_tag_name("elem1").item(0).unwrap() {
@@ -2600,8 +2600,8 @@ mod tests {
         let data1 = XmlNode::Text(XmlText {
             data: info::XmlText::new(
                 "data1",
-                document.borrow().document_element().unwrap(),
-                document.clone(),
+                doc.document.borrow().document_element().unwrap(),
+                doc.document.clone(),
             ),
         });
 
@@ -2669,9 +2669,7 @@ mod tests {
 
     #[test]
     fn test_text() {
-        let (_, tree) = xml_parser::document("<root>text</root>").unwrap();
-        let document = info::XmlDocument::new(&tree).unwrap();
-        let doc = XmlDocument::from(document);
+        let (_, doc) = XmlDocument::from_raw("<root>text</root>").unwrap();
         let root = doc.document_element().unwrap();
         let text = if let XmlNode::Text(e) = root.child_nodes().item(0).unwrap() {
             e.clone()
@@ -2718,9 +2716,7 @@ mod tests {
 
     #[test]
     fn test_comment() {
-        let (_, tree) = xml_parser::document("<root><!-- comment --></root>").unwrap();
-        let document = info::XmlDocument::new(&tree).unwrap();
-        let doc = XmlDocument::from(document);
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
         let comment = if let XmlNode::Comment(e) = root.child_nodes().item(0).unwrap() {
             e.clone()
@@ -2767,9 +2763,7 @@ mod tests {
 
     #[test]
     fn test_cdata() {
-        let (_, tree) = xml_parser::document("<root><![CDATA[&<>\"]]></root>").unwrap();
-        let document = info::XmlDocument::new(&tree).unwrap();
-        let doc = XmlDocument::from(document);
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
         let cdata = if let XmlNode::CData(e) = root.child_nodes().item(0).unwrap() {
             e.clone()
@@ -2816,9 +2810,7 @@ mod tests {
 
     #[test]
     fn test_namespace() {
-        let (_, tree) = xml_parser::document("<root xmlns:a='http://test/a'></root>").unwrap();
-        let document = info::XmlDocument::new(&tree).unwrap();
-        let doc = XmlDocument::from(document);
+        let (_, doc) = XmlDocument::from_raw("<root xmlns:a='http://test/a'></root>").unwrap();
         let root = doc.document_element().unwrap();
         let namespaces = root.namespaces().unwrap();
         let ns = namespaces.first().unwrap();
