@@ -450,7 +450,9 @@ fn eval_node_test(
             expr::NodeType::Comment => Ok(node.node_type() == dom::NodeType::Comment),
             expr::NodeType::Node => Ok(true),
             expr::NodeType::PI => Ok(node.node_type() == dom::NodeType::PI),
-            expr::NodeType::Text => Ok(node.node_type() == dom::NodeType::Text),
+            expr::NodeType::Text => Ok(node.node_type() == dom::NodeType::Text
+                || node.node_type() == dom::NodeType::EntityReference
+                || node.node_type() == dom::NodeType::CData),
         },
     }
 }
@@ -2553,12 +2555,70 @@ mod tests {
     }
 
     #[test]
-    fn test_node_type_text() {
+    fn test_node_type_text_text() {
         let (rest, expr) = parse("root/e2/ee2/text()").unwrap();
         assert_eq!("", rest);
 
         let (rest, doc) = xml_dom::XmlDocument::from_raw(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let text = doc
+            .get_elements_by_tag_name("ee2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap()
+            .first_child()
+            .unwrap();
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let nodes = if let model::Value::Node(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(text, nodes[0]);
+    }
+
+    #[test]
+    fn test_node_type_text_entity_reference() {
+        let (rest, expr) = parse("root/e2/ee2/text()").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+            "<root><e1><ee1>1</ee1></e1><e2><ee2>&amp;</ee2></e2><e3><ee3>3</ee3></e3></root>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let text = doc
+            .get_elements_by_tag_name("ee2")
+            .unwrap()
+            .iter()
+            .next()
+            .unwrap()
+            .first_child()
+            .unwrap();
+
+        let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
+        let nodes = if let model::Value::Node(n) = r {
+            n
+        } else {
+            unreachable!()
+        };
+        assert_eq!(text, nodes[0]);
+    }
+
+    #[test]
+    fn test_node_type_text_entity_cdata() {
+        let (rest, expr) = parse("root/e2/ee2/text()").unwrap();
+        assert_eq!("", rest);
+
+        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+            "<root><e1><ee1>1</ee1></e1><e2><ee2><![CDATA[a]]></ee2></e2><e3><ee3>3</ee3></e3></root>",
         )
         .unwrap();
         assert_eq!("", rest);
