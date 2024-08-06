@@ -2,8 +2,6 @@ pub mod error;
 pub mod eval;
 pub mod expr;
 
-// FIXME: Entity Reference to test node.
-
 pub fn query<'a>(
     dom: xml_dom::XmlDocument,
     expr: &'a str,
@@ -812,6 +810,46 @@ mod tests {
             "<e2 xmlns:a=\"http://test/a\"></e2><e2></e2>",
             format!("{}", r)
         );
+    }
+
+    #[test]
+    fn test_eg_text_reference() {
+        let (rest, doc) =
+            xml_dom::XmlDocument::from_raw("<root>a&amp;b<e1/><![CDATA[c]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let r = query(doc, "root/text()", &mut eval::model::Context::default()).unwrap();
+        assert_eq!("a&amp;b<![CDATA[c]]>", format!("{}", r));
+    }
+
+    #[test]
+    fn test_eg_text_reference_eq() {
+        let (rest, doc) =
+            xml_dom::XmlDocument::from_raw("<root>a&lt;b<e1/><![CDATA[c]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let r = query(
+            doc,
+            "root/text()[. = 'c']",
+            &mut eval::model::Context::default(),
+        )
+        .unwrap();
+        assert_eq!("<![CDATA[c]]>", format!("{}", r));
+    }
+
+    #[test]
+    fn test_eg_text_reference_contains() {
+        let (rest, doc) =
+            xml_dom::XmlDocument::from_raw("<root>a&lt;b<e1/><![CDATA[c]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let r = query(
+            doc,
+            "root/text()[contains(., '<')]",
+            &mut eval::model::Context::default(),
+        )
+        .unwrap();
+        assert_eq!("a&lt;b", format!("{}", r));
     }
 
     #[test]

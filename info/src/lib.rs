@@ -251,7 +251,7 @@ impl Attribute for XmlAttribute {
         for value in self.values.as_slice() {
             match value {
                 XmlAttributeValue::Reference(v) => {
-                    let v = attr_value_from_reference(v.clone(), &self.owner)?;
+                    let v = v.borrow().resolve()?;
                     normalized.push_str(v.as_str());
                 }
                 XmlAttributeValue::Text(ref v) => {
@@ -2446,6 +2446,17 @@ impl XmlReference {
         self.parent.clone().ok_or(error::Error::IsolatedNode)
     }
 
+    pub fn resolve(&self) -> error::Result<String> {
+        match &self.value {
+            XmlReferenceValue::Character(v, r) => match r {
+                10 => char_from_char10(v).map(|v| v.to_string()),
+                16 => char_from_char16(v).map(|v| v.to_string()),
+                _ => unreachable!(),
+            },
+            XmlReferenceValue::Entity(v) => attr_value_from_name(v, &self.owner),
+        }
+    }
+
     pub fn value(&self) -> XmlReferenceValue {
         self.value.clone()
     }
@@ -2918,27 +2929,13 @@ fn attr_value_from_name(name: &str, owner: &XmlNode<XmlDocument>) -> error::Resu
                 unimplemented!("Not support parameter entity reference.")
             }
             XmlEntityValue::Reference(v) => {
-                let v = attr_value_from_reference(v.clone(), owner)?;
+                let v = v.borrow().resolve()?;
                 parsed.push_str(v.as_str());
             }
             XmlEntityValue::Text(v) => parsed.push_str(normalize_ws(v).as_str()),
         }
     }
     Ok(parsed)
-}
-
-fn attr_value_from_reference(
-    value: XmlNode<XmlReference>,
-    owner: &XmlNode<XmlDocument>,
-) -> error::Result<String> {
-    match &value.borrow().value {
-        XmlReferenceValue::Character(v, r) => match r {
-            10 => char_from_char10(v).map(|v| v.to_string()),
-            16 => char_from_char16(v).map(|v| v.to_string()),
-            _ => unreachable!(),
-        },
-        XmlReferenceValue::Entity(v) => attr_value_from_name(v, owner),
-    }
 }
 
 fn char_from_char10(value: &str) -> error::Result<char> {
