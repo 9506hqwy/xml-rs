@@ -1,6 +1,7 @@
 pub mod error;
 
 use std::cell::RefCell;
+use std::fmt;
 use std::iter::Iterator;
 use std::ops::{Deref, Range};
 use std::rc::Rc;
@@ -376,6 +377,22 @@ impl PartialEq<XmlAttribute> for XmlAttribute {
     }
 }
 
+impl fmt::Display for XmlAttribute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        if let Some(prefix) = self.prefix.as_deref() {
+            write!(f, "{}:", prefix)?;
+        }
+
+        write!(f, "{}=\"", self.local_name.as_str())?;
+
+        for value in self.values.as_slice() {
+            value.fmt(f)?;
+        }
+
+        write!(f, "\"")
+    }
+}
+
 impl XmlAttribute {
     pub fn new(
         value: &parser::Attribute,
@@ -469,6 +486,15 @@ pub enum XmlAttributeValue {
     Reference(XmlNode<XmlReference>),
 }
 
+impl fmt::Display for XmlAttributeValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match &self {
+            XmlAttributeValue::Text(v) => write!(f, "{}", v),
+            XmlAttributeValue::Reference(v) => v.borrow().fmt(f),
+        }
+    }
+}
+
 impl XmlAttributeValue {
     fn new(
         value: &parser::AttributeValue,
@@ -541,6 +567,12 @@ impl Character for XmlCData {
 impl PartialEq<XmlCData> for XmlCData {
     fn eq(&self, other: &XmlCData) -> bool {
         self.data == other.data
+    }
+}
+
+impl fmt::Display for XmlCData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "<![CDATA[{}]]>", self.data.as_str())
     }
 }
 
@@ -623,6 +655,16 @@ impl PartialEq<XmlCharReference> for XmlCharReference {
     }
 }
 
+impl fmt::Display for XmlCharReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self.radix {
+            10 => write!(f, "&#{};", self.num.as_str()),
+            16 => write!(f, "&#x{};", self.num.as_str()),
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl XmlCharReference {
     pub fn new(
         num: &str,
@@ -693,6 +735,12 @@ impl Comment for XmlComment {
 impl PartialEq<XmlComment> for XmlComment {
     fn eq(&self, other: &XmlComment) -> bool {
         self.comment == other.comment
+    }
+}
+
+impl fmt::Display for XmlComment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "<!--{}-->", self.comment.as_str())
     }
 }
 
@@ -837,6 +885,13 @@ impl PartialEq<XmlDeclarationAttList> for XmlDeclarationAttList {
         self.local_name == other.local_name
             && self.prefix == other.prefix
             && self.atts == other.atts
+    }
+}
+
+impl fmt::Display for XmlDeclarationAttList {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        // TODO:
+        Ok(())
     }
 }
 
@@ -1038,6 +1093,18 @@ impl PartialEq<XmlDocument> for XmlDocument {
     }
 }
 
+impl fmt::Display for XmlDocument {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        self.prolog.borrow().fmt(f)?;
+
+        if let Some(root) = &self.root {
+            root.borrow().fmt(f)?;
+        }
+
+        self.epilog.borrow().fmt(f)
+    }
+}
+
 impl XmlDocument {
     pub fn new(value: &parser::Document<'_>) -> error::Result<XmlNode<Self>> {
         let document = node(XmlDocument {
@@ -1090,6 +1157,16 @@ pub struct XmlDocumentEpilog {
     head: Vec<XmlItem>,
 }
 
+impl fmt::Display for XmlDocumentEpilog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        for item in self.head.as_slice() {
+            item.fmt(f)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl XmlDocumentEpilog {
     pub fn new(value: &parser::Document, owner: XmlNode<XmlDocument>) -> XmlNode<Self> {
         let mut head = vec![];
@@ -1119,6 +1196,24 @@ pub struct XmlDocumentProlog {
     head: Vec<XmlItem>,
     declaration: Option<XmlNode<XmlDocumentTypeDeclaration>>,
     tail: Vec<XmlItem>,
+}
+
+impl fmt::Display for XmlDocumentProlog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        for h in self.head.as_slice() {
+            h.fmt(f)?;
+        }
+
+        if let Some(decl) = self.declaration.as_ref() {
+            decl.borrow().fmt(f)?;
+        }
+
+        for t in self.tail.as_slice() {
+            t.fmt(f)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl XmlDocumentProlog {
@@ -1234,6 +1329,39 @@ impl PartialEq<XmlDocumentTypeDeclaration> for XmlDocumentTypeDeclaration {
             && self.system_identifier == other.system_identifier
             && self.public_identifier == other.public_identifier
             && self.children == other.children
+    }
+}
+
+impl fmt::Display for XmlDocumentTypeDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "<!DOCTYPE ")?;
+
+        if let Some(prefix) = self.prefix.as_deref() {
+            write!(f, "{}:", prefix)?;
+        }
+
+        write!(f, "{}", self.local_name.as_str())?;
+
+        if let Some(pub_id) = self.public_identifier.as_deref() {
+            write!(f, " PUBLIC \"{}\"", pub_id)?;
+
+            if let Some(sys_id) = self.system_identifier.as_deref() {
+                write!(f, " \"{}\"", sys_id)?;
+            }
+        } else if let Some(sys_id) = self.system_identifier.as_deref() {
+            write!(f, " SYSTEM \"{}\"", sys_id)?;
+        }
+
+        if !self.children.is_empty() {
+            write!(f, " [")?;
+
+            for child in self.children.as_slice() {
+                child.fmt(f)?;
+            }
+            write!(f, "]")?;
+        }
+
+        write!(f, ">")
     }
 }
 
@@ -1478,6 +1606,36 @@ impl PartialEq<XmlElement> for XmlElement {
     }
 }
 
+impl fmt::Display for XmlElement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "<")?;
+        if let Some(prefix) = self.prefix.as_deref() {
+            write!(f, "{}:", prefix)?;
+        }
+        write!(f, "{}", self.local_name.as_str())?;
+
+        for attr in self.attributes.as_slice() {
+            write!(f, " {}", attr.borrow())?;
+        }
+
+        if self.children.is_empty() {
+            write!(f, " />")
+        } else {
+            write!(f, ">")?;
+
+            for child in self.children.as_slice() {
+                child.fmt(f)?;
+            }
+
+            write!(f, "</")?;
+            if let Some(prefix) = self.prefix.as_deref() {
+                write!(f, "{}:", prefix)?;
+            }
+            write!(f, "{}>", self.local_name.as_str())
+        }
+    }
+}
+
 impl XmlElement {
     pub fn new(
         value: &parser::Element<'_>,
@@ -1713,6 +1871,34 @@ impl PartialEq<XmlEntity> for XmlEntity {
     }
 }
 
+impl fmt::Display for XmlEntity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "<!ENTITY {}", self.name.as_str())?;
+
+        if let Some(pub_id) = self.public_identifier.as_deref() {
+            write!(f, " PUBLIC \"{}\"", pub_id)?;
+
+            if let Some(sys_id) = self.system_identifier.as_deref() {
+                write!(f, " \"{}\"", sys_id)?;
+            }
+        } else if let Some(sys_id) = self.system_identifier.as_deref() {
+            write!(f, " SYSTEM \"{}\"", sys_id)?;
+        } else if let Some(values) = self.values.as_deref() {
+            write!(f, " \"")?;
+            for value in values {
+                value.fmt(f)?;
+            }
+            write!(f, "\"",)?;
+        }
+
+        if let Some(ndata) = self.notation_name.as_deref() {
+            write!(f, " NDATA {}", ndata)?;
+        }
+
+        write!(f, ">")
+    }
+}
+
 impl XmlEntity {
     pub fn new(
         value: &parser::DeclarationGeneralEntity,
@@ -1788,6 +1974,16 @@ pub enum XmlEntityValue {
     Text(String),
     Parameter(String),
     Reference(XmlNode<XmlReference>),
+}
+
+impl fmt::Display for XmlEntityValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match &self {
+            XmlEntityValue::Text(v) => write!(f, "{}", v),
+            XmlEntityValue::Parameter(v) => write!(f, "%{};", v),
+            XmlEntityValue::Reference(v) => v.borrow().fmt(f),
+        }
+    }
 }
 
 impl XmlEntityValue {
@@ -2051,6 +2247,28 @@ impl From<XmlUnparsedEntity> for XmlItem {
     }
 }
 
+impl fmt::Display for XmlItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().fmt(f),
+            XmlItem::CData(v) => v.borrow().fmt(f),
+            XmlItem::CharReference(v) => v.borrow().fmt(f),
+            XmlItem::Comment(v) => v.borrow().fmt(f),
+            XmlItem::DeclarationAttList(v) => v.borrow().fmt(f),
+            XmlItem::Document(v) => v.borrow().fmt(f),
+            XmlItem::DocumentType(v) => v.borrow().fmt(f),
+            XmlItem::Element(v) => v.borrow().fmt(f),
+            XmlItem::Entity(v) => v.borrow().fmt(f),
+            XmlItem::Namespace(v) => v.borrow().fmt(f),
+            XmlItem::Notation(v) => v.borrow().fmt(f),
+            XmlItem::PI(v) => v.borrow().fmt(f),
+            XmlItem::Text(v) => v.borrow().fmt(f),
+            XmlItem::Unexpanded(v) => v.borrow().fmt(f),
+            XmlItem::Unparsed(v) => v.borrow().fmt(f),
+        }
+    }
+}
+
 impl XmlItem {
     pub fn as_attribute(&self) -> Option<XmlNode<XmlAttribute>> {
         if let XmlItem::Attribute(v) = self {
@@ -2203,6 +2421,17 @@ impl Namespace for XmlNamespace {
     }
 }
 
+impl fmt::Display for XmlNamespace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        let name = if let Some(prefix) = self.prefix.as_deref() {
+            format!("xmlns:{}", prefix)
+        } else {
+            "xmlns".to_string()
+        };
+        write!(f, "{}=\"{}\"", name.as_str(), self.namespace_name.as_str())
+    }
+}
+
 impl XmlNamespace {
     pub fn xml() -> XmlNode<Self> {
         node(XmlNamespace {
@@ -2264,6 +2493,24 @@ impl PartialEq<XmlNotation> for XmlNotation {
         self.name == other.name
             && self.system_identifier == other.system_identifier
             && self.public_identifier == other.public_identifier
+    }
+}
+
+impl fmt::Display for XmlNotation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "<!NOTATION {}", self.name.as_str())?;
+
+        if let Some(pub_id) = self.public_identifier.as_deref() {
+            write!(f, " PUBLIC \"{}\"", pub_id)?;
+
+            if let Some(sys_id) = self.system_identifier.as_deref() {
+                write!(f, " \"{}\"", sys_id)?;
+            }
+        } else if let Some(sys_id) = self.system_identifier.as_deref() {
+            write!(f, " SYSTEM \"{}\"", sys_id)?;
+        }
+
+        write!(f, ">")
     }
 }
 
@@ -2355,6 +2602,17 @@ impl PartialEq<XmlProcessingInstruction> for XmlProcessingInstruction {
     }
 }
 
+impl fmt::Display for XmlProcessingInstruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "<?{}", self.target.as_str())?;
+        if let Some(content) = self.content.as_deref() {
+            write!(f, " {}?>", content)
+        } else {
+            write!(f, "?>")
+        }
+    }
+}
+
 impl XmlProcessingInstruction {
     pub fn new(
         value: &parser::PI<'_>,
@@ -2394,6 +2652,19 @@ pub struct XmlReference {
 impl PartialEq<XmlReference> for XmlReference {
     fn eq(&self, other: &XmlReference) -> bool {
         self.value == other.value
+    }
+}
+
+impl fmt::Display for XmlReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match &self.value {
+            XmlReferenceValue::Character(v, radix) => match radix {
+                10 => write!(f, "&#{};", v),
+                16 => write!(f, "&#x{};", v),
+                _ => unreachable!(),
+            },
+            XmlReferenceValue::Entity(v) => write!(f, "&{};", v),
+        }
     }
 }
 
@@ -2523,6 +2794,12 @@ impl PartialEq<XmlText> for XmlText {
     }
 }
 
+impl fmt::Display for XmlText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.text.as_str())
+    }
+}
+
 impl XmlText {
     pub fn new(
         value: &str,
@@ -2611,6 +2888,12 @@ impl PartialEq<XmlUnexpandedEntityReference> for XmlUnexpandedEntityReference {
     }
 }
 
+impl fmt::Display for XmlUnexpandedEntityReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "&{};", self.name.as_str())
+    }
+}
+
 impl XmlUnexpandedEntityReference {
     pub fn new(
         entity: XmlNode<XmlEntity>,
@@ -2681,6 +2964,12 @@ impl UnparsedEntity for XmlUnparsedEntity {
 
     fn notation(&self) -> Value<Option<XmlNode<XmlNotation>>> {
         notation(&self.entity.borrow().owner(), self.notation_name())
+    }
+}
+
+impl fmt::Display for XmlUnparsedEntity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "&{};", self.name.as_str())
     }
 }
 

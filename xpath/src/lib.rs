@@ -27,7 +27,7 @@ mod tests {
         assert_eq!("", rest);
 
         let r = query(doc, "child::para", &mut eval::model::Context::default()).unwrap();
-        assert_eq!("<para></para>", format!("{}", r));
+        assert_eq!("<para />", format!("{}", r));
     }
 
     #[test]
@@ -36,7 +36,7 @@ mod tests {
         assert_eq!("", rest);
 
         let r = query(doc, "child::*", &mut eval::model::Context::default()).unwrap();
-        assert_eq!("<a></a>", format!("{}", r));
+        assert_eq!("<a />", format!("{}", r));
     }
 
     #[test]
@@ -66,7 +66,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("text1<para></para>text2", format!("{}", r));
+        assert_eq!("text1<para />text2", format!("{}", r));
     }
 
     #[test]
@@ -80,7 +80,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<root name=\"a\"></root>", format!("{}", r));
+        assert_eq!("<root name=\"a\" />", format!("{}", r));
     }
 
     #[test]
@@ -94,7 +94,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<root name=\"a\"></root>", format!("{}", r));
+        assert_eq!("<root name=\"a\" />", format!("{}", r));
     }
 
     #[test]
@@ -109,7 +109,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<para></para>", format!("{}", r));
+        assert_eq!("<para />", format!("{}", r));
     }
 
     #[test]
@@ -119,7 +119,7 @@ mod tests {
         assert_eq!("", rest);
 
         let r = query(doc, "//ancestor::div", &mut eval::model::Context::default()).unwrap();
-        assert_eq!("<div><para></para></div>", format!("{}", r));
+        assert_eq!("<div><para /></div>", format!("{}", r));
     }
 
     #[test]
@@ -134,7 +134,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<div><para></para></div>", format!("{}", r));
+        assert_eq!("<div><para /></div>", format!("{}", r));
     }
 
     #[test]
@@ -149,7 +149,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<para></para>", format!("{}", r));
+        assert_eq!("<para />", format!("{}", r));
     }
 
     #[test]
@@ -163,7 +163,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<para></para>", format!("{}", r));
+        assert_eq!("<para />", format!("{}", r));
     }
 
     #[test]
@@ -180,7 +180,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<para></para>", format!("{}", r));
+        assert_eq!("<para />", format!("{}", r));
     }
 
     #[test]
@@ -195,7 +195,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<para></para>", format!("{}", r));
+        assert_eq!("<para />", format!("{}", r));
     }
 
     #[test]
@@ -204,7 +204,7 @@ mod tests {
         assert_eq!("", rest);
 
         let r = query(doc, "/", &mut eval::model::Context::default()).unwrap();
-        assert_eq!("<root></root>", format!("{}", r));
+        assert_eq!("<root />", format!("{}", r));
     }
 
     #[test]
@@ -219,7 +219,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<para></para>", format!("{}", r));
+        assert_eq!("<para />", format!("{}", r));
     }
 
     #[test]
@@ -234,7 +234,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<item></item>", format!("{}", r));
+        assert_eq!("<item />", format!("{}", r));
     }
 
     #[test]
@@ -392,7 +392,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<para type=\"warning\"></para>", format!("{}", r));
+        assert_eq!("<para type=\"warning\" />", format!("{}", r));
     }
 
     #[test]
@@ -454,7 +454,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<chapter><title></title></chapter>", format!("{}", r));
+        assert_eq!("<chapter><title /></chapter>", format!("{}", r));
     }
 
     #[test]
@@ -471,10 +471,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!(
-            "<chapter></chapter><appendix></appendix><chapter></chapter>",
-            format!("{}", r)
-        );
+        assert_eq!("<chapter /><appendix /><chapter />", format!("{}", r));
     }
 
     #[test]
@@ -491,7 +488,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<chapter></chapter>", format!("{}", r));
+        assert_eq!("<chapter />", format!("{}", r));
     }
 
     #[test]
@@ -500,7 +497,7 @@ mod tests {
         assert_eq!("", rest);
 
         let r = query(doc, "para", &mut eval::model::Context::default()).unwrap();
-        assert_eq!("<para></para>", format!("{}", r));
+        assert_eq!("<para />", format!("{}", r));
     }
 
     #[test]
@@ -509,7 +506,7 @@ mod tests {
         assert_eq!("", rest);
 
         let r = query(doc, "*", &mut eval::model::Context::default()).unwrap();
-        assert_eq!("<para></para>", format!("{}", r));
+        assert_eq!("<para />", format!("{}", r));
     }
 
     #[test]
@@ -570,7 +567,7 @@ mod tests {
         assert_eq!("", rest);
 
         let r = query(doc, "/para", &mut eval::model::Context::default()).unwrap();
-        assert_eq!("<para></para>", format!("{}", r));
+        assert_eq!("<para />", format!("{}", r));
     }
 
     #[test]
@@ -635,7 +632,7 @@ mod tests {
         assert_eq!("", rest);
 
         let r = query(doc, ".", &mut eval::model::Context::default()).unwrap();
-        assert_eq!("<root></root>", format!("{}", r));
+        assert_eq!("<root />", format!("{}", r));
     }
 
     #[test]
@@ -659,7 +656,7 @@ mod tests {
         assert_eq!("", rest);
 
         let r = query(doc, "root/para/..", &mut eval::model::Context::default()).unwrap();
-        assert_eq!("<root><para></para></root>", format!("{}", r));
+        assert_eq!("<root><para /></root>", format!("{}", r));
     }
 
     #[test]
@@ -685,7 +682,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<para type=\"warning\"></para>", format!("{}", r));
+        assert_eq!("<para type=\"warning\" />", format!("{}", r));
     }
 
     #[test]
@@ -747,7 +744,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<chapter><title></title></chapter>", format!("{}", r));
+        assert_eq!("<chapter><title /></chapter>", format!("{}", r));
     }
 
     #[test]
@@ -762,7 +759,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            "<employee secretary=\"a\" assistant=\"b\"></employee>",
+            "<employee secretary=\"a\" assistant=\"b\" />",
             format!("{}", r)
         );
     }
@@ -778,7 +775,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!("<e2 xmlns:a=\"http://test/a\"></e2>", format!("{}", r));
+        assert_eq!("<e2 xmlns:a=\"http://test/a\" />", format!("{}", r));
     }
 
     #[test]
@@ -806,10 +803,7 @@ mod tests {
             &mut eval::model::Context::default(),
         )
         .unwrap();
-        assert_eq!(
-            "<e2 xmlns:a=\"http://test/a\"></e2><e2></e2>",
-            format!("{}", r)
-        );
+        assert_eq!("<e2 xmlns:a=\"http://test/a\" /><e2 />", format!("{}", r));
     }
 
     #[test]

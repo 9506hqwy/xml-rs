@@ -728,7 +728,7 @@ impl fmt::Debug for XmlDocumentFragment {
 
 impl fmt::Display for XmlDocumentFragment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.root_element().map_err(|_| fmt::Error)?)
+        self.document.borrow().fmt(f)
     }
 }
 
@@ -865,8 +865,7 @@ impl fmt::Debug for XmlDocument {
 
 impl fmt::Display for XmlDocument {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        // TODO:
-        write!(f, "{}", self.root_element().map_err(|_| fmt::Error)?)
+        self.document.borrow().fmt(f)
     }
 }
 
@@ -1134,12 +1133,7 @@ impl fmt::Debug for XmlAttr {
 
 impl fmt::Display for XmlAttr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(
-            f,
-            "{}=\"{}\"",
-            self.name(),
-            self.value().map_err(|_| fmt::Error)?
-        )
+        self.attribute.borrow().fmt(f)
     }
 }
 
@@ -1377,16 +1371,6 @@ impl XmlElement {
     fn match_tag_name(&self, tag_name: &str) -> bool {
         tag_name == "*" || self.node_name() == tag_name
     }
-
-    fn namespaces(&self) -> error::Result<Vec<XmlNamespace>> {
-        Ok(self
-            .element
-            .borrow()
-            .namespaces()?
-            .into_iter()
-            .map(XmlNamespace::from)
-            .collect())
-    }
 }
 
 impl From<info::XmlNode<info::XmlElement>> for XmlElement {
@@ -1403,22 +1387,7 @@ impl fmt::Debug for XmlElement {
 
 impl fmt::Display for XmlElement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "<{}", self.node_name())?;
-        for ns in self.namespaces().map_err(|_| fmt::Error)? {
-            if !ns.implicit() {
-                write!(f, " {}", ns)?;
-            }
-        }
-        if let Some(attrs) = self.attributes() {
-            for attr in attrs.iter() {
-                write!(f, " {}", attr)?;
-            }
-        }
-        write!(f, ">")?;
-        for child in self.children() {
-            write!(f, "{}", child)?;
-        }
-        write!(f, "</{}>", self.node_name())
+        self.element.borrow().fmt(f)
     }
 }
 
@@ -1530,7 +1499,7 @@ impl fmt::Debug for XmlText {
 
 impl fmt::Display for XmlText {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.data.borrow().character_code())
+        self.data.borrow().fmt(f)
     }
 }
 
@@ -1637,7 +1606,7 @@ impl fmt::Debug for XmlComment {
 
 impl fmt::Display for XmlComment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "<!--{}-->", self.data.borrow().comment())
+        self.data.borrow().fmt(f)
     }
 }
 
@@ -1755,7 +1724,7 @@ impl fmt::Debug for XmlCDataSection {
 
 impl fmt::Display for XmlCDataSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "<![CDATA[{}]]>", self.data.borrow().character_code())
+        self.data.borrow().fmt(f)
     }
 }
 
@@ -1874,8 +1843,7 @@ impl fmt::Debug for XmlDocumentType {
 
 impl fmt::Display for XmlDocumentType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        // TODO
-        write!(f, "<!DOCTYPE {}>", self.name())
+        self.declaration.borrow().fmt(f)
     }
 }
 
@@ -1974,8 +1942,7 @@ impl fmt::Debug for XmlNotation {
 
 impl fmt::Display for XmlNotation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        // TODO
-        write!(f, "<!NOTATION {} SYSTEM \"\">", self.node_name())
+        self.notation.borrow().fmt(f)
     }
 }
 
@@ -2095,8 +2062,7 @@ impl fmt::Debug for XmlEntity {
 
 impl fmt::Display for XmlEntity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        // TODO
-        write!(f, "<!ENTITY {} \"\">", self.node_name())
+        self.entity.borrow().fmt(f)
     }
 }
 
@@ -2219,8 +2185,7 @@ impl fmt::Debug for XmlEntityReference {
 
 impl fmt::Display for XmlEntityReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        // TODO:
-        write!(f, "&{};", self.node_name())
+        self.reference.borrow().fmt(f)
     }
 }
 
@@ -2333,7 +2298,7 @@ impl fmt::Debug for XmlProcessingInstruction {
 
 impl fmt::Display for XmlProcessingInstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "<?{} {}?>", self.target(), self.data())
+        self.pi.borrow().fmt(f)
     }
 }
 
@@ -2437,18 +2402,7 @@ impl fmt::Display for XmlNamespace {
         if self.implicit() {
             Ok(())
         } else {
-            let qname = if self.node_name() == "xmlns" {
-                "xmlns".to_string()
-            } else {
-                format!("xmlns:{}", self.node_name())
-            };
-
-            write!(
-                f,
-                "{}=\"{}\"",
-                qname,
-                self.node_value().map_err(|_| fmt::Error)?.unwrap(),
-            )
+            self.namespace.borrow().fmt(f)
         }
     }
 }
@@ -3025,7 +2979,7 @@ mod tests {
     fn test_namespace() {
         let (_, doc) = XmlDocument::from_raw("<root xmlns:a='http://test/a'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let namespaces = root.namespaces().unwrap();
+        let namespaces = root.in_scope_namespace().unwrap();
         let ns = namespaces.first().unwrap();
 
         // Node
