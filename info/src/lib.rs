@@ -1303,6 +1303,9 @@ impl XmlDocumentTypeDeclaration {
                 parser::InternalSubset::ParameterEntityReference(_) => {
                     unimplemented!("Not support parameter entity reference.")
                 }
+                parser::InternalSubset::Whitespace(_) => {
+                    // drop
+                }
             }
         }
 

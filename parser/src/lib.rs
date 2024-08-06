@@ -312,8 +312,11 @@ fn doctype_decl(input: &str) -> IResult<&str, model::DeclarationDoc<'_>> {
 /// PEReference | S
 ///
 /// [\[28a\] DeclSep](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-DeclSep)
-fn decl_sep(input: &str) -> IResult<&str, &str> {
-    alt((pe_reference, multispace1))(input)
+fn decl_sep(input: &str) -> IResult<&str, model::InternalSubset<'_>> {
+    alt((
+        map(pe_reference, model::InternalSubset::from),
+        map(multispace1, model::InternalSubset::Whitespace),
+    ))(input)
 }
 
 /// (markupdecl | DeclSep)*
@@ -322,7 +325,7 @@ fn decl_sep(input: &str) -> IResult<&str, &str> {
 fn int_subset(input: &str) -> IResult<&str, Vec<model::InternalSubset<'_>>> {
     many0(alt((
         map(markup_decl, model::InternalSubset::from),
-        map(decl_sep, model::InternalSubset::from),
+        decl_sep,
     )))(input)
 }
 
@@ -1210,14 +1213,14 @@ mod tests {
                 QName::from("aaa"),
                 None,
                 Some(vec![
-                    model::InternalSubset::from(" "),
+                    model::InternalSubset::Whitespace(" "),
                     model::InternalSubset::from(model::DeclarationMarkup::element(
                         model::DeclarationElement::from((
                             QName::from("aaa"),
                             model::DeclarationContent::Any,
                         ))
                     )),
-                    model::InternalSubset::from(" "),
+                    model::InternalSubset::Whitespace(" "),
                 ])
             )),
             ret

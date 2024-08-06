@@ -654,6 +654,7 @@ impl<'a> From<(&'a str, &'a str)> for ExternalId<'a> {
 pub enum InternalSubset<'a> {
     Markup(DeclarationMarkup<'a>),
     ParameterEntityReference(&'a str),
+    Whitespace(&'a str),
 }
 
 impl<'a> Default for InternalSubset<'a> {
