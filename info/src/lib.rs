@@ -1095,6 +1095,21 @@ impl PartialEq<XmlDocument> for XmlDocument {
 
 impl fmt::Display for XmlDocument {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        if let Some(version) = self.version.as_deref() {
+            write!(f, "<?xml version=\"{}\"", version)?;
+
+            if !self.encoding.is_empty() {
+                write!(f, " encoding=\"{}\"", self.encoding.as_str())?;
+            }
+
+            if let Some(sd) = self.standalone {
+                let yes_no = if sd { "yes" } else { "no" };
+                write!(f, " standalone=\"{}\"", yes_no)?;
+            }
+
+            write!(f, "?>")?;
+        }
+
         self.prolog.borrow().fmt(f)?;
 
         if let Some(root) = &self.root {
