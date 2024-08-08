@@ -37,6 +37,28 @@ pub trait Document: Node {
     fn get_elements_by_tag_name(&self, tag_name: &str) -> error::Result<XmlNodeList>;
 }
 
+pub trait DocumentMut: Document + NodeMut {
+    fn create_element(&self, tag_name: &str) -> error::Result<XmlElement>;
+
+    fn create_document_fragment(&self) -> XmlDocumentFragment;
+
+    fn create_text_node(&self, data: &str) -> error::Result<XmlText>;
+
+    fn create_comment(&self, data: &str) -> error::Result<XmlComment>;
+
+    fn create_cdata_section(&self, data: &str) -> error::Result<XmlCDataSection>;
+
+    fn create_processing_instruction(
+        &self,
+        target: &str,
+        data: &str,
+    ) -> error::Result<XmlProcessingInstruction>;
+
+    fn create_attribute(&self, name: &str) -> error::Result<XmlAttr>;
+
+    fn create_entity_reference(&self, name: &str) -> error::Result<XmlEntityReference>;
+}
+
 // -----------------------------------------------------------------------------------------------
 
 pub trait Node {
@@ -63,6 +85,27 @@ pub trait Node {
     fn owner_document(&self) -> Option<XmlDocument>;
 
     fn has_child(&self) -> bool;
+}
+
+pub trait NodeMut {
+    fn set_node_value(&mut self, value: &str) -> error::Result<()>;
+
+    fn insert_before(
+        &mut self,
+        new_child: XmlNode,
+        ref_child: Option<&XmlNode>,
+    ) -> error::Result<XmlNode>;
+
+    fn replace_child(&mut self, new_child: XmlNode, old_child: &XmlNode) -> error::Result<XmlNode> {
+        self.insert_before(new_child, Some(old_child))?;
+        self.remove_child(old_child)
+    }
+
+    fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode>;
+
+    fn append_child(&mut self, new_child: XmlNode) -> error::Result<XmlNode> {
+        self.insert_before(new_child, None)
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -101,6 +144,12 @@ pub trait NamedNodeMap {
     fn length(&self) -> usize;
 }
 
+pub trait NamedNodeMapMut: NamedNodeMap {
+    fn set_named_item(&mut self, arg: XmlNode) -> error::Result<XmlNode>;
+
+    fn remove_named_item(&mut self, name: &str) -> error::Result<XmlNode>;
+}
+
 // -----------------------------------------------------------------------------------------------
 
 pub trait CharacterData: Node {
@@ -111,6 +160,25 @@ pub trait CharacterData: Node {
     fn substring_data(&self, offset: usize, count: usize) -> String;
 }
 
+pub trait CharacterDataMut: CharacterData + NodeMut {
+    fn set_data(&mut self, data: &str) -> error::Result<()> {
+        self.replace_data(0, self.length(), data)
+    }
+
+    fn append_data(&mut self, arg: &str) -> error::Result<()> {
+        self.insert_data(self.length(), arg)
+    }
+
+    fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()>;
+
+    fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()>;
+
+    fn replace_data(&mut self, offset: usize, count: usize, arg: &str) -> error::Result<()> {
+        self.delete_data(offset, count)?;
+        self.insert_data(offset, arg)
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 pub trait Attr: Node {
@@ -119,6 +187,12 @@ pub trait Attr: Node {
     fn specified(&self) -> bool;
 
     fn value(&self) -> error::Result<String>;
+}
+
+pub trait AttrMut: Attr + NodeMut {
+    fn set_value(&mut self, value: &str) -> error::Result<()> {
+        self.set_node_value(value)
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -133,17 +207,44 @@ pub trait Element: Node {
     fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList;
 }
 
+pub trait ElementMut: Element + NodeMut {
+    fn set_attribute(&mut self, name: &str, value: &str) -> error::Result<()>;
+
+    fn remove_attribute(&mut self, name: &str) -> error::Result<()>;
+
+    fn set_attribute_node(&mut self, new_attr: XmlAttr) -> error::Result<Option<XmlAttr>>;
+
+    fn remove_attribute_node(&mut self, old_attr: XmlAttr) -> error::Result<Option<XmlAttr>> {
+        if let Some(attr) = self.get_attribute_node(old_attr.name().as_str()) {
+            self.remove_attribute(old_attr.name().as_str())?;
+            Ok(Some(attr))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn normalize(&mut self);
+}
+
 // -----------------------------------------------------------------------------------------------
 
 pub trait Text: CharacterData {}
+
+pub trait TextMut: CharacterDataMut {
+    fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText>;
+}
 
 // -----------------------------------------------------------------------------------------------
 
 pub trait Comment: CharacterData {}
 
+pub trait CommentMut: CharacterDataMut {}
+
 // -----------------------------------------------------------------------------------------------
 
 pub trait CDataSection: Text {}
+
+pub trait CDataSectionMut: TextMut {}
 
 // -----------------------------------------------------------------------------------------------
 
@@ -183,6 +284,10 @@ pub trait ProcessingInstruction: Node {
     fn target(&self) -> String;
 
     fn data(&self) -> String;
+}
+
+pub trait ProcessingInstructionMut: ProcessingInstruction + NodeMut {
+    fn set_data(&mut self, data: &str) -> error::Result<()>;
 }
 
 // -----------------------------------------------------------------------------------------------
