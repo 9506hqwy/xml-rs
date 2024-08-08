@@ -1,5 +1,7 @@
 #[derive(Debug)]
 pub enum Error {
+    HierarchyRequestErr,
+    IndexSizeErr,
     Info(xml_info::error::Error),
     Parse(String),
 }

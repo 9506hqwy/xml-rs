@@ -171,7 +171,7 @@ fn char_data(input: &str) -> IResult<&str, &str> {
 /// '\<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
 ///
 /// [\[15\] Comment](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Comment)
-fn comment(input: &str) -> IResult<&str, model::Comment<'_>> {
+pub fn comment(input: &str) -> IResult<&str, model::Comment<'_>> {
     map(
         delimited(
             tag("<!--"),

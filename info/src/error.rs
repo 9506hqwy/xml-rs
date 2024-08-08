@@ -1,8 +1,10 @@
 #[derive(Debug)]
 pub enum Error {
     IsolatedNode,
+    InvalidData(String),
     NotFoundDoumentElement,
     NotFoundReference(String),
+    Parse(String),
 }
 
 impl std::error::Error for Error {}

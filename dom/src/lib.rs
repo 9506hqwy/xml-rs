@@ -1617,6 +1617,8 @@ pub struct XmlComment {
 
 impl Comment for XmlComment {}
 
+impl CommentMut for XmlComment {}
+
 impl CharacterData for XmlComment {
     fn data(&self) -> error::Result<String> {
         Ok(self.data.borrow().comment().to_string())
@@ -1628,6 +1630,26 @@ impl CharacterData for XmlComment {
 
     fn substring_data(&self, offset: usize, count: usize) -> String {
         self.data.borrow().substring(offset..(offset + count))
+    }
+}
+
+impl CharacterDataMut for XmlComment {
+    fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
+        if self.length() < offset {
+            Err(error::Error::IndexSizeErr)
+        } else {
+            self.data.borrow_mut().insert(offset, arg)?;
+            Ok(())
+        }
+    }
+
+    fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
+        if self.length() < (offset + count) {
+            Err(error::Error::IndexSizeErr)
+        } else {
+            self.data.borrow_mut().delete(offset, count);
+            Ok(())
+        }
     }
 }
 
@@ -1682,6 +1704,20 @@ impl Node for XmlComment {
 
     fn has_child(&self) -> bool {
         false
+    }
+}
+
+impl NodeMut for XmlComment {
+    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
+        self.set_data(value)
+    }
+
+    fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
+        Err(error::Error::HierarchyRequestErr)
+    }
+
+    fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
+        Err(error::Error::HierarchyRequestErr)
     }
 }
 
@@ -2990,7 +3026,7 @@ mod tests {
     fn test_comment() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let comment = if let XmlNode::Comment(e) = root.child_nodes().item(0).unwrap() {
+        let mut comment = if let XmlNode::Comment(e) = root.child_nodes().item(0).unwrap() {
             e.clone()
         } else {
             unreachable!()
@@ -2999,6 +3035,22 @@ mod tests {
         // CharacterData
         assert_eq!(9, comment.length());
         assert_eq!("co", comment.substring_data(1, 2));
+
+        // CharacterDataMut
+        comment.set_data("あいう").unwrap();
+        assert_eq!(Some("あいう"), comment.node_value().unwrap().as_deref());
+        comment.append_data("えお").unwrap();
+        assert_eq!(Some("あいうえお"), comment.node_value().unwrap().as_deref());
+        comment.insert_data(1, "abc").unwrap();
+        assert_eq!(
+            Some("あabcいうえお"),
+            comment.node_value().unwrap().as_deref()
+        );
+        comment.delete_data(4, 2).unwrap();
+        assert_eq!(Some("あabcえお"), comment.node_value().unwrap().as_deref());
+        comment.replace_data(1, 3, "いう").unwrap();
+        assert_eq!(Some("あいうえお"), comment.node_value().unwrap().as_deref());
+        comment.set_data(" comment ").unwrap();
 
         // Node
         assert_eq!("#comment", comment.node_name());
@@ -3013,6 +3065,16 @@ mod tests {
         assert_eq!(None, comment.attributes());
         assert_eq!(Some(doc.clone()), comment.owner_document());
         assert!(!comment.has_child());
+
+        // Nodemut
+        let e = root.clone().as_node();
+        comment.set_node_value("abc").unwrap();
+        assert_eq!(Some("abc"), comment.node_value().unwrap().as_deref());
+        comment.insert_before(e.clone(), Some(&e)).err().unwrap();
+        comment.replace_child(e.clone(), &e).err().unwrap();
+        comment.remove_child(&e).err().unwrap();
+        comment.append_child(e.clone()).err().unwrap();
+        comment.set_node_value(" comment ").unwrap();
 
         // XmlNode
         let node = comment.as_node();

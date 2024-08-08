@@ -755,6 +755,52 @@ impl XmlComment {
         })
     }
 
+    pub fn delete(&mut self, offset: usize, count: usize) {
+        let mut chars = self.comment.chars().collect::<Vec<char>>();
+
+        let s = if offset < chars.len() {
+            offset
+        } else {
+            chars.len()
+        };
+
+        let e = if s + count < chars.len() {
+            s + count
+        } else {
+            chars.len()
+        };
+
+        chars.drain(s..e);
+
+        self.comment = chars.iter().collect();
+    }
+
+    pub fn insert(&mut self, offset: usize, comment: &str) -> error::Result<()> {
+        let mut chars = self.comment.chars().collect::<Vec<char>>();
+
+        let index = if offset < chars.len() {
+            offset
+        } else {
+            chars.len()
+        };
+
+        let new = format!("<!--{}-->", comment);
+        let (rest, _) =
+            xml_parser::comment(new.as_str()).map_err(|e| error::Error::Parse(e.to_string()))?;
+        if rest.is_empty() {
+            let mut tail = chars.split_off(index);
+            let mut middle = comment.chars().collect::<Vec<char>>();
+
+            chars.append(&mut middle);
+            chars.append(&mut tail);
+
+            self.comment = chars.iter().collect();
+            Ok(())
+        } else {
+            Err(error::Error::InvalidData(comment.to_string()))
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.comment.is_empty()
     }
@@ -5178,6 +5224,195 @@ mod tests {
 
         // XmlComment
         assert!(!comment.borrow().is_empty());
+    }
+
+    #[test]
+    fn test_comment_delete_first() {
+        let (rest, tree) = xml_parser::document("<root><!--012345--></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let comment = root
+            .borrow()
+            .children()
+            .get(0)
+            .unwrap()
+            .as_comment()
+            .unwrap();
+
+        comment.borrow_mut().delete(0, 1);
+        assert_eq!("12345", comment.borrow().comment());
+    }
+
+    #[test]
+    fn test_comment_delete_last() {
+        let (rest, tree) = xml_parser::document("<root><!--012345--></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let comment = root
+            .borrow()
+            .children()
+            .get(0)
+            .unwrap()
+            .as_comment()
+            .unwrap();
+
+        comment.borrow_mut().delete(5, 1);
+        assert_eq!("01234", comment.borrow().comment());
+    }
+
+    #[test]
+    fn test_comment_delete_offset_overflow() {
+        let (rest, tree) = xml_parser::document("<root><!--012345--></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let comment = root
+            .borrow()
+            .children()
+            .get(0)
+            .unwrap()
+            .as_comment()
+            .unwrap();
+
+        comment.borrow_mut().delete(6, 1);
+        assert_eq!("012345", comment.borrow().comment());
+    }
+
+    #[test]
+    fn test_comment_delete_count_overflow() {
+        let (rest, tree) = xml_parser::document("<root><!--012345--></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let comment = root
+            .borrow()
+            .children()
+            .get(0)
+            .unwrap()
+            .as_comment()
+            .unwrap();
+
+        comment.borrow_mut().delete(1, 6);
+        assert_eq!("0", comment.borrow().comment());
+    }
+
+    #[test]
+    fn test_comment_delete_multibyte() {
+        let (rest, tree) = xml_parser::document("<root><!--あいうえお--></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let comment = root
+            .borrow()
+            .children()
+            .get(0)
+            .unwrap()
+            .as_comment()
+            .unwrap();
+
+        comment.borrow_mut().delete(1, 3);
+        assert_eq!("あお", comment.borrow().comment());
+    }
+
+    #[test]
+    fn test_comment_insert_first() {
+        let (rest, tree) = xml_parser::document("<root><!--012345--></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let comment = root
+            .borrow()
+            .children()
+            .get(0)
+            .unwrap()
+            .as_comment()
+            .unwrap();
+
+        comment.borrow_mut().insert(0, "a").unwrap();
+        assert_eq!("a012345", comment.borrow().comment());
+    }
+
+    #[test]
+    fn test_comment_insert_last() {
+        let (rest, tree) = xml_parser::document("<root><!--012345--></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let comment = root
+            .borrow()
+            .children()
+            .get(0)
+            .unwrap()
+            .as_comment()
+            .unwrap();
+
+        comment.borrow_mut().insert(6, "a").unwrap();
+        assert_eq!("012345a", comment.borrow().comment());
+    }
+
+    #[test]
+    fn test_comment_insert_offset_overflow() {
+        let (rest, tree) = xml_parser::document("<root><!--012345--></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let comment = root
+            .borrow()
+            .children()
+            .get(0)
+            .unwrap()
+            .as_comment()
+            .unwrap();
+
+        comment.borrow_mut().insert(7, "a").unwrap();
+        assert_eq!("012345a", comment.borrow().comment());
+    }
+
+    #[test]
+    fn test_comment_insert_multibyte() {
+        let (rest, tree) = xml_parser::document("<root><!--あいうえお--></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let comment = root
+            .borrow()
+            .children()
+            .get(0)
+            .unwrap()
+            .as_comment()
+            .unwrap();
+
+        comment.borrow_mut().insert(1, "か").unwrap();
+        assert_eq!("あかいうえお", comment.borrow().comment());
+    }
+
+    #[test]
+    fn test_comment_insert_invalid_data() {
+        let (rest, tree) = xml_parser::document("<root><!--01234--></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let comment = root
+            .borrow()
+            .children()
+            .get(0)
+            .unwrap()
+            .as_comment()
+            .unwrap();
+
+        comment.borrow_mut().insert(1, "a-->").err().unwrap();
     }
 
     #[test]
