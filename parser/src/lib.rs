@@ -417,7 +417,7 @@ fn etag(input: &str) -> IResult<&str, ()> {
 /// CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
 ///
 /// [\[43\] content](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-content)
-fn content(input: &str) -> IResult<&str, model::Content<'_>> {
+pub fn content(input: &str) -> IResult<&str, model::Content<'_>> {
     map(
         tuple((
             opt(char_data),

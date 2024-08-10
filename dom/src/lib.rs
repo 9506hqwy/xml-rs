@@ -1505,6 +1505,12 @@ pub struct XmlText {
 
 impl Text for XmlText {}
 
+impl TextMut for XmlText {
+    fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
+        todo!();
+    }
+}
+
 impl CharacterData for XmlText {
     fn data(&self) -> error::Result<String> {
         Ok(self.data.borrow().character_code().to_string())
@@ -1516,6 +1522,26 @@ impl CharacterData for XmlText {
 
     fn substring_data(&self, offset: usize, count: usize) -> String {
         self.data.borrow().substring(offset..(offset + count))
+    }
+}
+
+impl CharacterDataMut for XmlText {
+    fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
+        if self.length() < offset {
+            Err(error::Error::IndexSizeErr)
+        } else {
+            self.data.borrow_mut().insert(offset, arg)?;
+            Ok(())
+        }
+    }
+
+    fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
+        if self.length() < (offset + count) {
+            Err(error::Error::IndexSizeErr)
+        } else {
+            self.data.borrow_mut().delete(offset, count);
+            Ok(())
+        }
     }
 }
 
@@ -1575,6 +1601,20 @@ impl Node for XmlText {
 
     fn has_child(&self) -> bool {
         false
+    }
+}
+
+impl NodeMut for XmlText {
+    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
+        self.set_data(value)
+    }
+
+    fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
+        Err(error::Error::HierarchyRequestErr)
+    }
+
+    fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
+        Err(error::Error::HierarchyRequestErr)
     }
 }
 
