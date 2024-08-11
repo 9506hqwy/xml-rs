@@ -209,7 +209,7 @@ fn pi_target(input: &str) -> IResult<&str, &str> {
 /// CDStart CData CDEnd
 ///
 /// [\[18\] CDSect](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-CDSect)
-fn cdsect(input: &str) -> IResult<&str, model::CData<'_>> {
+pub fn cdsect(input: &str) -> IResult<&str, model::CData<'_>> {
     map(
         delimited(
             tag("<![CDATA["),                      // [19] CDStart

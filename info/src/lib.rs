@@ -591,6 +591,22 @@ impl XmlCData {
         })
     }
 
+    pub fn delete(&mut self, offset: usize, count: usize) {
+        self.data = delete_char_range(self.data.as_str(), offset, count);
+    }
+
+    pub fn insert(&mut self, offset: usize, data: &str) -> error::Result<()> {
+        fn check(value: &str) -> error::Result<bool> {
+            let new = format!("<![CDATA[{}]]>", value);
+            let (rest, _) =
+                xml_parser::cdsect(new.as_str()).map_err(|e| error::Error::Parse(e.to_string()))?;
+            Ok(rest.is_empty())
+        }
+
+        self.data = insert_char_at(self.data.as_str(), offset, data, check)?;
+        Ok(())
+    }
+
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -756,49 +772,19 @@ impl XmlComment {
     }
 
     pub fn delete(&mut self, offset: usize, count: usize) {
-        let mut chars = self.comment.chars().collect::<Vec<char>>();
-
-        let s = if offset < chars.len() {
-            offset
-        } else {
-            chars.len()
-        };
-
-        let e = if s + count < chars.len() {
-            s + count
-        } else {
-            chars.len()
-        };
-
-        chars.drain(s..e);
-
-        self.comment = chars.iter().collect();
+        self.comment = delete_char_range(self.comment.as_str(), offset, count);
     }
 
     pub fn insert(&mut self, offset: usize, comment: &str) -> error::Result<()> {
-        let mut chars = self.comment.chars().collect::<Vec<char>>();
-
-        let index = if offset < chars.len() {
-            offset
-        } else {
-            chars.len()
-        };
-
-        let new = format!("<!--{}-->", comment);
-        let (rest, _) =
-            xml_parser::comment(new.as_str()).map_err(|e| error::Error::Parse(e.to_string()))?;
-        if rest.is_empty() {
-            let mut tail = chars.split_off(index);
-            let mut middle = comment.chars().collect::<Vec<char>>();
-
-            chars.append(&mut middle);
-            chars.append(&mut tail);
-
-            self.comment = chars.iter().collect();
-            Ok(())
-        } else {
-            Err(error::Error::InvalidData(comment.to_string()))
+        fn check(value: &str) -> error::Result<bool> {
+            let new = format!("<!--{}-->", value);
+            let (rest, _) = xml_parser::comment(new.as_str())
+                .map_err(|e| error::Error::Parse(e.to_string()))?;
+            Ok(rest.is_empty())
         }
+
+        self.comment = insert_char_at(self.comment.as_str(), offset, comment, check)?;
+        Ok(())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -2877,52 +2863,18 @@ impl XmlText {
     }
 
     pub fn delete(&mut self, offset: usize, count: usize) {
-        let mut chars = self.text.chars().collect::<Vec<char>>();
-
-        let s = if offset < chars.len() {
-            offset
-        } else {
-            chars.len()
-        };
-
-        let e = if s + count < chars.len() {
-            s + count
-        } else {
-            chars.len()
-        };
-
-        chars.drain(s..e);
-
-        self.text = chars.iter().collect();
+        self.text = delete_char_range(self.text.as_str(), offset, count);
     }
 
     pub fn insert(&mut self, offset: usize, text: &str) -> error::Result<()> {
-        let mut chars = self.text.chars().collect::<Vec<char>>();
-
-        let index = if offset < chars.len() {
-            offset
-        } else {
-            chars.len()
-        };
-
-        let (rest, content) =
-            xml_parser::content(text).map_err(|e| error::Error::Parse(e.to_string()))?;
-        if rest.is_empty() {
-            if content.children.is_empty() {
-                let mut tail = chars.split_off(index);
-                let mut middle = text.chars().collect::<Vec<char>>();
-
-                chars.append(&mut middle);
-                chars.append(&mut tail);
-
-                self.text = chars.iter().collect();
-                Ok(())
-            } else {
-                Err(error::Error::InvalidData(text.to_string()))
-            }
-        } else {
-            Err(error::Error::InvalidData(text.to_string()))
+        fn check(value: &str) -> error::Result<bool> {
+            let (rest, content) =
+                xml_parser::content(value).map_err(|e| error::Error::Parse(e.to_string()))?;
+            Ok(rest.is_empty() && content.children.is_empty())
         }
+
+        self.text = insert_char_at(self.text.as_str(), offset, text, check)?;
+        Ok(())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -3353,6 +3305,26 @@ fn char_from_char16(value: &str) -> error::Result<char> {
     char::from_u32(num).ok_or(error::Error::NotFoundReference(format!("#x{}", value)))
 }
 
+fn delete_char_range(value: &str, offset: usize, count: usize) -> String {
+    let mut chars = value.chars().collect::<Vec<char>>();
+
+    let s = if offset < chars.len() {
+        offset
+    } else {
+        chars.len()
+    };
+
+    let e = if s + count < chars.len() {
+        s + count
+    } else {
+        chars.len()
+    };
+
+    chars.drain(s..e);
+
+    chars.iter().collect()
+}
+
 fn entity(document: &XmlNode<XmlDocument>, name: &str) -> error::Result<XmlNode<XmlEntity>> {
     if let Some(declaration) = document.borrow().prolog().borrow().declaration() {
         if let Some(v) = declaration
@@ -3395,6 +3367,31 @@ fn external_id(id: &parser::ExternalId) -> (String, Option<String>) {
     match id {
         parser::ExternalId::Public(p, s) => (s.to_string(), Some(p.to_string())),
         parser::ExternalId::System(s) => (s.to_string(), None),
+    }
+}
+
+fn insert_char_at<F>(value: &str, offset: usize, new: &str, check: F) -> error::Result<String>
+where
+    F: Fn(&str) -> error::Result<bool>,
+{
+    let mut chars = value.chars().collect::<Vec<char>>();
+
+    let index = if offset < chars.len() {
+        offset
+    } else {
+        chars.len()
+    };
+
+    if check(new)? {
+        let mut tail = chars.split_off(index);
+        let mut middle = new.chars().collect::<Vec<char>>();
+
+        chars.append(&mut middle);
+        chars.append(&mut tail);
+
+        Ok(chars.iter().collect())
+    } else {
+        Err(error::Error::InvalidData(new.to_string()))
     }
 }
 
@@ -5130,6 +5127,135 @@ mod tests {
 
         // XmlCData
         assert!(!cdata.borrow().is_empty());
+    }
+
+    #[test]
+    fn test_cdata_delete_first() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[012345]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        cdata.borrow_mut().delete(0, 1);
+        assert_eq!("12345", cdata.borrow().character_code());
+    }
+
+    #[test]
+    fn test_cdata_delete_last() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[012345]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        cdata.borrow_mut().delete(5, 1);
+        assert_eq!("01234", cdata.borrow().character_code());
+    }
+
+    #[test]
+    fn test_cdata_delete_offset_overflow() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[012345]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        cdata.borrow_mut().delete(6, 1);
+        assert_eq!("012345", cdata.borrow().character_code());
+    }
+
+    #[test]
+    fn test_cdata_delete_count_overflow() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[012345]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        cdata.borrow_mut().delete(1, 6);
+        assert_eq!("0", cdata.borrow().character_code());
+    }
+
+    #[test]
+    fn test_cdata_delete_multibyte() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[あいうえお]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        cdata.borrow_mut().delete(1, 3);
+        assert_eq!("あお", cdata.borrow().character_code());
+    }
+
+    #[test]
+    fn test_cdata_insert_first() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[012345]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        cdata.borrow_mut().insert(0, "a").unwrap();
+        assert_eq!("a012345", cdata.borrow().character_code());
+    }
+
+    #[test]
+    fn test_cdata_insert_last() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[012345]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        cdata.borrow_mut().insert(6, "a").unwrap();
+        assert_eq!("012345a", cdata.borrow().character_code());
+    }
+
+    #[test]
+    fn test_cdata_insert_offset_overflow() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[012345]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        cdata.borrow_mut().insert(7, "a").unwrap();
+        assert_eq!("012345a", cdata.borrow().character_code());
+    }
+
+    #[test]
+    fn test_cdata_insert_multibyte() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[あいうえお]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        cdata.borrow_mut().insert(1, "か").unwrap();
+        assert_eq!("あかいうえお", cdata.borrow().character_code());
+    }
+
+    #[test]
+    fn test_cdata_insert_invalid_data() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[01234]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        cdata.borrow_mut().insert(1, "a]]>b").err().unwrap();
     }
 
     #[test]
