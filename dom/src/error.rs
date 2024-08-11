@@ -3,6 +3,7 @@ pub enum Error {
     HierarchyRequestErr,
     IndexSizeErr,
     Info(xml_info::error::Error),
+    NoDataAllowedErr,
     Parse(String),
 }
 

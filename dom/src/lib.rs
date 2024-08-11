@@ -12,6 +12,7 @@ use xml_info::{
 };
 
 // TODO: read only.
+// TODO: re-implement ResolvedText
 
 pub type ExpandedName = (String, Option<String>, Option<String>);
 
@@ -2643,6 +2644,12 @@ pub struct XmlResolvedText {
 
 impl Text for XmlResolvedText {}
 
+impl TextMut for XmlResolvedText {
+    fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
+        todo!();
+    }
+}
+
 impl CharacterData for XmlResolvedText {
     fn data(&self) -> error::Result<String> {
         let mut s = String::new();
@@ -2668,6 +2675,76 @@ impl CharacterData for XmlResolvedText {
             .skip(offset)
             .take(count)
             .collect()
+    }
+}
+
+impl CharacterDataMut for XmlResolvedText {
+    fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
+        if self.length() < offset {
+            Err(error::Error::IndexSizeErr)
+        } else {
+            let mut length = 0;
+            for d in self.data.as_mut_slice() {
+                match d {
+                    XmlNode::CData(v) => {
+                        length += v.length();
+                        if offset <= length {
+                            v.insert_data(offset - (length - v.length()), arg)?;
+                            break;
+                        }
+                    }
+                    XmlNode::EntityReference(v) => {
+                        length += v.value()?.chars().count();
+                        if offset <= length {
+                            return Err(error::Error::NoDataAllowedErr);
+                        }
+                    }
+                    XmlNode::Text(v) => {
+                        length += v.length();
+                        if offset <= length {
+                            v.insert_data(offset - (length - v.length()), arg)?;
+                            break;
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            Ok(())
+        }
+    }
+
+    fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
+        if self.length() < (offset + count) {
+            Err(error::Error::IndexSizeErr)
+        } else {
+            let mut length = 0;
+            for d in self.data.as_mut_slice() {
+                match d {
+                    XmlNode::CData(v) => {
+                        length += v.length();
+                        if offset < length {
+                            v.delete_data(offset - (length - v.length()), count)?;
+                            break;
+                        }
+                    }
+                    XmlNode::EntityReference(v) => {
+                        length += v.value()?.chars().count();
+                        if offset < length {
+                            return Err(error::Error::NoDataAllowedErr);
+                        }
+                    }
+                    XmlNode::Text(v) => {
+                        length += v.length();
+                        if offset < length {
+                            v.delete_data(offset - (length - v.length()), count)?;
+                            break;
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            Ok(())
+        }
     }
 }
 
@@ -2722,6 +2799,20 @@ impl Node for XmlResolvedText {
 
     fn has_child(&self) -> bool {
         false
+    }
+}
+
+impl NodeMut for XmlResolvedText {
+    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
+        self.set_data(value)
+    }
+
+    fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
+        Err(error::Error::HierarchyRequestErr)
+    }
+
+    fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
+        Err(error::Error::HierarchyRequestErr)
     }
 }
 
@@ -3059,7 +3150,7 @@ mod tests {
     fn test_text() {
         let (_, doc) = XmlDocument::from_raw("<root>text</root>").unwrap();
         let root = doc.document_element().unwrap();
-        let text = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
+        let mut text = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
             e.clone()
         } else {
             unreachable!()
@@ -3068,6 +3159,19 @@ mod tests {
         // CharacterData
         assert_eq!(4, text.length());
         assert_eq!("ex", text.substring_data(1, 2));
+
+        // CharacterDataMut
+        text.set_data("あいう").unwrap();
+        assert_eq!(Some("あいう"), text.node_value().unwrap().as_deref());
+        text.append_data("えお").unwrap();
+        assert_eq!(Some("あいうえお"), text.node_value().unwrap().as_deref());
+        text.insert_data(1, "abc").unwrap();
+        assert_eq!(Some("あabcいうえお"), text.node_value().unwrap().as_deref());
+        text.delete_data(4, 2).unwrap();
+        assert_eq!(Some("あabcえお"), text.node_value().unwrap().as_deref());
+        text.replace_data(1, 3, "いう").unwrap();
+        assert_eq!(Some("あいうえお"), text.node_value().unwrap().as_deref());
+        text.set_data("text").unwrap();
 
         // Node
         assert_eq!("#text", text.node_name());
@@ -3082,6 +3186,16 @@ mod tests {
         assert_eq!(None, text.attributes());
         assert_eq!(Some(doc.clone()), text.owner_document());
         assert!(!text.has_child());
+
+        // Nodemut
+        let e = root.clone().as_node();
+        text.set_node_value("abc").unwrap();
+        assert_eq!(Some("abc"), text.node_value().unwrap().as_deref());
+        text.insert_before(e.clone(), Some(&e)).err().unwrap();
+        text.replace_child(e.clone(), &e).err().unwrap();
+        text.remove_child(&e).err().unwrap();
+        text.append_child(e.clone()).err().unwrap();
+        text.set_node_value("text").unwrap();
 
         // XmlNode
         let node = text.as_node();
@@ -3179,7 +3293,7 @@ mod tests {
     fn test_cdata() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
+        let mut cdata = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
             e.clone()
         } else {
             unreachable!()
@@ -3188,6 +3302,22 @@ mod tests {
         // CharacterData
         assert_eq!(4, cdata.length());
         assert_eq!("<>", cdata.substring_data(1, 2));
+
+        // CharacterDataMut
+        cdata.set_data("あいう").unwrap();
+        assert_eq!(Some("あいう"), cdata.node_value().unwrap().as_deref());
+        cdata.append_data("えお").unwrap();
+        assert_eq!(Some("あいうえお"), cdata.node_value().unwrap().as_deref());
+        cdata.insert_data(1, "abc").unwrap();
+        assert_eq!(
+            Some("あabcいうえお"),
+            cdata.node_value().unwrap().as_deref()
+        );
+        cdata.delete_data(4, 2).unwrap();
+        assert_eq!(Some("あabcえお"), cdata.node_value().unwrap().as_deref());
+        cdata.replace_data(1, 3, "いう").unwrap();
+        assert_eq!(Some("あいうえお"), cdata.node_value().unwrap().as_deref());
+        cdata.set_data("&<>\"").unwrap();
 
         // Node
         assert_eq!("#text", cdata.node_name());
@@ -3202,6 +3332,16 @@ mod tests {
         assert_eq!(None, cdata.attributes());
         assert_eq!(Some(doc.clone()), cdata.owner_document());
         assert!(!cdata.has_child());
+
+        // Nodemut
+        let e = root.clone().as_node();
+        cdata.set_node_value("abc").unwrap();
+        assert_eq!(Some("abc"), cdata.node_value().unwrap().as_deref());
+        cdata.insert_before(e.clone(), Some(&e)).err().unwrap();
+        cdata.replace_child(e.clone(), &e).err().unwrap();
+        cdata.remove_child(&e).err().unwrap();
+        cdata.append_child(e.clone()).err().unwrap();
+        cdata.set_node_value("&<>\"").unwrap();
 
         // XmlNode
         let node = cdata.as_node();
