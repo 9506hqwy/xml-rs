@@ -882,6 +882,62 @@ impl Document for XmlDocument {
     }
 }
 
+impl DocumentMut for XmlDocument {
+    fn create_element(&self, tag_name: &str) -> error::Result<XmlElement> {
+        let element = info::XmlElement::empty(tag_name, self.document.clone())?;
+        Ok(XmlElement { element })
+    }
+
+    fn create_document_fragment(&self) -> XmlDocumentFragment {
+        let document = info::XmlDocument::empty();
+        XmlDocumentFragment {
+            document,
+            parent: Some(self.document.clone()),
+        }
+    }
+
+    fn create_text_node(&self, data: &str) -> error::Result<XmlText> {
+        let text = info::XmlText::empty(self.document.clone());
+        text.borrow_mut().insert(0, data)?;
+        Ok(XmlText { data: text })
+    }
+
+    fn create_comment(&self, data: &str) -> error::Result<XmlComment> {
+        let comment = info::XmlComment::empty(self.document.clone());
+        comment.borrow_mut().insert(0, data)?;
+        Ok(XmlComment { data: comment })
+    }
+
+    fn create_cdata_section(&self, data: &str) -> error::Result<XmlCDataSection> {
+        let cdata = info::XmlCData::empty(self.document.clone());
+        cdata.borrow_mut().insert(0, data)?;
+        Ok(XmlCDataSection { data: cdata })
+    }
+
+    fn create_processing_instruction(
+        &self,
+        target: &str,
+        data: &str,
+    ) -> error::Result<XmlProcessingInstruction> {
+        let pi = info::XmlProcessingInstruction::empty(target, self.document.clone())?;
+        pi.borrow_mut().set_content(data)?;
+        Ok(XmlProcessingInstruction { pi })
+    }
+
+    fn create_attribute(&self, name: &str) -> error::Result<XmlAttr> {
+        let attribute = info::XmlAttribute::empty(name, self.document.clone())?;
+        Ok(XmlAttr { attribute })
+    }
+
+    fn create_entity_reference(&self, name: &str) -> error::Result<XmlEntityReference> {
+        let reference = info::XmlReference::new_from_value(name, self.document.clone())?;
+        Ok(XmlEntityReference {
+            reference,
+            order: 0,
+        })
+    }
+}
+
 impl Node for XmlDocument {
     fn node_name(&self) -> String {
         "#document".to_string()
@@ -931,6 +987,24 @@ impl Node for XmlDocument {
 
     fn has_child(&self) -> bool {
         self.has_child_node()
+    }
+}
+
+impl NodeMut for XmlDocument {
+    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
+        todo!()
+    }
+
+    fn insert_before(
+        &mut self,
+        new_child: XmlNode,
+        ref_child: Option<&XmlNode>,
+    ) -> error::Result<XmlNode> {
+        todo!()
+    }
+
+    fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
+        todo!()
     }
 }
 
@@ -1210,7 +1284,7 @@ impl HasChild for XmlAttr {
                 info::XmlAttributeValue::Text(data) => {
                     let i = info::XmlText::new(
                         data,
-                        self.attribute.borrow().owner_element().unwrap(),
+                        self.attribute.borrow().owner_element().ok(),
                         self.attribute.borrow().owner(),
                     );
                     if !data.is_empty() {
@@ -2447,7 +2521,7 @@ impl Node for XmlProcessingInstruction {
     }
 
     fn parent_node(&self) -> Option<XmlNode> {
-        Some(XmlNode::from(self.pi.borrow().parent()))
+        self.pi.borrow().parent().ok().map(XmlNode::from)
     }
 
     fn child_nodes(&self) -> XmlNodeList {
@@ -2963,6 +3037,24 @@ mod tests {
             assert_eq!(root, child);
         }
 
+        // DocumentMut
+        let elem = m.create_element("e").unwrap();
+        assert_eq!("e", elem.tag_name());
+        let _ = m.create_document_fragment();
+        let text = m.create_text_node("t").unwrap();
+        assert_eq!("t", text.data().unwrap());
+        let comment = m.create_comment("c").unwrap();
+        assert_eq!("c", comment.data().unwrap());
+        let cdata = m.create_cdata_section("d").unwrap();
+        assert_eq!("d", cdata.data().unwrap());
+        let pi = m.create_processing_instruction("t", "c").unwrap();
+        assert_eq!("t", pi.target());
+        assert_eq!("c", pi.data());
+        let attr = m.create_attribute("a").unwrap();
+        assert_eq!("a", attr.name());
+        let eref = m.create_entity_reference("&amp;").unwrap();
+        assert_eq!("amp", eref.node_name());
+
         // Node
         assert_eq!("#document", m.node_name());
         assert_eq!(None, m.node_value().unwrap());
@@ -3008,7 +3100,7 @@ mod tests {
         let text = XmlNode::Text(XmlText {
             data: info::XmlText::new(
                 "b",
-                doc.document.borrow().document_element().unwrap(),
+                Some(doc.document.borrow().document_element().unwrap()),
                 doc.document.clone(),
             ),
         });
@@ -3077,7 +3169,7 @@ mod tests {
         let data1 = XmlResolvedText::from(XmlText {
             data: info::XmlText::new(
                 "data1",
-                doc.document.borrow().document_element().unwrap(),
+                Some(doc.document.borrow().document_element().unwrap()),
                 doc.document.clone(),
             ),
         })

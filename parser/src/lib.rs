@@ -187,7 +187,7 @@ pub fn comment(input: &str) -> IResult<&str, model::Comment<'_>> {
 /// '\<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
 ///
 /// [\[16\] PI](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-PI)
-fn pi(input: &str) -> IResult<&str, model::PI<'_>> {
+pub fn pi(input: &str) -> IResult<&str, model::PI<'_>> {
     map(
         delimited(
             tag("<?"),
@@ -366,7 +366,7 @@ fn sd_decl(input: &str) -> IResult<&str, bool> {
 /// EmptyElemTag | STag content ETag
 ///
 /// [\[39\] element](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-element)
-fn element(input: &str) -> IResult<&str, model::Element<'_>> {
+pub fn element(input: &str) -> IResult<&str, model::Element<'_>> {
     alt((
         empty_entity_tag,
         map(tuple((stag, content, etag)), |(s, c, _)| s.set_content(c)),
@@ -394,7 +394,7 @@ fn stag(input: &str) -> IResult<&str, model::Element<'_>> {
 /// [\[41\] Attribute](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Attribute)
 ///
 /// [\[15\] Attribute](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-Attribute)
-fn attribute(input: &str) -> IResult<&str, model::Attribute<'_>> {
+pub fn attribute(input: &str) -> IResult<&str, model::Attribute<'_>> {
     map(
         tuple((
             alt((ns_att_name, map(qname, model::AttributeName::from))),
@@ -728,7 +728,7 @@ fn char_ref(input: &str) -> IResult<&str, model::Reference<'_>> {
 /// EntityRef | CharRef
 ///
 /// [\[67\] Reference](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Reference)
-fn reference(input: &str) -> IResult<&str, model::Reference<'_>> {
+pub fn reference(input: &str) -> IResult<&str, model::Reference<'_>> {
     alt((entity_ref, char_ref))(input)
 }
 
