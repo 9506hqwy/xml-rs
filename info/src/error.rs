@@ -6,8 +6,10 @@ type ParseError<'a> = nom::Err<nom::error::Error<&'a str>>;
 pub enum Error {
     IsolatedNode,
     InvalidData(String),
+    InvalidType,
     NotFoundDoumentElement,
     NotFoundReference(String),
+    OufOfIndex(i64),
     Parse(String),
 }
 

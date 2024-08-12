@@ -1,6 +1,7 @@
 pub mod error;
 
 use std::cell::RefCell;
+use std::convert;
 use std::fmt;
 use std::iter::Iterator;
 use std::ops::{Deref, Range};
@@ -459,8 +460,51 @@ impl XmlAttribute {
         }
     }
 
+    pub fn append(&mut self, value: XmlItem) -> error::Result<XmlAttributeValue> {
+        let v = XmlAttributeValue::try_from(value)?;
+        self.values.push(v.clone());
+        Ok(v)
+    }
+
+    pub fn delete_by_order(&mut self, order: i64) -> Option<XmlAttributeValue> {
+        if let Some(v) = self.values.iter().find(|v| v.order() == order).cloned() {
+            self.values.retain(|v| v.order() != order);
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn insert_at_order(
+        &mut self,
+        value: XmlItem,
+        order: i64,
+    ) -> error::Result<XmlAttributeValue> {
+        let index = self
+            .values
+            .iter()
+            .position(|v| order <= v.order())
+            .ok_or(error::Error::OufOfIndex(order))?;
+        let v = XmlAttributeValue::try_from(value)?;
+        self.values.insert(index, v.clone());
+        Ok(v)
+    }
+
     pub fn owner(&self) -> XmlNode<XmlDocument> {
         self.owner.clone()
+    }
+
+    pub fn set_values(&mut self, value: &str) -> error::Result<()> {
+        let xml = format!("{}='{}'", self.local_name(), value);
+        let (rest, tree) = xml_parser::attribute(xml.as_str())?;
+        if rest.is_empty() {
+            let attr = XmlAttribute::new(&tree, self.parent.clone(), self.owner.clone());
+            self.values.clear();
+            self.values.extend_from_slice(attr.borrow().values());
+            Ok(())
+        } else {
+            Err(error::Error::InvalidData(value.to_string()))
+        }
     }
 
     pub fn values(&self) -> &[XmlAttributeValue] {
@@ -512,6 +556,23 @@ impl Sortable for XmlAttributeValue {
         match self {
             XmlAttributeValue::Reference(v) => v.borrow_mut().set_order(numbering),
             XmlAttributeValue::Text(v) => v.borrow_mut().set_order(numbering),
+        }
+    }
+}
+
+impl convert::TryFrom<XmlItem> for XmlAttributeValue {
+    type Error = error::Error;
+
+    fn try_from(value: XmlItem) -> Result<Self, Self::Error> {
+        match value {
+            XmlItem::CharReference(v) => Ok(XmlAttributeValue::Reference(
+                XmlReference::new_from_char_ref(v),
+            )),
+            XmlItem::Text(v) => Ok(XmlAttributeValue::Text(v)),
+            XmlItem::Unexpanded(v) => Ok(XmlAttributeValue::Reference(XmlReference::new_from_ref(
+                v.borrow().entity(),
+            ))),
+            _ => Err(error::Error::InvalidType),
         }
     }
 }
@@ -1219,7 +1280,7 @@ impl XmlDocument {
         let epilog = XmlDocumentEpilog::new(value, document.clone());
         document.borrow_mut().set_epilog(epilog);
 
-        document.borrow_mut().set_order(&mut CountUp::default());
+        document.borrow_mut().reset_order();
 
         Ok(document)
     }
@@ -1237,6 +1298,10 @@ impl XmlDocument {
 
     pub fn prolog(&self) -> XmlNode<XmlDocumentProlog> {
         self.prolog.clone()
+    }
+
+    pub fn reset_order(&mut self) {
+        self.set_order(&mut CountUp::default());
     }
 
     fn set_epilog(&mut self, epilog: XmlNode<XmlDocumentEpilog>) {
@@ -2367,6 +2432,24 @@ impl From<XmlUnexpandedEntityReference> for XmlItem {
 impl From<XmlUnparsedEntity> for XmlItem {
     fn from(value: XmlUnparsedEntity) -> Self {
         XmlItem::from(node(value))
+    }
+}
+
+impl convert::TryFrom<XmlNode<XmlReference>> for XmlItem {
+    type Error = error::Error;
+
+    fn try_from(value: XmlNode<XmlReference>) -> Result<Self, Self::Error> {
+        let parent = value.borrow().parent.clone();
+        let owner = value.borrow().owner.clone();
+        match value.borrow().value() {
+            XmlReferenceValue::Character(v, r) => {
+                Ok(XmlCharReference::new(v.as_str(), r, parent, owner)?.into())
+            }
+            XmlReferenceValue::Entity(v) => {
+                let entity = entity(&owner, v.as_str()).unwrap();
+                Ok(XmlUnexpandedEntityReference::new(entity, parent, owner).into())
+            }
+        }
     }
 }
 
@@ -5036,6 +5119,100 @@ mod tests {
 
         // PartialEq
         assert_eq!(attr, attr);
+    }
+
+    #[test]
+    fn test_atttibute_append() {
+        let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        attr.borrow_mut()
+            .append(XmlText::new("3", None, doc.clone()).into())
+            .unwrap();
+        assert_eq!("1&23", attr.borrow().normalized_value().unwrap());
+
+        attr.borrow_mut()
+            .append(
+                XmlCharReference::new("3042", 16, None, doc.clone())
+                    .unwrap()
+                    .into(),
+            )
+            .unwrap();
+        assert_eq!("1&23あ", attr.borrow().normalized_value().unwrap());
+
+        attr.borrow_mut()
+            .append(XmlComment::new("a", None, doc.clone()).into())
+            .err()
+            .unwrap();
+    }
+
+    #[test]
+    fn test_atttibute_delete_by_order() {
+        let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        attr.borrow_mut().delete_by_order(5).unwrap();
+        assert_eq!("12", attr.borrow().normalized_value().unwrap());
+
+        assert_eq!(None, attr.borrow_mut().delete_by_order(7));
+    }
+
+    #[test]
+    fn test_atttibute_insert_at_order() {
+        let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        attr.borrow_mut()
+            .insert_at_order(XmlText::new("3", None, doc.clone()).into(), 5)
+            .unwrap();
+        assert_eq!("13&2", attr.borrow().normalized_value().unwrap());
+
+        attr.borrow_mut()
+            .insert_at_order(XmlText::new("3", None, doc.clone()).into(), 7)
+            .err()
+            .unwrap();
+
+        attr.borrow_mut()
+            .insert_at_order(
+                XmlCharReference::new("3042", 16, None, doc.clone())
+                    .unwrap()
+                    .into(),
+                5,
+            )
+            .unwrap();
+        assert_eq!("13あ&2", attr.borrow().normalized_value().unwrap());
+
+        attr.borrow_mut()
+            .insert_at_order(XmlComment::new("a", None, doc.clone()).into(), 5)
+            .err()
+            .unwrap();
+    }
+
+    #[test]
+    fn test_atttibute_set_values() {
+        let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        attr.borrow_mut().set_values("a&gt;b").unwrap();
+        assert_eq!("a>b", attr.borrow().normalized_value().unwrap());
+
+        attr.borrow_mut().set_values("a'\"b").err().unwrap();
     }
 
     #[test]

@@ -1,5 +1,6 @@
 pub mod error;
 
+use std::convert;
 use std::fmt;
 use std::iter::Iterator;
 use xml_info as info;
@@ -663,6 +664,30 @@ impl From<info::XmlItem> for XmlNode {
     }
 }
 
+impl convert::TryFrom<XmlNode> for info::XmlItem {
+    type Error = error::Error;
+
+    fn try_from(value: XmlNode) -> Result<Self, Self::Error> {
+        let v = match value {
+            XmlNode::Attribute(v) => v.attribute.into(),
+            XmlNode::CData(v) => v.data.into(),
+            XmlNode::Comment(v) => v.data.into(),
+            XmlNode::Document(v) => v.document.into(),
+            XmlNode::DocumentFragment(v) => v.document.into(),
+            XmlNode::DocumentType(v) => v.declaration.into(),
+            XmlNode::Element(v) => v.element.into(),
+            XmlNode::Entity(v) => v.entity.into(),
+            XmlNode::EntityReference(v) => v.reference.try_into()?,
+            XmlNode::Namespace(v) => v.namespace.into(),
+            XmlNode::Notation(v) => v.notation.into(),
+            XmlNode::PI(v) => v.pi.into(),
+            XmlNode::ResolvedText(_) => unimplemented!("multi text node."),
+            XmlNode::Text(v) => v.data.into(),
+        };
+        Ok(v)
+    }
+}
+
 impl fmt::Display for XmlNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
@@ -1058,6 +1083,10 @@ impl XmlDocument {
         let element = self.document.borrow().document_element()?;
         Ok(XmlElement::from(element))
     }
+
+    fn reset_order(&mut self) {
+        self.document.borrow_mut().reset_order();
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -1182,6 +1211,8 @@ impl Attr for XmlAttr {
     }
 }
 
+impl AttrMut for XmlAttr {}
+
 impl Node for XmlAttr {
     fn node_name(&self) -> String {
         self.name()
@@ -1231,6 +1262,61 @@ impl Node for XmlAttr {
 
     fn has_child(&self) -> bool {
         self.has_child_node()
+    }
+}
+
+impl NodeMut for XmlAttr {
+    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
+        self.attribute.borrow_mut().set_values(value)?;
+        Ok(())
+    }
+
+    fn insert_before(
+        &mut self,
+        new_child: XmlNode,
+        ref_child: Option<&XmlNode>,
+    ) -> error::Result<XmlNode> {
+        if self.owner_document() != new_child.owner_document() {
+            return Err(error::Error::WrongDoucmentErr);
+        }
+
+        let value = if let Some(r) = ref_child {
+            if self.owner_document() != r.owner_document() {
+                return Err(error::Error::WrongDoucmentErr);
+            }
+
+            // TODO: remove new_child from teee.
+            self.attribute
+                .borrow_mut()
+                .insert_at_order(new_child.try_into()?, r.order())?
+        } else {
+            self.attribute.borrow_mut().append(new_child.try_into()?)?
+        };
+
+        self.owner_document().unwrap().reset_order();
+
+        match value {
+            info::XmlAttributeValue::Reference(v) => Ok(XmlEntityReference::from(v).as_node()),
+            info::XmlAttributeValue::Text(v) => Ok(XmlText::from(v).as_node()),
+        }
+    }
+
+    fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
+        if self.owner_document() != old_child.owner_document() {
+            return Err(error::Error::WrongDoucmentErr);
+        }
+
+        match self
+            .attribute
+            .borrow_mut()
+            .delete_by_order(old_child.order())
+        {
+            Some(v) => match v {
+                info::XmlAttributeValue::Reference(v) => Ok(XmlEntityReference::from(v).as_node()),
+                info::XmlAttributeValue::Text(v) => Ok(XmlText::from(v).as_node()),
+            },
+            _ => Err(error::Error::NotFoundErr),
+        }
     }
 }
 
@@ -3080,7 +3166,7 @@ mod tests {
     fn test_attr() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
         let elem = doc.document_element().unwrap();
-        let attr = elem.get_attribute_node("a").unwrap();
+        let mut attr = elem.get_attribute_node("a").unwrap();
         let text = XmlNode::Text(XmlText {
             data: info::XmlText::new(
                 "b",
@@ -3091,6 +3177,11 @@ mod tests {
 
         // Attr
         assert!(attr.specified());
+
+        // AttrMut
+        attr.set_value("c").unwrap();
+        assert_eq!("c", attr.value().unwrap());
+        attr.set_value("b").unwrap();
 
         // Node
         assert_eq!("a", attr.node_name());
@@ -3107,6 +3198,27 @@ mod tests {
         assert_eq!(None, attr.attributes());
         assert_eq!(Some(doc.clone()), attr.owner_document());
         assert!(attr.has_child());
+
+        // NodeMut
+        attr.set_node_value("a&amp;b&amp;c").unwrap();
+        assert_eq!("a&b&c", attr.value().unwrap());
+        let d = attr
+            .insert_before(doc.create_text_node("d").unwrap().as_node(), None)
+            .unwrap();
+        assert_eq!("a&b&cd", attr.value().unwrap());
+        let e = attr
+            .insert_before(doc.create_text_node("e").unwrap().as_node(), Some(&d))
+            .unwrap();
+        assert_eq!("a&b&ced", attr.value().unwrap());
+        let _ = attr
+            .replace_child(doc.create_text_node("f").unwrap().as_node(), &e)
+            .unwrap();
+        assert_eq!("a&b&cfd", attr.value().unwrap());
+        let d = attr.remove_child(&d).unwrap();
+        assert_eq!("a&b&cf", attr.value().unwrap());
+        attr.append_child(d).unwrap();
+        assert_eq!("a&b&cfd", attr.value().unwrap());
+        attr.set_node_value("b").unwrap();
 
         // XmlNode
         let node = attr.as_node();

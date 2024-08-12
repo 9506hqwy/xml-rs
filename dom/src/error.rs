@@ -8,7 +8,9 @@ pub enum Error {
     IndexSizeErr,
     Info(xml_info::error::Error),
     NoDataAllowedErr,
+    NotFoundErr,
     Parse(String),
+    WrongDoucmentErr,
 }
 
 impl<'a> From<ParseError<'a>> for Error {
