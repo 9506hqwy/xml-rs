@@ -1,5 +1,7 @@
 pub mod model;
 
+pub use nom;
+
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{alpha1, digit1, hex_digit1, multispace0, multispace1};

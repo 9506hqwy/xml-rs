@@ -598,8 +598,7 @@ impl XmlCData {
     pub fn insert(&mut self, offset: usize, data: &str) -> error::Result<()> {
         fn check(value: &str) -> error::Result<bool> {
             let new = format!("<![CDATA[{}]]>", value);
-            let (rest, _) =
-                xml_parser::cdsect(new.as_str()).map_err(|e| error::Error::Parse(e.to_string()))?;
+            let (rest, _) = xml_parser::cdsect(new.as_str())?;
             Ok(rest.is_empty())
         }
 
@@ -778,8 +777,7 @@ impl XmlComment {
     pub fn insert(&mut self, offset: usize, comment: &str) -> error::Result<()> {
         fn check(value: &str) -> error::Result<bool> {
             let new = format!("<!--{}-->", value);
-            let (rest, _) = xml_parser::comment(new.as_str())
-                .map_err(|e| error::Error::Parse(e.to_string()))?;
+            let (rest, _) = xml_parser::comment(new.as_str())?;
             Ok(rest.is_empty())
         }
 
@@ -2868,8 +2866,7 @@ impl XmlText {
 
     pub fn insert(&mut self, offset: usize, text: &str) -> error::Result<()> {
         fn check(value: &str) -> error::Result<bool> {
-            let (rest, content) =
-                xml_parser::content(value).map_err(|e| error::Error::Parse(e.to_string()))?;
+            let (rest, content) = xml_parser::content(value)?;
             Ok(rest.is_empty() && content.children.is_empty())
         }
 

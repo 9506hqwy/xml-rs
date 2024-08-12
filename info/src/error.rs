@@ -1,3 +1,7 @@
+use xml_parser::nom;
+
+type ParseError<'a> = nom::Err<nom::error::Error<&'a str>>;
+
 #[derive(Debug)]
 pub enum Error {
     IsolatedNode,
@@ -5,6 +9,12 @@ pub enum Error {
     NotFoundDoumentElement,
     NotFoundReference(String),
     Parse(String),
+}
+
+impl<'a> From<ParseError<'a>> for Error {
+    fn from(value: ParseError<'a>) -> Self {
+        Error::Parse(value.to_string())
+    }
 }
 
 impl std::error::Error for Error {}

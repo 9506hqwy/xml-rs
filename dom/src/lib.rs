@@ -977,8 +977,7 @@ impl fmt::Display for XmlDocument {
 
 impl XmlDocument {
     pub fn from_raw(value: &str) -> error::Result<(&str, Self)> {
-        let (rest, tree) =
-            xml_parser::document(value).map_err(|v| error::Error::Parse(v.to_string()))?;
+        let (rest, tree) = xml_parser::document(value)?;
         let document = info::XmlDocument::new(&tree)?;
         let dom = XmlDocument::from(document);
         Ok((rest, dom))

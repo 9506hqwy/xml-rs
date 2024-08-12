@@ -1,3 +1,7 @@
+use xml_parser::nom;
+
+type ParseError<'a> = nom::Err<nom::error::Error<&'a str>>;
+
 #[derive(Debug)]
 pub enum Error {
     HierarchyRequestErr,
@@ -5,6 +9,12 @@ pub enum Error {
     Info(xml_info::error::Error),
     NoDataAllowedErr,
     Parse(String),
+}
+
+impl<'a> From<ParseError<'a>> for Error {
+    fn from(value: ParseError<'a>) -> Self {
+        Error::Parse(value.to_string())
+    }
 }
 
 impl From<xml_info::error::Error> for Error {
