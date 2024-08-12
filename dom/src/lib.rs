@@ -594,7 +594,7 @@ impl XmlNode {
             XmlNode::DocumentType(v) => v.declaration.borrow().order(),
             XmlNode::Element(v) => v.element.borrow().order(),
             XmlNode::Entity(_) => 0,
-            XmlNode::EntityReference(v) => v.order,
+            XmlNode::EntityReference(v) => v.reference.borrow().order(),
             XmlNode::Namespace(v) => v.namespace.borrow().order(),
             XmlNode::Notation(_) => 0,
             XmlNode::PI(_) => 0,
@@ -931,10 +931,7 @@ impl DocumentMut for XmlDocument {
 
     fn create_entity_reference(&self, name: &str) -> error::Result<XmlEntityReference> {
         let reference = info::XmlReference::new_from_value(name, self.document.clone())?;
-        Ok(XmlEntityReference {
-            reference,
-            order: 0,
-        })
+        Ok(XmlEntityReference { reference })
     }
 }
 
@@ -1281,15 +1278,8 @@ impl HasChild for XmlAttr {
                 info::XmlAttributeValue::Reference(v) => {
                     nodes.push(XmlEntityReference::from(v.clone()).as_node());
                 }
-                info::XmlAttributeValue::Text(data) => {
-                    let i = info::XmlText::new(
-                        data,
-                        self.attribute.borrow().owner_element().ok(),
-                        self.attribute.borrow().owner(),
-                    );
-                    if !data.is_empty() {
-                        nodes.push(XmlText::from(i).as_node());
-                    }
+                info::XmlAttributeValue::Text(v) => {
+                    nodes.push(XmlText::from(v.clone()).as_node());
                 }
             }
         }
@@ -2366,7 +2356,6 @@ impl fmt::Display for XmlEntity {
 #[derive(Clone, PartialEq)]
 pub struct XmlEntityReference {
     reference: info::XmlNode<info::XmlReference>,
-    order: i64,
 }
 
 impl EntityReference for XmlEntityReference {}
@@ -2449,26 +2438,21 @@ impl HasChild for XmlEntityReference {
 
 impl From<info::XmlNode<info::XmlCharReference>> for XmlEntityReference {
     fn from(value: info::XmlNode<info::XmlCharReference>) -> Self {
-        let order = value.borrow().order();
         let reference = info::XmlReference::new_from_char_ref(value);
-        XmlEntityReference { reference, order }
+        XmlEntityReference { reference }
     }
 }
 
 impl From<info::XmlNode<info::XmlReference>> for XmlEntityReference {
     fn from(value: info::XmlNode<info::XmlReference>) -> Self {
-        XmlEntityReference {
-            reference: value,
-            order: -1,
-        }
+        XmlEntityReference { reference: value }
     }
 }
 
 impl From<info::XmlNode<info::XmlUnexpandedEntityReference>> for XmlEntityReference {
     fn from(value: info::XmlNode<info::XmlUnexpandedEntityReference>) -> Self {
-        let order = value.borrow().order();
         let reference = info::XmlReference::new_from_ref(value.borrow().entity());
-        XmlEntityReference { reference, order }
+        XmlEntityReference { reference }
     }
 }
 
@@ -3100,7 +3084,7 @@ mod tests {
         let text = XmlNode::Text(XmlText {
             data: info::XmlText::new(
                 "b",
-                Some(doc.document.borrow().document_element().unwrap()),
+                Some(doc.document.borrow().document_element().unwrap().into()),
                 doc.document.clone(),
             ),
         });
@@ -3169,7 +3153,7 @@ mod tests {
         let data1 = XmlResolvedText::from(XmlText {
             data: info::XmlText::new(
                 "data1",
-                Some(doc.document.borrow().document_element().unwrap()),
+                Some(doc.document.borrow().document_element().unwrap().into()),
                 doc.document.clone(),
             ),
         })

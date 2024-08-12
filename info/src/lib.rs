@@ -226,6 +226,10 @@ impl Sortable for XmlAttribute {
 
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
+
+        for value in self.values.as_mut_slice() {
+            value.set_order(numbering);
+        }
     }
 }
 
@@ -255,8 +259,8 @@ impl Attribute for XmlAttribute {
                     let v = v.borrow().resolve()?;
                     normalized.push_str(v.as_str());
                 }
-                XmlAttributeValue::Text(ref v) => {
-                    normalized.push_str(normalize_ws(v).as_str());
+                XmlAttributeValue::Text(v) => {
+                    normalized.push_str(normalize_ws(v.borrow().text.as_str()).as_str());
                 }
             }
         }
@@ -492,14 +496,30 @@ impl XmlAttribute {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum XmlAttributeValue {
-    Text(String),
+    Text(XmlNode<XmlText>),
     Reference(XmlNode<XmlReference>),
+}
+
+impl Sortable for XmlAttributeValue {
+    fn order(&self) -> i64 {
+        match self {
+            XmlAttributeValue::Reference(v) => v.borrow().order(),
+            XmlAttributeValue::Text(v) => v.borrow().order(),
+        }
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        match self {
+            XmlAttributeValue::Reference(v) => v.borrow_mut().set_order(numbering),
+            XmlAttributeValue::Text(v) => v.borrow_mut().set_order(numbering),
+        }
+    }
 }
 
 impl fmt::Display for XmlAttributeValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
-            XmlAttributeValue::Text(v) => write!(f, "{}", v),
+            XmlAttributeValue::Text(v) => v.borrow().fmt(f),
             XmlAttributeValue::Reference(v) => v.borrow().fmt(f),
         }
     }
@@ -515,9 +535,9 @@ impl XmlAttributeValue {
             parser::AttributeValue::Reference(v) => Some(XmlAttributeValue::Reference(
                 XmlReference::new(v, Some(parent), owner),
             )),
-            parser::AttributeValue::Text(v) if !v.is_empty() => {
-                Some(XmlAttributeValue::Text(v.to_string()))
-            }
+            parser::AttributeValue::Text(v) if !v.is_empty() => Some(XmlAttributeValue::Text(
+                XmlText::new(v, Some(parent), owner),
+            )),
             _ => None,
         }
     }
@@ -531,10 +551,7 @@ impl XmlAttributeValue {
                     XmlReference::new_from_declaration(v.clone(), parent, owner),
                 ))
             }
-            XmlAttributeValue::Text(v) if !v.is_empty() => {
-                Some(XmlAttributeValue::Text(v.to_string()))
-            }
-            _ => None,
+            XmlAttributeValue::Text(v) => Some(XmlAttributeValue::Text(v.clone())),
         }
     }
 }
@@ -1746,7 +1763,7 @@ impl XmlElement {
         if let Some(content) = &value.content {
             if let Some(head) = content.head {
                 if !head.is_empty() {
-                    let text = XmlText::new(head, Some(element.clone()), owner.clone());
+                    let text = XmlText::new(head, Some(element.clone().into()), owner.clone());
                     element.borrow_mut().push_child(text.into());
                 }
             }
@@ -1799,7 +1816,7 @@ impl XmlElement {
 
                 if let Some(tail) = cell.tail {
                     if !tail.is_empty() {
-                        let text = XmlText::new(tail, Some(element.clone()), owner.clone());
+                        let text = XmlText::new(tail, Some(element.clone().into()), owner.clone());
                         element.borrow_mut().push_child(text.into());
                     }
                 }
@@ -2774,6 +2791,17 @@ pub struct XmlReference {
     value: XmlReferenceValue,
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
+    order: i64,
+}
+
+impl Sortable for XmlReference {
+    fn order(&self) -> i64 {
+        self.order
+    }
+
+    fn set_order(&mut self, numbering: &mut impl Numbering) {
+        self.order = numbering.next();
+    }
 }
 
 impl PartialEq<XmlReference> for XmlReference {
@@ -2805,25 +2833,30 @@ impl XmlReference {
             value: XmlReferenceValue::new(value),
             parent,
             owner,
+            order: 0,
         })
     }
 
     pub fn new_from_char_ref(value: XmlNode<XmlCharReference>) -> XmlNode<Self> {
         let num = value.borrow().num().to_string();
         let radix = value.borrow().radix();
+        let order = value.borrow().order();
         node(XmlReference {
             value: XmlReferenceValue::Character(num, radix),
             parent: value.borrow().parent().ok().map(|v| v.into()),
             owner: value.borrow().owner(),
+            order,
         })
     }
 
     pub fn new_from_ref(value: XmlNode<XmlEntity>) -> XmlNode<Self> {
         let name = value.borrow().name().to_string();
+        let order = value.borrow().order();
         node(XmlReference {
             value: XmlReferenceValue::Entity(name),
             parent: value.borrow().parent(),
             owner: value.borrow().owner(),
+            order,
         })
     }
 
@@ -2832,10 +2865,12 @@ impl XmlReference {
         parent: Option<XmlItem>,
         owner: XmlNode<XmlDocument>,
     ) -> XmlNode<Self> {
+        let order = value.borrow().order();
         node(XmlReference {
             value: value.borrow().value(),
             parent,
             owner,
+            order,
         })
     }
 
@@ -2897,7 +2932,7 @@ impl XmlReferenceValue {
 #[derive(Clone, Debug)]
 pub struct XmlText {
     text: String,
-    parent: Option<XmlNode<XmlElement>>,
+    parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
     order: i64,
 }
@@ -2923,7 +2958,10 @@ impl Character for XmlText {
     }
 
     fn parent(&self) -> error::Result<XmlNode<XmlElement>> {
-        self.parent.clone().ok_or(error::Error::IsolatedNode)
+        self.parent
+            .clone()
+            .and_then(|v| v.as_element())
+            .ok_or(error::Error::IsolatedNode)
     }
 }
 
@@ -2940,11 +2978,7 @@ impl fmt::Display for XmlText {
 }
 
 impl XmlText {
-    pub fn new(
-        value: &str,
-        parent: Option<XmlNode<XmlElement>>,
-        owner: XmlNode<XmlDocument>,
-    ) -> XmlNode<Self> {
+    pub fn new(value: &str, parent: Option<XmlItem>, owner: XmlNode<XmlDocument>) -> XmlNode<Self> {
         let text = value.to_string();
         node(XmlText {
             text,
@@ -3914,7 +3948,7 @@ mod tests {
         assert!(parent.as_element().is_some());
 
         // Sortable
-        assert_eq!(5, child.borrow().order());
+        assert_eq!(7, child.borrow().order());
 
         // PartialEq
         assert_eq!(root, root);
@@ -4117,7 +4151,7 @@ mod tests {
         assert_eq!("http://test/", d.borrow().namespace_name());
 
         // Sortable
-        assert_eq!(4, e1.borrow().order());
+        assert_eq!(5, e1.borrow().order());
 
         // PartialEq
         assert_eq!(e1, e1);
@@ -4163,7 +4197,7 @@ mod tests {
         );
 
         // Sortable
-        assert_eq!(4, e1.borrow().order());
+        assert_eq!(5, e1.borrow().order());
 
         // PartialEq
         assert_eq!(e1, e1);
@@ -4214,7 +4248,7 @@ mod tests {
         assert_eq!("http://test/e2", d.borrow().namespace_name());
 
         // Sortable
-        assert_eq!(4, e1.borrow().order());
+        assert_eq!(5, e1.borrow().order());
 
         // PartialEq
         assert_eq!(e1, e1);
@@ -4247,7 +4281,7 @@ mod tests {
         assert_eq!("http://test/ns", d.borrow().namespace_name());
 
         // Sortable
-        assert_eq!(4, e1.borrow().order());
+        assert_eq!(5, e1.borrow().order());
 
         // PartialEq
         assert_eq!(e1, e1);
@@ -4282,7 +4316,6 @@ mod tests {
 
         // Element[namespaces inherit]
         let in_scope_namespace = e2.borrow().in_scope_namespace().unwrap();
-        dbg!(&in_scope_namespace);
         assert_eq!(1, in_scope_namespace.iter().len());
 
         let mut i = in_scope_namespace.iter();
@@ -4294,7 +4327,7 @@ mod tests {
         );
 
         // Sortable
-        assert_eq!(4, e1.borrow().order());
+        assert_eq!(5, e1.borrow().order());
 
         // PartialEq
         assert_eq!(e1, e1);
@@ -4345,7 +4378,7 @@ mod tests {
         assert_eq!("http://test/ns/e2", d.borrow().namespace_name());
 
         // Sortable
-        assert_eq!(4, e1.borrow().order());
+        assert_eq!(5, e1.borrow().order());
 
         // PartialEq
         assert_eq!(e1, e1);
@@ -4437,7 +4470,7 @@ mod tests {
         assert_eq!("root", parent.borrow().local_name());
 
         // Sortable
-        assert_eq!(6, attr.borrow().order());
+        assert_eq!(7, attr.borrow().order());
 
         // PartialEq
         assert_eq!(attr, attr);
