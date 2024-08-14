@@ -1432,6 +1432,42 @@ impl Element for XmlElement {
     }
 }
 
+impl ElementMut for XmlElement {
+    fn set_attribute(&mut self, name: &str, value: &str) -> error::Result<()> {
+        let mut attr = self.owner_document().unwrap().create_attribute(name)?;
+        attr.set_value(value)?;
+        self.set_attribute_node(attr)?;
+        Ok(())
+    }
+
+    fn remove_attribute(&mut self, name: &str) -> error::Result<()> {
+        self.element.borrow_mut().remove_attribute(name);
+        self.owner_document().unwrap().reset_order();
+        Ok(())
+    }
+
+    fn set_attribute_node(&mut self, new_attr: XmlAttr) -> error::Result<Option<XmlAttr>> {
+        if self.owner_document() != new_attr.owner_document() {
+            return Err(error::Error::WrongDoucmentErr);
+        }
+
+        let attr = self
+            .element
+            .borrow_mut()
+            .remove_attribute(new_attr.name().as_str());
+
+        self.element
+            .borrow_mut()
+            .append_attribute(new_attr.attribute);
+
+        self.owner_document().unwrap().reset_order();
+
+        Ok(attr.map(XmlAttr::from))
+    }
+
+    fn normalize(&mut self) {}
+}
+
 impl Node for XmlElement {
     fn node_name(&self) -> String {
         self.tag_name()
@@ -1494,6 +1530,50 @@ impl Node for XmlElement {
 
     fn has_child(&self) -> bool {
         self.has_child_node()
+    }
+}
+
+impl NodeMut for XmlElement {
+    fn set_node_value(&mut self, _: &str) -> error::Result<()> {
+        Err(error::Error::NoDataAllowedErr)
+    }
+
+    fn insert_before(
+        &mut self,
+        new_child: XmlNode,
+        ref_child: Option<&XmlNode>,
+    ) -> error::Result<XmlNode> {
+        if self.owner_document() != new_child.owner_document() {
+            return Err(error::Error::WrongDoucmentErr);
+        }
+
+        let value = if let Some(r) = ref_child {
+            if self.owner_document() != r.owner_document() {
+                return Err(error::Error::WrongDoucmentErr);
+            }
+
+            // TODO: remove new_child from teee.
+            self.element
+                .borrow_mut()
+                .insert_at_order(new_child.try_into()?, r.order())?
+        } else {
+            self.element.borrow_mut().append(new_child.try_into()?)?
+        };
+
+        self.owner_document().unwrap().reset_order();
+
+        Ok(XmlNode::from(value))
+    }
+
+    fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
+        if self.owner_document() != old_child.owner_document() {
+            return Err(error::Error::WrongDoucmentErr);
+        }
+
+        match self.element.borrow_mut().delete_by_order(old_child.order()) {
+            Some(v) => Ok(XmlNode::from(v)),
+            _ => Err(error::Error::NotFoundErr),
+        }
     }
 }
 
@@ -3248,7 +3328,7 @@ mod tests {
         )
         .unwrap();
         let root = doc.document_element().unwrap();
-        let elem1 =
+        let mut elem1 =
             if let XmlNode::Element(e) = root.get_elements_by_tag_name("elem1").item(0).unwrap() {
                 e.clone()
             } else {
@@ -3274,6 +3354,16 @@ mod tests {
         // Element
         assert_eq!("b", elem1.get_attribute("a").unwrap());
         assert_eq!(Some(attra.clone()), elem1.get_attribute_node("a"));
+
+        // ElementMut
+        elem1.set_attribute("d", "e").unwrap();
+        elem1.remove_attribute("d").unwrap();
+        elem1
+            .set_attribute_node(doc.create_attribute("d").unwrap())
+            .unwrap();
+        elem1
+            .remove_attribute_node(elem1.get_attribute_node("d").unwrap())
+            .unwrap();
 
         // Node (elem1)
         assert_eq!("elem1", elem1.node_name());
@@ -3331,6 +3421,25 @@ mod tests {
         // AsStringValue
         assert_eq!("data1", elem1.as_string_value().unwrap());
         assert_eq!("", elem2.as_string_value().unwrap());
+
+        // NodeMut
+        elem1.set_node_value("a").err().unwrap();
+        let d = elem1
+            .insert_before(doc.create_text_node("d").unwrap().as_node(), None)
+            .unwrap();
+        assert_eq!("data1d", elem1.as_string_value().unwrap());
+        let e = elem1
+            .insert_before(doc.create_text_node("e").unwrap().as_node(), Some(&d))
+            .unwrap();
+        assert_eq!("data1ed", elem1.as_string_value().unwrap());
+        let _ = elem1
+            .replace_child(doc.create_text_node("f").unwrap().as_node(), &e)
+            .unwrap();
+        assert_eq!("data1fd", elem1.as_string_value().unwrap());
+        let d = elem1.remove_child(&d).unwrap();
+        assert_eq!("data1f", elem1.as_string_value().unwrap());
+        elem1.append_child(d).unwrap();
+        assert_eq!("data1fd", elem1.as_string_value().unwrap());
     }
 
     #[test]

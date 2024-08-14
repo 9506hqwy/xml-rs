@@ -1906,6 +1906,56 @@ impl XmlElement {
         }
     }
 
+    pub fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
+        match value {
+            XmlItem::CData(_)
+            | XmlItem::CharReference(_)
+            | XmlItem::Comment(_)
+            | XmlItem::Element(_)
+            | XmlItem::PI(_)
+            | XmlItem::Text(_)
+            | XmlItem::Unexpanded(_) => {
+                self.children.push(value.clone());
+                Ok(value)
+            }
+            _ => Err(error::Error::InvalidType),
+        }
+    }
+
+    pub fn append_attribute(&mut self, attr: XmlNode<XmlAttribute>) {
+        self.attributes.push(attr);
+    }
+
+    pub fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
+        if let Some(v) = self.children.iter().find(|v| v.order() == order).cloned() {
+            self.children.retain(|v| v.order() != order);
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn insert_at_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem> {
+        let index = self
+            .children
+            .iter()
+            .position(|v| order <= v.order())
+            .ok_or(error::Error::OufOfIndex(order))?;
+        match value {
+            XmlItem::CData(_)
+            | XmlItem::CharReference(_)
+            | XmlItem::Comment(_)
+            | XmlItem::Element(_)
+            | XmlItem::PI(_)
+            | XmlItem::Text(_)
+            | XmlItem::Unexpanded(_) => {
+                self.children.insert(index, value.clone());
+                Ok(value)
+            }
+            _ => Err(error::Error::InvalidType),
+        }
+    }
+
     pub fn namespaces(&self) -> error::Result<Vec<XmlNode<XmlNamespace>>> {
         let mut items = vec![];
 
@@ -1934,6 +1984,20 @@ impl XmlElement {
 
     pub fn owner(&self) -> XmlNode<XmlDocument> {
         self.owner.clone()
+    }
+
+    pub fn remove_attribute(&mut self, name: &str) -> Option<XmlNode<XmlAttribute>> {
+        if let Some(v) = self
+            .attributes
+            .iter()
+            .find(|v| v.borrow().local_name() == name)
+            .cloned()
+        {
+            self.attributes.retain(|v| v.borrow().local_name() != name);
+            Some(v)
+        } else {
+            None
+        }
     }
 
     pub fn set_local_name(&mut self, local_name: &str) {
