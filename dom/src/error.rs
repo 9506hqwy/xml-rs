@@ -8,6 +8,7 @@ pub enum Error {
     IndexSizeErr,
     Info(xml_info::error::Error),
     NoDataAllowedErr,
+    NoModificationAllowedErr,
     NotFoundErr,
     Parse(String),
     WrongDoucmentErr,

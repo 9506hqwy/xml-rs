@@ -1,5 +1,6 @@
 pub mod error;
 
+use std::any::Any;
 use std::convert;
 use std::fmt;
 use std::iter::Iterator;
@@ -147,7 +148,7 @@ pub trait NamedNodeMap<T> {
 }
 
 pub trait NamedNodeMapMut<T>: NamedNodeMap<T> {
-    fn set_named_item(&mut self, arg: T) -> error::Result<T>;
+    fn set_named_item(&mut self, arg: T) -> error::Result<Option<T>>;
 
     fn remove_named_item(&mut self, name: &str) -> error::Result<T>;
 }
@@ -1145,6 +1146,7 @@ where
     T: Node + Clone,
 {
     nodes: Vec<(String, T)>,
+    parent: XmlNode,
 }
 
 impl<T> NamedNodeMap<T> for XmlNamedNodeMap<T>
@@ -1166,18 +1168,86 @@ where
     }
 }
 
+impl<T> NamedNodeMapMut<T> for XmlNamedNodeMap<T>
+where
+    T: Node + Clone + Any,
+{
+    fn set_named_item(&mut self, arg: T) -> error::Result<Option<T>> {
+        let name = arg.node_name();
+        match self.remove_named_item(name.as_str()) {
+            Ok(v) => {
+                self.nodes.push((name, arg.clone()));
+                self.add_item_to_parent(arg)?;
+                Ok(Some(v))
+            }
+            _ => {
+                self.nodes.push((name, arg.clone()));
+                self.add_item_to_parent(arg)?;
+                Ok(None)
+            }
+        }
+    }
+
+    fn remove_named_item(&mut self, name: &str) -> error::Result<T> {
+        if let Some(v) = self.nodes.iter().find(|v| v.0 == name).cloned() {
+            self.nodes.retain(|v| v.0 != name);
+            self.remove_item_from_parent(v.1.clone())?;
+            Ok(v.1)
+        } else {
+            Err(error::Error::NotFoundErr)
+        }
+    }
+}
+
 impl<T> XmlNamedNodeMap<T>
 where
-    T: Node + Clone,
+    T: Node + Clone + Any,
 {
-    pub fn empty() -> Self {
-        XmlNamedNodeMap { nodes: vec![] }
+    pub fn empty(parent: XmlNode) -> Self {
+        XmlNamedNodeMap {
+            nodes: vec![],
+            parent,
+        }
     }
 
     pub fn iter(&self) -> XmlNamedNodeIter<T> {
         XmlNamedNodeIter {
             nodes: self.clone(),
             index: 0,
+        }
+    }
+
+    fn add_item_to_parent(&mut self, arg: T) -> error::Result<()> {
+        let obj = &arg as &dyn Any;
+
+        match &mut self.parent {
+            XmlNode::Element(e) => {
+                if let Some(v) = obj.downcast_ref::<XmlAttr>() {
+                    e.set_attribute_node(v.clone())?;
+                    Ok(())
+                } else {
+                    unreachable!()
+                }
+            }
+            XmlNode::DocumentType(_) => Err(error::Error::NoModificationAllowedErr),
+            _ => unreachable!(),
+        }
+    }
+
+    fn remove_item_from_parent(&mut self, arg: T) -> error::Result<()> {
+        let obj = &arg as &dyn Any;
+
+        match &mut self.parent {
+            XmlNode::Element(e) => {
+                if let Some(v) = obj.downcast_ref::<XmlAttr>() {
+                    e.remove_attribute_node(v.clone())?;
+                    Ok(())
+                } else {
+                    unreachable!()
+                }
+            }
+            XmlNode::DocumentType(_) => Err(error::Error::NoModificationAllowedErr),
+            _ => unreachable!(),
         }
     }
 }
@@ -1536,7 +1606,10 @@ impl Node for XmlElement {
             .map(|v| (v.name(), v))
             .collect();
 
-        Some(XmlNamedNodeMap { nodes })
+        Some(XmlNamedNodeMap {
+            nodes,
+            parent: self.as_node(),
+        })
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
@@ -2217,7 +2290,10 @@ impl DocumentType for XmlDocumentType {
             .map(|v| (v.node_name(), v))
             .collect();
 
-        XmlNamedNodeMap { nodes }
+        XmlNamedNodeMap {
+            nodes,
+            parent: self.as_node(),
+        }
     }
 
     fn notations(&self) -> XmlNamedNodeMap<XmlNotation> {
@@ -2231,7 +2307,10 @@ impl DocumentType for XmlDocumentType {
             .map(|v| (v.node_name(), v))
             .collect();
 
-        XmlNamedNodeMap { nodes }
+        XmlNamedNodeMap {
+            nodes,
+            parent: self.as_node(),
+        }
     }
 }
 
@@ -3455,6 +3534,19 @@ mod tests {
         assert_eq!("data1f", elem1.as_string_value().unwrap());
         elem1.append_child(d).unwrap();
         assert_eq!("data1fd", elem1.as_string_value().unwrap());
+
+        // NamedNodeMapMut
+        let mut attrs = elem1.attributes().unwrap();
+        let a = doc.create_attribute("a").unwrap();
+        let e = doc.create_attribute("e").unwrap();
+        assert_ne!(None, attrs.set_named_item(a).unwrap());
+        assert_ne!(None, elem1.get_attribute_node("a"));
+        assert_eq!(None, attrs.set_named_item(e.clone()).unwrap());
+        assert_ne!(None, elem1.get_attribute_node("e"));
+        let removed = attrs.remove_named_item(e.name().as_str()).unwrap();
+        assert_eq!("e", removed.node_name());
+        assert_eq!(None, elem1.get_attribute_node("e"));
+        attrs.remove_named_item(e.name().as_str()).err().unwrap();
     }
 
     #[test]
