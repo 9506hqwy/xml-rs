@@ -82,7 +82,7 @@ pub trait Node {
 
     fn next_sibling(&self) -> Option<XmlNode>;
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap>;
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>>;
 
     fn owner_document(&self) -> Option<XmlDocument>;
 
@@ -138,18 +138,18 @@ pub trait NodeList {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait NamedNodeMap {
-    fn get_named_item(&self, name: &str) -> Option<XmlNode>;
+pub trait NamedNodeMap<T> {
+    fn get_named_item(&self, name: &str) -> Option<T>;
 
-    fn item(&self, index: usize) -> Option<XmlNode>;
+    fn item(&self, index: usize) -> Option<T>;
 
     fn length(&self) -> usize;
 }
 
-pub trait NamedNodeMapMut: NamedNodeMap {
-    fn set_named_item(&mut self, arg: XmlNode) -> error::Result<XmlNode>;
+pub trait NamedNodeMapMut<T>: NamedNodeMap<T> {
+    fn set_named_item(&mut self, arg: T) -> error::Result<T>;
 
-    fn remove_named_item(&mut self, name: &str) -> error::Result<XmlNode>;
+    fn remove_named_item(&mut self, name: &str) -> error::Result<T>;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -253,9 +253,9 @@ pub trait CDataSectionMut: TextMut {}
 pub trait DocumentType: Node {
     fn name(&self) -> String;
 
-    fn entities(&self) -> XmlNamedNodeMap;
+    fn entities(&self) -> XmlNamedNodeMap<XmlEntity>;
 
-    fn notations(&self) -> XmlNamedNodeMap;
+    fn notations(&self) -> XmlNamedNodeMap<XmlNotation>;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -484,7 +484,7 @@ impl Node for XmlNode {
         }
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         match self {
             XmlNode::Element(v) => v.attributes(),
             XmlNode::Attribute(v) => v.attributes(),
@@ -815,7 +815,7 @@ impl Node for XmlDocumentFragment {
         None
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -999,7 +999,7 @@ impl Node for XmlDocument {
         None
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -1140,17 +1140,23 @@ impl Iterator for XmlNodeIter {
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct XmlNamedNodeMap {
-    nodes: Vec<(String, XmlNode)>,
+pub struct XmlNamedNodeMap<T>
+where
+    T: Node + Clone,
+{
+    nodes: Vec<(String, T)>,
 }
 
-impl NamedNodeMap for XmlNamedNodeMap {
-    fn get_named_item(&self, name: &str) -> Option<XmlNode> {
+impl<T> NamedNodeMap<T> for XmlNamedNodeMap<T>
+where
+    T: Node + Clone,
+{
+    fn get_named_item(&self, name: &str) -> Option<T> {
         let node = self.nodes.iter().find(|v| v.0 == name).map(|v| &v.1);
         node.cloned()
     }
 
-    fn item(&self, index: usize) -> Option<XmlNode> {
+    fn item(&self, index: usize) -> Option<T> {
         let node = self.nodes.get(index).map(|v| &v.1);
         node.cloned()
     }
@@ -1160,12 +1166,15 @@ impl NamedNodeMap for XmlNamedNodeMap {
     }
 }
 
-impl XmlNamedNodeMap {
+impl<T> XmlNamedNodeMap<T>
+where
+    T: Node + Clone,
+{
     pub fn empty() -> Self {
         XmlNamedNodeMap { nodes: vec![] }
     }
 
-    pub fn iter(&self) -> XmlNamedNodeIter {
+    pub fn iter(&self) -> XmlNamedNodeIter<T> {
         XmlNamedNodeIter {
             nodes: self.clone(),
             index: 0,
@@ -1175,13 +1184,19 @@ impl XmlNamedNodeMap {
 
 // -----------------------------------------------------------------------------------------------
 
-pub struct XmlNamedNodeIter {
-    nodes: XmlNamedNodeMap,
+pub struct XmlNamedNodeIter<T>
+where
+    T: Node + Clone,
+{
+    nodes: XmlNamedNodeMap<T>,
     index: usize,
 }
 
-impl Iterator for XmlNamedNodeIter {
-    type Item = XmlNode;
+impl<T> Iterator for XmlNamedNodeIter<T>
+where
+    T: Node + Clone,
+{
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         let item = self.nodes.item(self.index);
@@ -1252,7 +1267,7 @@ impl Node for XmlAttr {
         None
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -1511,14 +1526,14 @@ impl Node for XmlElement {
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         let nodes = self
             .element
             .borrow()
             .attributes()
             .iter()
             .map(XmlAttr::from)
-            .map(|v| (v.name(), v.as_node()))
+            .map(|v| (v.name(), v))
             .collect();
 
         Some(XmlNamedNodeMap { nodes })
@@ -1821,7 +1836,7 @@ impl Node for XmlText {
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -1964,7 +1979,7 @@ impl Node for XmlComment {
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -2118,7 +2133,7 @@ impl Node for XmlCDataSection {
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -2191,7 +2206,7 @@ impl DocumentType for XmlDocumentType {
         self.declaration.borrow().local_name().to_string()
     }
 
-    fn entities(&self) -> XmlNamedNodeMap {
+    fn entities(&self) -> XmlNamedNodeMap<XmlEntity> {
         let nodes = self
             .declaration
             .borrow()
@@ -2199,13 +2214,13 @@ impl DocumentType for XmlDocumentType {
             .iter()
             .cloned()
             .map(XmlEntity::from)
-            .map(|v| (v.node_name(), v.as_node()))
+            .map(|v| (v.node_name(), v))
             .collect();
 
         XmlNamedNodeMap { nodes }
     }
 
-    fn notations(&self) -> XmlNamedNodeMap {
+    fn notations(&self) -> XmlNamedNodeMap<XmlNotation> {
         let nodes = self
             .declaration
             .borrow()
@@ -2213,7 +2228,7 @@ impl DocumentType for XmlDocumentType {
             .iter()
             .cloned()
             .map(XmlNotation::from)
-            .map(|v| (v.node_name(), v.as_node()))
+            .map(|v| (v.node_name(), v))
             .collect();
 
         XmlNamedNodeMap { nodes }
@@ -2261,7 +2276,7 @@ impl Node for XmlDocumentType {
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -2360,7 +2375,7 @@ impl Node for XmlNotation {
         parent.next_sibling_child(self.as_node())
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -2465,7 +2480,7 @@ impl Node for XmlEntity {
         parent.and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -2576,7 +2591,7 @@ impl Node for XmlEntityReference {
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -2698,7 +2713,7 @@ impl Node for XmlProcessingInstruction {
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -2795,7 +2810,7 @@ impl Node for XmlNamespace {
         None
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -3012,7 +3027,7 @@ impl Node for XmlResolvedText {
             .and_then(|parent| parent.next_sibling_child(self.as_node()))
     }
 
-    fn attributes(&self) -> Option<XmlNamedNodeMap> {
+    fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
         None
     }
 
@@ -3378,7 +3393,7 @@ mod tests {
         assert_eq!(None, elem1.previous_sibling());
         assert_eq!(Some(elem2.as_node()), elem1.next_sibling());
         for child in elem1.attributes().unwrap().iter() {
-            assert_eq!(attra.as_node(), child);
+            assert_eq!(attra, child);
         }
         assert_eq!(Some(doc.clone()), elem1.owner_document());
         assert!(elem1.has_child());
@@ -3394,7 +3409,7 @@ mod tests {
         assert_eq!(Some(elem1.as_node()), elem2.previous_sibling());
         assert_eq!(None, elem2.next_sibling());
         for child in elem2.attributes().unwrap().iter() {
-            assert_eq!(attrc.as_node(), child);
+            assert_eq!(attrc, child);
         }
         assert_eq!(Some(doc.clone()), elem2.owner_document());
         assert!(!elem2.has_child());
@@ -3413,7 +3428,7 @@ mod tests {
         assert_eq!(None, node.previous_sibling());
         assert_eq!(Some(elem2.as_node()), node.next_sibling());
         for child in node.attributes().unwrap().iter() {
-            assert_eq!(attra.as_node(), child);
+            assert_eq!(attra, child);
         }
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(node.has_child());

@@ -519,7 +519,7 @@ fn attributes(node: dom::XmlNode) -> Vec<dom::XmlNode> {
 
     if let Some(attrs) = node.attributes() {
         for attr in attrs.iter() {
-            nodes.push(attr);
+            nodes.push(attr.as_node());
         }
     }
 
