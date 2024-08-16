@@ -2751,13 +2751,20 @@ impl ProcessingInstruction for XmlProcessingInstruction {
     }
 }
 
+impl ProcessingInstructionMut for XmlProcessingInstruction {
+    fn set_data(&mut self, data: &str) -> error::Result<()> {
+        self.pi.borrow_mut().set_content(data)?;
+        Ok(())
+    }
+}
+
 impl Node for XmlProcessingInstruction {
     fn node_name(&self) -> String {
         self.target()
     }
 
     fn node_value(&self) -> error::Result<Option<String>> {
-        Ok(None)
+        Ok(Some(self.data()))
     }
 
     fn node_type(&self) -> NodeType {
@@ -2802,6 +2809,20 @@ impl Node for XmlProcessingInstruction {
 
     fn has_child(&self) -> bool {
         false
+    }
+}
+
+impl NodeMut for XmlProcessingInstruction {
+    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
+        self.set_data(value)
+    }
+
+    fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
+        Err(error::Error::HierarchyRequestErr)
+    }
+
+    fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
+        Err(error::Error::HierarchyRequestErr)
     }
 }
 
@@ -3763,6 +3784,68 @@ mod tests {
 
         // AsStringValue
         assert_eq!("&<>\"", cdata.as_string_value().unwrap());
+    }
+
+    #[test]
+    fn test_pi() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut pi = if let XmlNode::PI(e) = root.child_nodes().item(0).unwrap() {
+            e.clone()
+        } else {
+            unreachable!()
+        };
+
+        // ProcessingInstruction
+        assert_eq!("a", pi.target());
+        assert_eq!("b", pi.data());
+
+        // ProcessingInstructionMut
+        pi.set_data("c").unwrap();
+        assert_eq!("c", pi.data());
+        pi.set_data("b").unwrap();
+
+        // Node
+        assert_eq!("a", pi.node_name());
+        assert_eq!(Some("b".to_string()), pi.node_value().unwrap());
+        assert_eq!(NodeType::PI, pi.node_type());
+        assert_eq!(Some(root.as_node()), pi.parent_node());
+        assert_eq!(XmlNodeList::empty(), pi.child_nodes());
+        assert_eq!(None, pi.first_child());
+        assert_eq!(None, pi.last_child());
+        assert_eq!(None, pi.previous_sibling());
+        assert_eq!(None, pi.next_sibling());
+        assert_eq!(None, pi.attributes());
+        assert_eq!(Some(doc.clone()), pi.owner_document());
+        assert!(!pi.has_child());
+
+        // NodeMut
+        let e = root.clone().as_node();
+        pi.set_node_value("c").unwrap();
+        assert_eq!("c", pi.data());
+        pi.insert_before(e.clone(), Some(&e)).err().unwrap();
+        pi.replace_child(e.clone(), &e).err().unwrap();
+        pi.remove_child(&e).err().unwrap();
+        pi.append_child(e.clone()).err().unwrap();
+        pi.set_node_value("b").unwrap();
+
+        // XmlNode
+        let node = pi.as_node();
+        assert_eq!("a", node.node_name());
+        assert_eq!(Some("b".to_string()), node.node_value().unwrap());
+        assert_eq!(NodeType::PI, node.node_type());
+        assert_eq!(Some(root.as_node()), node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(!node.has_child());
+
+        // AsStringValue
+        assert_eq!("b", pi.as_string_value().unwrap());
     }
 
     #[test]
