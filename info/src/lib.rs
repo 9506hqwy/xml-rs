@@ -710,6 +710,21 @@ impl XmlCData {
         self.owner.clone()
     }
 
+    pub fn split_at(&mut self, offset: usize) -> XmlNode<Self> {
+        let mut chars = self.data.chars().collect::<Vec<char>>();
+        let at = if offset < chars.len() {
+            offset
+        } else {
+            chars.len()
+        };
+
+        let chars2 = chars.split_off(at);
+        self.data = chars.iter().collect();
+        let data2 = chars2.iter().collect::<String>();
+
+        XmlCData::new(data2.as_str(), self.parent.clone(), self.owner.clone())
+    }
+
     pub fn substring(&self, range: Range<usize>) -> String {
         self.data
             .chars()
@@ -3163,6 +3178,25 @@ impl XmlText {
 
     pub fn owner(&self) -> XmlNode<XmlDocument> {
         self.owner.clone()
+    }
+
+    pub fn parent_item(&self) -> Option<XmlItem> {
+        self.parent.clone()
+    }
+
+    pub fn split_at(&mut self, offset: usize) -> XmlNode<Self> {
+        let mut chars = self.text.chars().collect::<Vec<char>>();
+        let at = if offset < chars.len() {
+            offset
+        } else {
+            chars.len()
+        };
+
+        let chars2 = chars.split_off(at);
+        self.text = chars.iter().collect();
+        let text2 = chars2.iter().collect::<String>();
+
+        XmlText::new(text2.as_str(), self.parent.clone(), self.owner.clone())
     }
 
     pub fn substring(&self, range: Range<usize>) -> String {
@@ -5631,6 +5665,34 @@ mod tests {
     }
 
     #[test]
+    fn test_cdata_split_at_in() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[01234]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        let cdata2 = cdata.borrow_mut().split_at(2);
+        assert_eq!("01", cdata.borrow().character_code());
+        assert_eq!("234", cdata2.borrow().character_code());
+    }
+
+    #[test]
+    fn test_cdata_split_at_out() {
+        let (rest, tree) = xml_parser::document("<root><![CDATA[01234]]></root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let cdata = root.borrow().children().get(0).unwrap().as_cdata().unwrap();
+
+        let cdata2 = cdata.borrow_mut().split_at(5);
+        assert_eq!("01234", cdata.borrow().character_code());
+        assert_eq!("", cdata2.borrow().character_code());
+    }
+
+    #[test]
     fn char_reference_10() {
         let (rest, tree) = xml_parser::document("<root>&#12354;</root>").unwrap();
         assert_eq!("", rest);
@@ -5868,6 +5930,34 @@ mod tests {
         let text = root.borrow().children().get(0).unwrap().as_text().unwrap();
 
         text.borrow_mut().insert(1, "a&amp;b").err().unwrap();
+    }
+
+    #[test]
+    fn test_text_split_at_in() {
+        let (rest, tree) = xml_parser::document("<root>01234</root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let text = root.borrow().children().get(0).unwrap().as_text().unwrap();
+
+        let text2 = text.borrow_mut().split_at(2);
+        assert_eq!("01", text.borrow().character_code());
+        assert_eq!("234", text2.borrow().character_code());
+    }
+
+    #[test]
+    fn test_text_split_at_out() {
+        let (rest, tree) = xml_parser::document("<root>01234</root>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let text = root.borrow().children().get(0).unwrap().as_text().unwrap();
+
+        let text2 = text.borrow_mut().split_at(5);
+        assert_eq!("01234", text.borrow().character_code());
+        assert_eq!("", text2.borrow().character_code());
     }
 
     #[test]

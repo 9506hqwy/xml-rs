@@ -1825,7 +1825,57 @@ impl Text for XmlText {}
 
 impl TextMut for XmlText {
     fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
-        todo!();
+        if self.length() < offset {
+            return Err(error::Error::IndexSizeErr);
+        }
+
+        let parent = self.data.borrow().parent_item();
+        match parent {
+            Some(info::XmlItem::Attribute(v)) => {
+                let data2 = self.data.borrow_mut().split_at(offset);
+                let new_order = self.data.borrow().order() + 1;
+
+                match v
+                    .borrow_mut()
+                    .insert_at_order(data2.clone().into(), new_order)
+                {
+                    Ok(_) => {}
+                    Err(info::error::Error::OufOfIndex(_)) => {
+                        v.borrow_mut().append(data2.clone().into())?;
+                    }
+                    Err(e) => {
+                        return Err(error::Error::from(e));
+                    }
+                }
+
+                self.owner_document().unwrap().reset_order();
+
+                Ok(XmlResolvedText::from(XmlText::from(data2)))
+            }
+            Some(info::XmlItem::Element(v)) => {
+                let data2 = self.data.borrow_mut().split_at(offset);
+                let new_order = self.data.borrow().order() + 1;
+
+                let inserted = v
+                    .borrow_mut()
+                    .insert_at_order(data2.clone().into(), new_order);
+
+                match inserted {
+                    Ok(_) => {}
+                    Err(info::error::Error::OufOfIndex(_)) => {
+                        v.borrow_mut().append(data2.clone().into())?;
+                    }
+                    Err(e) => {
+                        return Err(error::Error::from(e));
+                    }
+                }
+
+                self.owner_document().unwrap().reset_order();
+
+                Ok(XmlResolvedText::from(XmlText::from(data2)))
+            }
+            _ => Err(error::Error::HierarchyRequestErr),
+        }
     }
 }
 
@@ -2122,7 +2172,32 @@ impl Text for XmlCDataSection {}
 
 impl TextMut for XmlCDataSection {
     fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
-        todo!();
+        if self.length() < offset {
+            return Err(error::Error::IndexSizeErr);
+        }
+
+        let v = self.data.borrow().parent()?;
+
+        let data2 = self.data.borrow_mut().split_at(offset);
+        let new_order = self.data.borrow().order() + 1;
+
+        let inserted = v
+            .borrow_mut()
+            .insert_at_order(data2.clone().into(), new_order);
+
+        match inserted {
+            Ok(_) => {}
+            Err(info::error::Error::OufOfIndex(_)) => {
+                v.borrow_mut().append(data2.clone().into())?;
+            }
+            Err(e) => {
+                return Err(error::Error::from(e));
+            }
+        }
+
+        self.owner_document().unwrap().reset_order();
+
+        Ok(XmlResolvedText::from(XmlCDataSection::from(data2)))
     }
 }
 
@@ -2984,7 +3059,40 @@ impl Text for XmlResolvedText {}
 
 impl TextMut for XmlResolvedText {
     fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
-        todo!();
+        if self.length() < offset {
+            Err(error::Error::IndexSizeErr)
+        } else {
+            let mut data2 = XmlResolvedText { data: vec![] };
+            let mut length = 0;
+            for (i, d) in self.data.iter_mut().enumerate() {
+                match d {
+                    XmlNode::CData(v) => {
+                        length += v.length();
+                        if offset <= length {
+                            data2 = v.split_text(offset - (length - v.length()))?;
+                            data2.data.append(&mut self.data.split_off(i + 1));
+                            break;
+                        }
+                    }
+                    XmlNode::EntityReference(v) => {
+                        length += v.value()?.chars().count();
+                        if offset <= length {
+                            return Err(error::Error::NoDataAllowedErr);
+                        }
+                    }
+                    XmlNode::Text(v) => {
+                        length += v.length();
+                        if offset <= length {
+                            data2 = v.split_text(offset - (length - v.length()))?;
+                            data2.data.append(&mut self.data.split_off(i + 1));
+                            break;
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            Ok(data2)
+        }
     }
 }
 
@@ -3641,6 +3749,22 @@ mod tests {
     }
 
     #[test]
+    fn test_text_split_text() {
+        let (_, doc) = XmlDocument::from_raw("<root>text</root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut text = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
+            e.clone()
+        } else {
+            unreachable!()
+        };
+
+        let text2 = text.split_text(2).unwrap();
+
+        assert_eq!(Some("te"), text.node_value().unwrap().as_deref());
+        assert_eq!(Some("xt"), text2.node_value().unwrap().as_deref());
+    }
+
+    #[test]
     fn test_comment() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
@@ -3784,6 +3908,22 @@ mod tests {
 
         // AsStringValue
         assert_eq!("&<>\"", cdata.as_string_value().unwrap());
+    }
+
+    #[test]
+    fn test_cdata_split_text() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
+            e.clone()
+        } else {
+            unreachable!()
+        };
+
+        let cdata2 = cdata.split_text(1).unwrap();
+
+        assert_eq!(Some("c"), cdata.node_value().unwrap().as_deref());
+        assert_eq!(Some("data"), cdata2.node_value().unwrap().as_deref());
     }
 
     #[test]
