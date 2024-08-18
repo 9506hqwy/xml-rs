@@ -13,7 +13,6 @@ use xml_info::{
     Sortable as InfoSortable,
 };
 
-// TODO: read only.
 // TODO: re-implement ResolvedText
 
 pub type ExpandedName = (String, Option<String>, Option<String>);
@@ -882,10 +881,7 @@ impl Document for XmlDocument {
     fn doc_type(&self) -> Option<XmlDocumentType> {
         self.document
             .borrow()
-            .prolog()
-            .borrow()
-            .declaration()
-            .cloned()
+            .document_declaration()
             .map(XmlDocumentType::from)
     }
 
@@ -1014,8 +1010,8 @@ impl Node for XmlDocument {
 }
 
 impl NodeMut for XmlDocument {
-    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
-        todo!()
+    fn set_node_value(&mut self, _: &str) -> error::Result<()> {
+        Err(error::Error::NoDataAllowedErr)
     }
 
     fn insert_before(
@@ -1023,11 +1019,41 @@ impl NodeMut for XmlDocument {
         new_child: XmlNode,
         ref_child: Option<&XmlNode>,
     ) -> error::Result<XmlNode> {
-        todo!()
+        if Some(self.clone()) != new_child.owner_document() {
+            return Err(error::Error::WrongDoucmentErr);
+        }
+
+        let value = if let Some(r) = ref_child {
+            if Some(self.clone()) != r.owner_document() {
+                return Err(error::Error::WrongDoucmentErr);
+            }
+
+            // TODO: remove new_child from teee.
+            self.document
+                .borrow_mut()
+                .insert_at_order(new_child.try_into()?, r.order())?
+        } else {
+            self.document.borrow_mut().append(new_child.try_into()?)?
+        };
+
+        self.reset_order();
+
+        Ok(XmlNode::from(value))
     }
 
     fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
-        todo!()
+        if Some(self.clone()) != old_child.owner_document() {
+            return Err(error::Error::WrongDoucmentErr);
+        }
+
+        match self
+            .document
+            .borrow_mut()
+            .delete_by_order(old_child.order())
+        {
+            Some(v) => Ok(XmlNode::from(v)),
+            _ => Err(error::Error::NotFoundErr),
+        }
     }
 }
 
@@ -3396,7 +3422,7 @@ mod tests {
 
     #[test]
     fn test_document() {
-        let (_, m) = XmlDocument::from_raw("<root></root>").unwrap();
+        let (_, mut m) = XmlDocument::from_raw("<root></root>").unwrap();
         let elem = XmlElement {
             element: m.document.borrow().document_element().unwrap(),
         };
@@ -3463,6 +3489,25 @@ mod tests {
 
         // AsStringValue
         assert_eq!("", m.as_string_value().unwrap());
+
+        // NodeMut
+        m.set_node_value("a").err().unwrap();
+        let a = m
+            .insert_before(m.create_comment("a").unwrap().as_node(), None)
+            .unwrap();
+        assert_eq!("<root /><!--a-->", format!("{}", m));
+        let b = m
+            .insert_before(m.create_comment("b").unwrap().as_node(), Some(&a))
+            .unwrap();
+        assert_eq!("<root /><!--b--><!--a-->", format!("{}", m));
+        let _ = m
+            .replace_child(m.create_comment("c").unwrap().as_node(), &b)
+            .unwrap();
+        assert_eq!("<root /><!--c--><!--a-->", format!("{}", m));
+        let a = m.remove_child(&a).unwrap();
+        assert_eq!("<root /><!--c-->", format!("{}", m));
+        m.append_child(a).unwrap();
+        assert_eq!("<root /><!--c--><!--a-->", format!("{}", m));
     }
 
     #[test]

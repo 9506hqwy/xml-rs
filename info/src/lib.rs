@@ -1107,9 +1107,7 @@ impl From<&parser::DeclarationAttType<'_>> for XmlDeclarationAttType {
 
 #[derive(Clone, Debug)]
 pub struct XmlDocument {
-    prolog: XmlNode<XmlDocumentProlog>,
-    root: Option<XmlNode<XmlElement>>,
-    epilog: XmlNode<XmlDocumentEpilog>,
+    children: Vec<XmlItem>,
     base_uri: String,
     encoding: String,
     standalone: Option<bool>,
@@ -1126,23 +1124,7 @@ impl Sortable for XmlDocument {
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
 
-        for child in self.prolog.borrow_mut().head.as_mut_slice() {
-            child.set_order(numbering);
-        }
-
-        if let Some(declaration) = self.prolog.borrow_mut().declaration() {
-            declaration.borrow_mut().set_order(numbering);
-        }
-
-        for child in self.prolog.borrow_mut().tail.as_mut_slice() {
-            child.set_order(numbering);
-        }
-
-        if let Some(root) = self.root.as_mut() {
-            root.borrow_mut().set_order(numbering);
-        }
-
-        for child in self.epilog.borrow_mut().head.as_mut_slice() {
+        for child in self.children.as_mut_slice() {
             child.set_order(numbering);
         }
     }
@@ -1150,43 +1132,20 @@ impl Sortable for XmlDocument {
 
 impl Document for XmlDocument {
     fn children(&self) -> OrderedList<XmlItem> {
-        let mut items = vec![];
-
-        for v in self.prolog.borrow().head.as_slice() {
-            items.push(v.clone());
-        }
-
-        if let Some(v) = &self.prolog.borrow().declaration {
-            items.push(XmlItem::DocumentType(v.clone()));
-        }
-
-        for v in self.prolog.borrow().tail.as_slice() {
-            items.push(v.clone());
-        }
-
-        if let Some(v) = &self.root {
-            items.push(XmlItem::Element(v.clone()));
-        }
-
-        for v in self.epilog.borrow().head.as_slice() {
-            items.push(v.clone());
-        }
-
+        let items = self.children.clone();
         OrderedList::new(items)
     }
 
     fn document_element(&self) -> error::Result<XmlNode<XmlElement>> {
-        self.root
-            .clone()
+        self.children
+            .iter()
+            .find_map(|v| v.as_element())
             .ok_or(error::Error::NotFoundDoumentElement)
     }
 
     fn notations(&self) -> Option<UnorderedSet<XmlNode<XmlNotation>>> {
         let items = self
-            .prolog
-            .borrow()
-            .declaration
-            .as_ref()
+            .document_declaration()
             .map(|v| v.borrow().notations())
             .unwrap_or_default();
         for item in items.as_slice() {
@@ -1200,10 +1159,7 @@ impl Document for XmlDocument {
 
     fn unparsed_entities(&self) -> UnorderedSet<XmlNode<XmlUnparsedEntity>> {
         let items = self
-            .prolog
-            .borrow()
-            .declaration
-            .as_ref()
+            .document_declaration()
             .map(|v| v.borrow().unparsed_entities())
             .unwrap_or_default();
         UnorderedSet::new(items)
@@ -1232,9 +1188,7 @@ impl Document for XmlDocument {
 
 impl PartialEq<XmlDocument> for XmlDocument {
     fn eq(&self, other: &XmlDocument) -> bool {
-        self.prolog == other.prolog
-            && self.root == other.root
-            && self.epilog == other.epilog
+        self.children == other.children
             && self.encoding == other.encoding
             && self.standalone == other.standalone
             && self.version == other.version
@@ -1258,22 +1212,18 @@ impl fmt::Display for XmlDocument {
             write!(f, "?>")?;
         }
 
-        self.prolog.borrow().fmt(f)?;
-
-        if let Some(root) = &self.root {
-            root.borrow().fmt(f)?;
+        for child in self.children.as_slice() {
+            child.fmt(f)?;
         }
 
-        self.epilog.borrow().fmt(f)
+        Ok(())
     }
 }
 
 impl XmlDocument {
     pub fn new(value: &parser::Document<'_>) -> error::Result<XmlNode<Self>> {
         let document = node(XmlDocument {
-            prolog: node(XmlDocumentProlog::default()),
-            root: None,
-            epilog: node(XmlDocumentEpilog::default()),
+            children: vec![],
             base_uri: String::new(),
             encoding: xml_encoding(value),
             standalone: xml_standalone(value),
@@ -1282,18 +1232,45 @@ impl XmlDocument {
             order: 0,
         });
 
-        let prolog = XmlDocumentProlog::new(&value.prolog, document.clone());
-        document.borrow_mut().set_prolog(prolog);
+        fn add_misc(doc: XmlNode<XmlDocument>, misc: &parser::Misc<'_>) {
+            match misc {
+                parser::Misc::Comment(c) => {
+                    let c = XmlComment::new(c.value, Some(doc.clone().into()), doc.clone());
+                    doc.borrow_mut().children.push(c.into());
+                }
+                parser::Misc::PI(p) => {
+                    let p = XmlProcessingInstruction::new(p, Some(doc.clone().into()), doc.clone());
+                    doc.borrow_mut().children.push(p.into());
+                }
+                parser::Misc::Whitespace(_) => {}
+            }
+        }
+
+        for h in value.prolog.heads.as_slice() {
+            add_misc(document.clone(), h);
+        }
+
+        if let Some(d) = value.prolog.declaration_doc.as_ref() {
+            document
+                .borrow_mut()
+                .children
+                .push(XmlDocumentTypeDeclaration::new(d, document.clone()).into());
+        }
+
+        for t in value.prolog.tails.as_slice() {
+            add_misc(document.clone(), t);
+        }
 
         let element = XmlElement::new(
             &value.element,
             Some(document.clone().into()),
             document.clone(),
         );
-        document.borrow_mut().set_root(element?);
+        document.borrow_mut().children.push(element?.into());
 
-        let epilog = XmlDocumentEpilog::new(value, document.clone());
-        document.borrow_mut().set_epilog(epilog);
+        for h in value.miscs.as_slice() {
+            add_misc(document.clone(), h);
+        }
 
         document.borrow_mut().reset_order();
 
@@ -1307,147 +1284,90 @@ impl XmlDocument {
         doc
     }
 
-    pub fn clear_root(&mut self) {
-        self.root = None;
+    pub fn document_declaration(&self) -> Option<XmlNode<XmlDocumentTypeDeclaration>> {
+        self.children.iter().find_map(|v| v.as_document_type())
     }
 
-    pub fn prolog(&self) -> XmlNode<XmlDocumentProlog> {
-        self.prolog.clone()
+    pub fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
+        match value {
+            XmlItem::Comment(_) => {
+                self.children.push(value.clone());
+                Ok(value)
+            }
+            XmlItem::DocumentType(_) => {
+                if self.document_declaration().is_some() || self.document_element().is_ok() {
+                    Err(error::Error::InvalidType)
+                } else {
+                    self.children.push(value.clone());
+                    Ok(value)
+                }
+            }
+            XmlItem::Element(_) => {
+                if self.document_element().is_ok() {
+                    Err(error::Error::InvalidType)
+                } else {
+                    self.children.push(value.clone());
+                    Ok(value)
+                }
+            }
+            XmlItem::PI(_) => {
+                self.children.push(value.clone());
+                Ok(value)
+            }
+            _ => Err(error::Error::InvalidType),
+        }
+    }
+
+    pub fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
+        if let Some(v) = self.children.iter().find(|v| v.order() == order).cloned() {
+            self.children.retain(|v| v.order() != order);
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn insert_at_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem> {
+        let index = self
+            .children
+            .iter()
+            .position(|v| order <= v.order())
+            .ok_or(error::Error::OufOfIndex(order))?;
+        match value {
+            XmlItem::Comment(_) => {
+                self.children.insert(index, value.clone());
+                Ok(value)
+            }
+            XmlItem::DocumentType(_) => {
+                if self.document_declaration().is_some() || self.document_element().is_ok() {
+                    Err(error::Error::InvalidType)
+                } else {
+                    self.children.insert(index, value.clone());
+                    Ok(value)
+                }
+            }
+            XmlItem::Element(_) => {
+                if self.document_element().is_ok() {
+                    Err(error::Error::InvalidType)
+                } else {
+                    self.children.insert(index, value.clone());
+                    Ok(value)
+                }
+            }
+            XmlItem::PI(_) => {
+                self.children.insert(index, value.clone());
+                Ok(value)
+            }
+            _ => Err(error::Error::InvalidType),
+        }
     }
 
     pub fn reset_order(&mut self) {
         self.set_order(&mut CountUp::default());
     }
 
-    fn set_epilog(&mut self, epilog: XmlNode<XmlDocumentEpilog>) {
-        self.epilog = epilog;
-    }
-
-    fn set_prolog(&mut self, prolog: XmlNode<XmlDocumentProlog>) {
-        self.prolog = prolog;
-    }
-
-    fn set_root(&mut self, root: XmlNode<XmlElement>) {
-        self.root = Some(root);
-    }
-}
-
-// -----------------------------------------------------------------------------------------------
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct XmlDocumentEpilog {
-    head: Vec<XmlItem>,
-}
-
-impl fmt::Display for XmlDocumentEpilog {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        for item in self.head.as_slice() {
-            item.fmt(f)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl XmlDocumentEpilog {
-    pub fn new(value: &parser::Document, owner: XmlNode<XmlDocument>) -> XmlNode<Self> {
-        let mut head = vec![];
-
-        for h in value.miscs.as_slice() {
-            match h {
-                parser::Misc::Comment(c) => {
-                    let c = XmlComment::new(c.value, Some(owner.clone().into()), owner.clone());
-                    head.push(c.into());
-                }
-                parser::Misc::PI(p) => {
-                    let p =
-                        XmlProcessingInstruction::new(p, Some(owner.clone().into()), owner.clone());
-                    head.push(p.into());
-                }
-                parser::Misc::Whitespace(_) => {}
-            }
-        }
-
-        node(XmlDocumentEpilog { head })
-    }
-}
-
-// -----------------------------------------------------------------------------------------------
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct XmlDocumentProlog {
-    head: Vec<XmlItem>,
-    declaration: Option<XmlNode<XmlDocumentTypeDeclaration>>,
-    tail: Vec<XmlItem>,
-}
-
-impl fmt::Display for XmlDocumentProlog {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        for h in self.head.as_slice() {
-            h.fmt(f)?;
-        }
-
-        if let Some(decl) = self.declaration.as_ref() {
-            decl.borrow().fmt(f)?;
-        }
-
-        for t in self.tail.as_slice() {
-            t.fmt(f)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl XmlDocumentProlog {
-    pub fn new(value: &parser::Prolog, owner: XmlNode<XmlDocument>) -> XmlNode<Self> {
-        let mut head = vec![];
-        let mut declaration = None;
-        let mut tail = vec![];
-
-        for h in value.heads.as_slice() {
-            match h {
-                parser::Misc::Comment(c) => {
-                    let c = XmlComment::new(c.value, Some(owner.clone().into()), owner.clone());
-                    head.push(c.into());
-                }
-                parser::Misc::PI(p) => {
-                    let p =
-                        XmlProcessingInstruction::new(p, Some(owner.clone().into()), owner.clone());
-                    head.push(p.into());
-                }
-                parser::Misc::Whitespace(_) => {}
-            }
-        }
-
-        if let Some(d) = value.declaration_doc.as_ref() {
-            declaration = Some(XmlDocumentTypeDeclaration::new(d, owner.clone()));
-        }
-
-        for t in value.tails.as_slice() {
-            match t {
-                parser::Misc::Comment(c) => {
-                    let c = XmlComment::new(c.value, Some(owner.clone().into()), owner.clone());
-                    tail.push(c.into());
-                }
-                parser::Misc::PI(p) => {
-                    let p =
-                        XmlProcessingInstruction::new(p, Some(owner.clone().into()), owner.clone());
-                    tail.push(p.into());
-                }
-                parser::Misc::Whitespace(_) => {}
-            }
-        }
-
-        node(XmlDocumentProlog {
-            head,
-            declaration,
-            tail,
-        })
-    }
-
-    pub fn declaration(&self) -> Option<&XmlNode<XmlDocumentTypeDeclaration>> {
-        self.declaration.as_ref()
+    fn clear_root(&mut self) {
+        self.children.retain(|v| v.as_element().is_none());
     }
 }
 
@@ -1623,6 +1543,19 @@ impl XmlDocumentTypeDeclaration {
         }
 
         declaration
+    }
+
+    pub fn empty(name: &str, owner: XmlNode<XmlDocument>) -> XmlNode<Self> {
+        let declaration = XmlDocumentTypeDeclaration {
+            local_name: name.to_string(),
+            prefix: None,
+            system_identifier: None,
+            public_identifier: None,
+            children: vec![],
+            parent: owner,
+            order: 0,
+        };
+        node(declaration)
     }
 
     pub fn attributes(&self) -> Vec<XmlNode<XmlDeclarationAttList>> {
@@ -2053,9 +1986,7 @@ impl XmlElement {
     fn declaration_att_list(&self) -> Option<XmlNode<XmlDeclarationAttList>> {
         self.owner
             .borrow()
-            .prolog
-            .borrow()
-            .declaration()?
+            .document_declaration()?
             .borrow()
             .attributes()
             .iter()
@@ -3639,7 +3570,7 @@ fn delete_char_range(value: &str, offset: usize, count: usize) -> String {
 }
 
 fn entity(document: &XmlNode<XmlDocument>, name: &str) -> error::Result<XmlNode<XmlEntity>> {
-    if let Some(declaration) = document.borrow().prolog().borrow().declaration() {
+    if let Some(declaration) = document.borrow().document_declaration() {
         if let Some(v) = declaration
             .borrow()
             .entities()
@@ -3952,13 +3883,127 @@ mod tests {
     }
 
     #[test]
+    fn test_document_append() {
+        let doc = XmlDocument::empty();
+
+        doc.borrow_mut()
+            .append(XmlComment::new("a", None, doc.clone()).into())
+            .unwrap();
+        assert_eq!("<!--a-->", format!("{}", doc.borrow()));
+
+        doc.borrow_mut()
+            .append(
+                XmlProcessingInstruction::empty("b", doc.clone())
+                    .unwrap()
+                    .into(),
+            )
+            .unwrap();
+        assert_eq!("<!--a--><?b?>", format!("{}", doc.borrow()));
+
+        doc.borrow_mut()
+            .append(XmlDocumentTypeDeclaration::empty("c", doc.clone()).into())
+            .unwrap();
+        assert_eq!("<!--a--><?b?><!DOCTYPE c>", format!("{}", doc.borrow()));
+
+        doc.borrow_mut()
+            .append(XmlDocumentTypeDeclaration::empty("d", doc.clone()).into())
+            .err()
+            .unwrap();
+
+        doc.borrow_mut()
+            .append(XmlElement::empty("c", doc.clone()).unwrap().into())
+            .unwrap();
+        assert_eq!(
+            "<!--a--><?b?><!DOCTYPE c><c />",
+            format!("{}", doc.borrow())
+        );
+
+        doc.borrow_mut()
+            .append(XmlElement::empty("d", doc.clone()).unwrap().into())
+            .err()
+            .unwrap();
+
+        doc.borrow_mut()
+            .append(XmlComment::new("e", None, doc.clone()).into())
+            .unwrap();
+        assert_eq!(
+            "<!--a--><?b?><!DOCTYPE c><c /><!--e-->",
+            format!("{}", doc.borrow())
+        );
+
+        doc.borrow_mut()
+            .append(XmlText::new("f", None, doc.clone()).into())
+            .err()
+            .unwrap();
+    }
+
+    #[test]
+    fn test_document_delete_by_order() {
+        let (rest, tree) = xml_parser::document("<!--a--><?b?><!DOCTYPE c><c /><!--e-->").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+
+        doc.borrow_mut().delete_by_order(4).unwrap();
+        assert_eq!("<!--a--><?b?><c /><!--e-->", format!("{}", doc.borrow()));
+
+        assert_eq!(None, doc.borrow_mut().delete_by_order(4));
+    }
+
+    #[test]
+    fn test_document_insert_at_order() {
+        let (rest, tree) = xml_parser::document("<!--a--><?b?><!DOCTYPE c><c /><!--e-->").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+
+        doc.borrow_mut()
+            .insert_at_order(XmlComment::new("f", None, doc.clone()).into(), 5)
+            .unwrap();
+        assert_eq!(
+            "<!--a--><?b?><!DOCTYPE c><!--f--><c /><!--e-->",
+            format!("{}", doc.borrow())
+        );
+
+        doc.borrow_mut()
+            .insert_at_order(
+                XmlProcessingInstruction::empty("g", doc.clone())
+                    .unwrap()
+                    .into(),
+                6,
+            )
+            .unwrap();
+        assert_eq!(
+            "<!--a--><?b?><!DOCTYPE c><!--f--><c /><?g?><!--e-->",
+            format!("{}", doc.borrow())
+        );
+
+        doc.borrow_mut()
+            .insert_at_order(
+                XmlDocumentTypeDeclaration::empty("h", doc.clone()).into(),
+                5,
+            )
+            .err()
+            .unwrap();
+
+        doc.borrow_mut()
+            .insert_at_order(XmlElement::empty("i", doc.clone()).unwrap().into(), 5)
+            .err()
+            .unwrap();
+
+        doc.borrow_mut()
+            .insert_at_order(XmlText::new("f", None, doc.clone()).into(), 5)
+            .err()
+            .unwrap();
+    }
+
+    #[test]
     fn test_doc_type_min() {
         let (rest, tree) = xml_parser::document("<!DOCTYPE root><root />").unwrap();
         assert_eq!("", rest);
 
         let doc = XmlDocument::new(&tree).unwrap();
-        let prolog = doc.borrow().prolog();
-        let declaration = prolog.borrow().declaration().cloned().unwrap();
+        let declaration = doc.borrow().document_declaration().unwrap();
 
         // XmlDocumentTypeDeclaration
         assert_eq!(None, declaration.borrow().system_identifier());
@@ -3990,8 +4035,7 @@ mod tests {
         assert_eq!("", rest);
 
         let doc = XmlDocument::new(&tree).unwrap();
-        let prolog = doc.borrow().prolog();
-        let declaration = prolog.borrow().declaration().cloned().unwrap();
+        let declaration = doc.borrow().document_declaration().unwrap();
 
         // XmlDocumentTypeDeclaration
         assert_eq!(Some("bbb"), declaration.borrow().system_identifier());
