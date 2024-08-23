@@ -8,12 +8,13 @@ use xml_info as info;
 use xml_info::{
     Attribute as InfoAttribute, Character as InfoCharacter, Comment as InfoComment,
     Document as InfoDocument, DocumentTypeDeclaration as InfoDocumentTypeDeclaration,
-    Element as InfoElement, HasQName as InfoHasQName, Namespace as InfoNamespace,
-    Notation as InfoNotation, ProcessingInstruction as InfoProcessingInstruction,
-    Sortable as InfoSortable,
+    Element as InfoElement, HasChildren as InfoHasChildren, HasOwner as InfoHasOwner,
+    HasQName as InfoHasQName, Namespace as InfoNamespace, Notation as InfoNotation,
+    ProcessingInstruction as InfoProcessingInstruction, Sortable as InfoSortable,
 };
 
 // TODO: re-implement ResolvedText
+// TODO: error handling for write method.
 
 pub type ExpandedName = (String, Option<String>, Option<String>);
 
@@ -709,6 +710,64 @@ impl fmt::Display for XmlNode {
     }
 }
 
+impl XmlNode {
+    pub fn as_comment(&self) -> Option<XmlComment> {
+        if let XmlNode::Comment(v) = self {
+            Some(v.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_doctype(&self) -> Option<XmlDocumentType> {
+        if let XmlNode::DocumentType(v) = self {
+            Some(v.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_element(&self) -> Option<XmlElement> {
+        if let XmlNode::Element(v) = self {
+            Some(v.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_entity_ref(&self) -> Option<XmlEntityReference> {
+        if let XmlNode::EntityReference(v) = self {
+            Some(v.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_pi(&self) -> Option<XmlProcessingInstruction> {
+        if let XmlNode::PI(v) = self {
+            Some(v.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_text(&self) -> Option<XmlText> {
+        if let XmlNode::Text(v) = self {
+            Some(v.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn as_resolved_text(&self) -> Option<XmlResolvedText> {
+        if let XmlNode::ResolvedText(v) = self {
+            Some(v.clone())
+        } else {
+            None
+        }
+    }
+}
+
 // -----------------------------------------------------------------------------------------------
 
 pub trait AsNode {
@@ -1031,7 +1090,7 @@ impl NodeMut for XmlDocument {
             // TODO: remove new_child from teee.
             self.document
                 .borrow_mut()
-                .insert_at_order(new_child.try_into()?, r.order())?
+                .insert_before_order(new_child.try_into()?, r.order())?
         } else {
             self.document.borrow_mut().append(new_child.try_into()?)?
         };
@@ -1399,17 +1458,14 @@ impl NodeMut for XmlAttr {
             // TODO: remove new_child from teee.
             self.attribute
                 .borrow_mut()
-                .insert_at_order(new_child.try_into()?, r.order())?
+                .insert_before_order(new_child.try_into()?, r.order())?
         } else {
             self.attribute.borrow_mut().append(new_child.try_into()?)?
         };
 
         self.owner_document().unwrap().reset_order();
 
-        match value {
-            info::XmlAttributeValue::Reference(v) => Ok(XmlEntityReference::from(v).as_node()),
-            info::XmlAttributeValue::Text(v) => Ok(XmlText::from(v).as_node()),
-        }
+        Ok(XmlNode::from(value))
     }
 
     fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
@@ -1422,10 +1478,7 @@ impl NodeMut for XmlAttr {
             .borrow_mut()
             .delete_by_order(old_child.order())
         {
-            Some(v) => match v {
-                info::XmlAttributeValue::Reference(v) => Ok(XmlEntityReference::from(v).as_node()),
-                info::XmlAttributeValue::Text(v) => Ok(XmlText::from(v).as_node()),
-            },
+            Some(v) => Ok(XmlNode::from(v)),
             _ => Err(error::Error::NotFoundErr),
         }
     }
@@ -1440,14 +1493,15 @@ impl AsNode for XmlAttr {
 impl AsExpandedName for XmlAttr {
     fn as_expanded_name(&self) -> error::Result<Option<ExpandedName>> {
         let local_name = self.attribute.borrow().local_name().to_string();
-        let (prefix, ns) = if let Some(XmlNode::Element(element)) = self.parent_node() {
+        let (prefix, ns) = if let Ok(element) = self.attribute.borrow().owner_element() {
+            // TODO: prefix is None
             let prefix = self
                 .attribute
                 .borrow()
                 .prefix()
                 .unwrap_or("xmlns")
                 .to_string();
-            let namespaces = element.in_scope_namespace()?;
+            let namespaces = XmlElement::from(element).in_scope_namespace()?;
             if let Some(ns) = namespaces.iter().find(|v| v.node_name() == prefix) {
                 (Some(prefix), ns.node_value()?)
             } else {
@@ -1576,7 +1630,9 @@ impl ElementMut for XmlElement {
         Ok(attr.map(XmlAttr::from))
     }
 
-    fn normalize(&mut self) {}
+    fn normalize(&mut self) {
+        todo!()
+    }
 }
 
 impl Node for XmlElement {
@@ -1669,7 +1725,7 @@ impl NodeMut for XmlElement {
             // TODO: remove new_child from teee.
             self.element
                 .borrow_mut()
-                .insert_at_order(new_child.try_into()?, r.order())?
+                .insert_before_order(new_child.try_into()?, r.order())?
         } else {
             self.element.borrow_mut().append(new_child.try_into()?)?
         };
@@ -1700,6 +1756,7 @@ impl AsNode for XmlElement {
 impl AsExpandedName for XmlElement {
     fn as_expanded_name(&self) -> error::Result<Option<ExpandedName>> {
         let local_name = self.element.borrow().local_name().to_string();
+        // TODO: prefix is None
         let prefix = self
             .element
             .borrow()
@@ -1789,6 +1846,24 @@ impl HasChild for XmlElement {
     }
 }
 
+impl From<info::XmlNode<info::XmlElement>> for XmlElement {
+    fn from(value: info::XmlNode<info::XmlElement>) -> Self {
+        XmlElement { element: value }
+    }
+}
+
+impl fmt::Debug for XmlElement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "XmlElement {{ {} }}", self.node_name())
+    }
+}
+
+impl fmt::Display for XmlElement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        self.element.borrow().fmt(f)
+    }
+}
+
 impl XmlElement {
     pub fn in_scope_namespace(&self) -> error::Result<Vec<XmlNamespace>> {
         Ok(self
@@ -1822,24 +1897,6 @@ impl XmlElement {
     }
 }
 
-impl From<info::XmlNode<info::XmlElement>> for XmlElement {
-    fn from(value: info::XmlNode<info::XmlElement>) -> Self {
-        XmlElement { element: value }
-    }
-}
-
-impl fmt::Debug for XmlElement {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(f, "XmlElement {{ {} }}", self.node_name())
-    }
-}
-
-impl fmt::Display for XmlElement {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        self.element.borrow().fmt(f)
-    }
-}
-
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, PartialEq)]
@@ -1861,10 +1918,11 @@ impl TextMut for XmlText {
                 let data2 = self.data.borrow_mut().split_at(offset);
                 let new_order = self.data.borrow().order() + 1;
 
-                match v
+                let inserted = v
                     .borrow_mut()
-                    .insert_at_order(data2.clone().into(), new_order)
-                {
+                    .insert_before_order(data2.clone().into(), new_order);
+
+                match inserted {
                     Ok(_) => {}
                     Err(info::error::Error::OufOfIndex(_)) => {
                         v.borrow_mut().append(data2.clone().into())?;
@@ -1884,7 +1942,7 @@ impl TextMut for XmlText {
 
                 let inserted = v
                     .borrow_mut()
-                    .insert_at_order(data2.clone().into(), new_order);
+                    .insert_before_order(data2.clone().into(), new_order);
 
                 match inserted {
                     Ok(_) => {}
@@ -2209,7 +2267,7 @@ impl TextMut for XmlCDataSection {
 
         let inserted = v
             .borrow_mut()
-            .insert_at_order(data2.clone().into(), new_order);
+            .insert_before_order(data2.clone().into(), new_order);
 
         match inserted {
             Ok(_) => {}
@@ -3364,7 +3422,7 @@ mod tests {
     }
 
     #[test]
-    fn test_document_fragment() {
+    fn test_document_fragment_node() {
         let (_, tree) = xml_parser::document("<root></root>").unwrap();
         let document = info::XmlDocument::new(&tree).unwrap();
 
@@ -3372,32 +3430,47 @@ mod tests {
             element: document.borrow().document_element().unwrap(),
         });
 
-        let m = XmlDocumentFragment {
+        let flag = XmlDocumentFragment {
             document: document.clone(),
             parent: Some(document.clone()),
         };
 
         // Node
-        assert_eq!("#document-fragment", m.node_name());
-        assert_eq!(None, m.node_value().unwrap());
-        assert_eq!(NodeType::DocumentFragment, m.node_type());
-        assert_eq!(None, m.parent_node());
-        for child in m.child_nodes().iter() {
+        assert_eq!("#document-fragment", flag.node_name());
+        assert_eq!(None, flag.node_value().unwrap());
+        assert_eq!(NodeType::DocumentFragment, flag.node_type());
+        assert_eq!(None, flag.parent_node());
+        for child in flag.child_nodes().iter() {
             assert_eq!(root, child);
         }
-        assert_eq!(Some(root.clone()), m.first_child());
-        assert_eq!(Some(root.clone()), m.last_child());
-        assert_eq!(None, m.previous_sibling());
-        assert_eq!(None, m.next_sibling());
-        assert_eq!(None, m.attributes());
+        assert_eq!(Some(root.clone()), flag.first_child());
+        assert_eq!(Some(root.clone()), flag.last_child());
+        assert_eq!(None, flag.previous_sibling());
+        assert_eq!(None, flag.next_sibling());
+        assert_eq!(None, flag.attributes());
         assert_eq!(
             Some(XmlDocument::from(document.clone())),
-            m.owner_document()
+            flag.owner_document()
         );
-        assert!(m.has_child());
+        assert!(flag.has_child());
+    }
 
-        // XmlNode
-        let node = m.as_node();
+    #[test]
+    fn test_document_fragment_as_node() {
+        let (_, tree) = xml_parser::document("<root></root>").unwrap();
+        let document = info::XmlDocument::new(&tree).unwrap();
+
+        let root = XmlNode::Element(XmlElement {
+            element: document.borrow().document_element().unwrap(),
+        });
+
+        let flag = XmlDocumentFragment {
+            document: document.clone(),
+            parent: Some(document.clone()),
+        };
+
+        // AsNode
+        let node = flag.as_node();
         assert_eq!("#document-fragment", node.node_name());
         assert_eq!(None, node.node_value().unwrap());
         assert_eq!(NodeType::DocumentFragment, node.node_type());
@@ -3415,63 +3488,188 @@ mod tests {
             node.owner_document()
         );
         assert!(node.has_child());
-
-        // AsStringValue
-        assert_eq!("", m.as_string_value().unwrap());
     }
 
     #[test]
-    fn test_document() {
-        let (_, mut m) = XmlDocument::from_raw("<root></root>").unwrap();
+    fn test_document_fragment_as_string_value() {
+        let (_, tree) = xml_parser::document("<root></root>").unwrap();
+        let document = info::XmlDocument::new(&tree).unwrap();
+
+        let flag = XmlDocumentFragment {
+            document: document.clone(),
+            parent: Some(document.clone()),
+        };
+
+        // AsStringValue
+        assert_eq!("", flag.as_string_value().unwrap());
+    }
+
+    #[test]
+    fn test_document_fragment_children() {
+        let (_, tree) = xml_parser::document("<root></root>").unwrap();
+        let document = info::XmlDocument::new(&tree).unwrap();
+
+        let root = XmlNode::Element(XmlElement {
+            element: document.borrow().document_element().unwrap(),
+        });
+
+        let flag = XmlDocumentFragment {
+            document: document.clone(),
+            parent: Some(document.clone()),
+        };
+
+        // HasChild
+        assert_eq!(vec![root], flag.children());
+    }
+
+    #[test]
+    fn test_document_fragment_debug() {
+        let (_, tree) = xml_parser::document("<root></root>").unwrap();
+        let document = info::XmlDocument::new(&tree).unwrap();
+
+        let flag = XmlDocumentFragment {
+            document: document.clone(),
+            parent: Some(document.clone()),
+        };
+
+        // fmt::Debug
+        assert_eq!(
+            "XmlDocumentFragment { Ok(XmlElement { root }) }",
+            format!("{:?}", flag)
+        );
+    }
+
+    #[test]
+    fn test_document_fragment_display() {
+        let (_, tree) = xml_parser::document("<root></root>").unwrap();
+        let document = info::XmlDocument::new(&tree).unwrap();
+
+        let flag = XmlDocumentFragment {
+            document: document.clone(),
+            parent: Some(document.clone()),
+        };
+
+        // fmt::Display
+        assert_eq!("<root />", format!("{}", flag));
+    }
+
+    #[test]
+    fn test_document_fragment_impl() {
+        let (_, tree) = xml_parser::document("<root></root>").unwrap();
+        let document = info::XmlDocument::new(&tree).unwrap();
+
+        let root = XmlElement {
+            element: document.borrow().document_element().unwrap(),
+        };
+
+        let flag = XmlDocumentFragment {
+            document: document.clone(),
+            parent: Some(document.clone()),
+        };
+
+        // XmlDocumentFragment
+        assert_eq!(root, flag.root_element().unwrap());
+    }
+
+    #[test]
+    fn test_document_document() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
         let elem = XmlElement {
-            element: m.document.borrow().document_element().unwrap(),
+            element: doc.document.borrow().document_element().unwrap(),
         };
         let root = XmlNode::Element(elem.clone());
 
         // Document
-        assert_eq!(None, m.doc_type());
-        assert_eq!(XmlDomImplementation {}, m.implementation());
-        assert_eq!(elem, m.document_element().unwrap());
-        for child in m.get_elements_by_tag_name("root").unwrap().iter() {
+        assert_eq!(None, doc.doc_type());
+        assert_eq!(XmlDomImplementation {}, doc.implementation());
+        assert_eq!(elem, doc.document_element().unwrap());
+        for child in doc.get_elements_by_tag_name("root").unwrap().iter() {
             assert_eq!(root, child);
         }
+    }
+
+    #[test]
+    fn test_document_document_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
 
         // DocumentMut
-        let elem = m.create_element("e").unwrap();
+        let elem = doc.create_element("e").unwrap();
         assert_eq!("e", elem.tag_name());
-        let _ = m.create_document_fragment();
-        let text = m.create_text_node("t").unwrap();
+        let _ = doc.create_document_fragment();
+        let text = doc.create_text_node("t").unwrap();
         assert_eq!("t", text.data().unwrap());
-        let comment = m.create_comment("c").unwrap();
+        let comment = doc.create_comment("c").unwrap();
         assert_eq!("c", comment.data().unwrap());
-        let cdata = m.create_cdata_section("d").unwrap();
+        let cdata = doc.create_cdata_section("d").unwrap();
         assert_eq!("d", cdata.data().unwrap());
-        let pi = m.create_processing_instruction("t", "c").unwrap();
+        let pi = doc.create_processing_instruction("t", "c").unwrap();
         assert_eq!("t", pi.target());
         assert_eq!("c", pi.data());
-        let attr = m.create_attribute("a").unwrap();
+        let attr = doc.create_attribute("a").unwrap();
         assert_eq!("a", attr.name());
-        let eref = m.create_entity_reference("&amp;").unwrap();
+        let eref = doc.create_entity_reference("&amp;").unwrap();
         assert_eq!("amp", eref.node_name());
+    }
+
+    #[test]
+    fn test_document_node() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+        let elem = XmlElement {
+            element: doc.document.borrow().document_element().unwrap(),
+        };
+        let root = XmlNode::Element(elem.clone());
 
         // Node
-        assert_eq!("#document", m.node_name());
-        assert_eq!(None, m.node_value().unwrap());
-        assert_eq!(NodeType::Document, m.node_type());
-        assert_eq!(None, m.parent_node());
-        for child in m.child_nodes().iter() {
+        assert_eq!("#document", doc.node_name());
+        assert_eq!(None, doc.node_value().unwrap());
+        assert_eq!(NodeType::Document, doc.node_type());
+        assert_eq!(None, doc.parent_node());
+        for child in doc.child_nodes().iter() {
             assert_eq!(root, child);
         }
-        assert_eq!(Some(root.clone()), m.first_child());
-        assert_eq!(Some(root.clone()), m.last_child());
-        assert_eq!(None, m.previous_sibling());
-        assert_eq!(None, m.next_sibling());
-        assert_eq!(None, m.attributes());
-        assert_eq!(None, m.owner_document());
-        assert!(m.has_child());
+        assert_eq!(Some(root.clone()), doc.first_child());
+        assert_eq!(Some(root.clone()), doc.last_child());
+        assert_eq!(None, doc.previous_sibling());
+        assert_eq!(None, doc.next_sibling());
+        assert_eq!(None, doc.attributes());
+        assert_eq!(None, doc.owner_document());
+        assert!(doc.has_child());
+    }
 
-        // XmlNode
-        let node = m.as_node();
+    #[test]
+    fn test_document_node_mut() {
+        let (_, mut doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // NodeMut
+        doc.set_node_value("a").err().unwrap();
+        let a = doc
+            .insert_before(doc.create_comment("a").unwrap().as_node(), None)
+            .unwrap();
+        assert_eq!("<root /><!--a-->", format!("{}", doc));
+        let b = doc
+            .insert_before(doc.create_comment("b").unwrap().as_node(), Some(&a))
+            .unwrap();
+        assert_eq!("<root /><!--b--><!--a-->", format!("{}", doc));
+        let _ = doc
+            .replace_child(doc.create_comment("c").unwrap().as_node(), &b)
+            .unwrap();
+        assert_eq!("<root /><!--c--><!--a-->", format!("{}", doc));
+        let a = doc.remove_child(&a).unwrap();
+        assert_eq!("<root /><!--c-->", format!("{}", doc));
+        doc.append_child(a).unwrap();
+        assert_eq!("<root /><!--c--><!--a-->", format!("{}", doc));
+    }
+
+    #[test]
+    fn test_document_as_node() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+        let elem = XmlElement {
+            element: doc.document.borrow().document_element().unwrap(),
+        };
+        let root = XmlNode::Element(elem.clone());
+
+        // AsNode
+        let node = doc.as_node();
         assert_eq!("#document", node.node_name());
         assert_eq!(None, node.node_value().unwrap());
         assert_eq!(NodeType::Document, node.node_type());
@@ -3486,50 +3684,196 @@ mod tests {
         assert_eq!(None, node.attributes());
         assert_eq!(None, node.owner_document());
         assert!(node.has_child());
-
-        // AsStringValue
-        assert_eq!("", m.as_string_value().unwrap());
-
-        // NodeMut
-        m.set_node_value("a").err().unwrap();
-        let a = m
-            .insert_before(m.create_comment("a").unwrap().as_node(), None)
-            .unwrap();
-        assert_eq!("<root /><!--a-->", format!("{}", m));
-        let b = m
-            .insert_before(m.create_comment("b").unwrap().as_node(), Some(&a))
-            .unwrap();
-        assert_eq!("<root /><!--b--><!--a-->", format!("{}", m));
-        let _ = m
-            .replace_child(m.create_comment("c").unwrap().as_node(), &b)
-            .unwrap();
-        assert_eq!("<root /><!--c--><!--a-->", format!("{}", m));
-        let a = m.remove_child(&a).unwrap();
-        assert_eq!("<root /><!--c-->", format!("{}", m));
-        m.append_child(a).unwrap();
-        assert_eq!("<root /><!--c--><!--a-->", format!("{}", m));
     }
 
     #[test]
-    fn test_attr() {
+    fn test_document_as_string_value() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // AsStringValue
+        assert_eq!("", doc.as_string_value().unwrap());
+    }
+
+    #[test]
+    fn test_document_children() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+        let elem = XmlElement {
+            element: doc.document.borrow().document_element().unwrap(),
+        };
+        let root = XmlNode::Element(elem.clone());
+
+        // HasChild
+        assert_eq!(vec![root], doc.children());
+    }
+
+    #[test]
+    fn test_document_debug() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // fmt::Debug
+        assert_eq!(
+            "XmlDocument { Ok(XmlElement { root }) }",
+            format!("{:?}", doc)
+        );
+    }
+
+    #[test]
+    fn test_document_display() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // fmt::Display
+        assert_eq!("<root />", format!("{}", doc));
+    }
+
+    #[test]
+    fn test_document_impl() {
+        let (_, mut doc) = XmlDocument::from_raw("<root></root>").unwrap();
+        let elem = XmlElement {
+            element: doc.document.borrow().document_element().unwrap(),
+        };
+
+        // XmlDocument
+        assert_eq!(elem, doc.root_element().unwrap());
+        doc.reset_order();
+    }
+
+    #[test]
+    fn test_node_list_node_list() {
+        let (_, doc) = XmlDocument::from_raw("<root><e>1</e><e>2</e></root>").unwrap();
+        let children = doc.root_element().unwrap().get_elements_by_tag_name("e");
+
+        // NodeList
+        assert_eq!("1", children.item(0).unwrap().as_string_value().unwrap());
+        assert_eq!(2, children.length());
+    }
+
+    #[test]
+    fn test_node_list_impl() {
+        // AsNodeList
+        let list = XmlNodeList::empty();
+        assert_eq!(0, list.length());
+        let iter = list.iter();
+        assert_eq!(0, iter.count());
+    }
+
+    #[test]
+    fn test_node_list_iter() {
+        let (_, doc) = XmlDocument::from_raw("<root><e>1</e><e>2</e></root>").unwrap();
+        let children = doc.root_element().unwrap().get_elements_by_tag_name("e");
+
+        // Iterator
+        assert_eq!(2, children.iter().count());
+    }
+
+    #[test]
+    fn test_named_noed_map_named_node_map() {
+        let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
+        let attrs = doc.root_element().unwrap().attributes().unwrap();
+
+        // NamedNodeMap
+        assert_eq!(
+            "1",
+            attrs
+                .get_named_item("a")
+                .unwrap()
+                .as_string_value()
+                .unwrap()
+        );
+        assert_eq!("2", attrs.item(1).unwrap().as_string_value().unwrap());
+        assert_eq!(2, attrs.length());
+    }
+
+    #[test]
+    fn test_named_noed_map_named_node_map_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
+        let mut root = doc.root_element().unwrap();
+        let mut attrs = root.attributes().unwrap();
+
+        // NamedNodeMapMut
+        let c = attrs
+            .set_named_item(doc.create_attribute("c").unwrap())
+            .unwrap();
+        assert_eq!(None, c);
+        let c = attrs.get_named_item("c").unwrap();
+        assert_eq!(c, attrs.get_named_item("c").unwrap());
+        assert_eq!(c, root.get_attribute_node("c").unwrap());
+        let d = root
+            .set_attribute_node(doc.create_attribute("d").unwrap())
+            .unwrap();
+        assert_eq!(None, d);
+        let d = root.get_attribute_node("d").unwrap();
+        // FIXME:
+        //assert_eq!(d, attrs.get_named_item("d").unwrap());
+        assert_eq!(d, root.get_attribute_node("d").unwrap());
+        attrs.remove_named_item("c").unwrap();
+        assert_eq!(None, attrs.get_named_item("c"));
+        assert_eq!(None, root.get_attribute_node("c"));
+        root.remove_attribute("d").unwrap();
+        // FIXME:
+        //assert_eq!(None, attrs.get_named_item("d"));
+        assert_eq!(None, root.get_attribute_node("d"));
+    }
+
+    #[test]
+    fn test_named_noed_map_impl() {
+        let (_, doc) = XmlDocument::from_raw("<root />").unwrap();
+
+        // XmlNamedNodeMap
+        let map = XmlNamedNodeMap::<XmlAttr>::empty(doc.as_node());
+        assert_eq!(0, map.length());
+        let iter = map.iter();
+        assert_eq!(0, iter.count());
+    }
+
+    #[test]
+    fn test_named_noed_map_iter() {
+        let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
+        let attrs = doc.root_element().unwrap().attributes().unwrap();
+
+        // Iterator
+        assert_eq!(2, attrs.iter().count());
+    }
+
+    #[test]
+    fn test_attr_attr() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
-        let elem = doc.document_element().unwrap();
-        let mut attr = elem.get_attribute_node("a").unwrap();
-        let text = XmlNode::Text(XmlText {
-            data: info::XmlText::new(
-                "b",
-                Some(doc.document.borrow().document_element().unwrap().into()),
-                doc.document.clone(),
-            ),
-        });
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
 
         // Attr
+        assert_eq!("a", attr.name());
         assert!(attr.specified());
+        assert_eq!("b", attr.value().unwrap());
+    }
+
+    #[test]
+    fn test_attr_attr_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let mut attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
 
         // AttrMut
         attr.set_value("c").unwrap();
         assert_eq!("c", attr.value().unwrap());
-        attr.set_value("b").unwrap();
+    }
+
+    #[test]
+    fn test_attr_node() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let text = XmlNode::Text(XmlText {
+            data: info::XmlText::new("b", None, doc.document.clone()),
+        });
 
         // Node
         assert_eq!("a", attr.node_name());
@@ -3546,6 +3890,16 @@ mod tests {
         assert_eq!(None, attr.attributes());
         assert_eq!(Some(doc.clone()), attr.owner_document());
         assert!(attr.has_child());
+    }
+
+    #[test]
+    fn test_attr_node_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let mut attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
 
         // NodeMut
         attr.set_node_value("a&amp;b&amp;c").unwrap();
@@ -3566,9 +3920,21 @@ mod tests {
         assert_eq!("a&b&cf", attr.value().unwrap());
         attr.append_child(d).unwrap();
         assert_eq!("a&b&cfd", attr.value().unwrap());
-        attr.set_node_value("b").unwrap();
+    }
 
-        // XmlNode
+    #[test]
+    fn test_attr_as_node() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let text = XmlNode::Text(XmlText {
+            data: info::XmlText::new("b", None, doc.document.clone()),
+        });
+
+        // AsNode
         let node = attr.as_node();
         assert_eq!("a", node.node_name());
         assert_eq!(Some("b".to_string()), node.node_value().unwrap());
@@ -3584,44 +3950,136 @@ mod tests {
         assert_eq!(None, node.attributes());
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(node.has_child());
+    }
+
+    #[test]
+    fn test_attr_as_expanded_name_prefix() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root c:a='b' xmlns:c='http://test/c'></root>").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+
+        dbg!(&attr.parent_node());
+
+        // AsExpandedName
+        assert_eq!(
+            (
+                "a".to_string(),
+                Some("c".to_string()),
+                Some("http://test/c".to_string())
+            ),
+            attr.as_expanded_name().unwrap().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_attr_as_expanded_name_unprefix() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+
+        // AsExpandedName
+        assert_eq!(
+            ("a".to_string(), Some("xmlns".to_string()), None),
+            attr.as_expanded_name().unwrap().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_attr_as_string_value() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
 
         // AsStringValue
         assert_eq!("b", attr.as_string_value().unwrap());
     }
 
     #[test]
-    fn test_element() {
+    fn test_attr_children() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let text = XmlNode::Text(XmlText {
+            data: info::XmlText::new("b", None, doc.document.clone()),
+        });
+
+        // HasChild
+        assert_eq!(vec![text], attr.children());
+    }
+
+    #[test]
+    fn test_attr_debug() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+
+        // fmt::Debug
+        assert_eq!("XmlAttr { a }", format!("{:?}", attr));
+    }
+
+    #[test]
+    fn test_attr_display() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+
+        // fmt::Display
+        assert_eq!("a=\"b\"", format!("{}", attr));
+    }
+
+    #[test]
+    fn test_element_element() {
         let (_, doc) = XmlDocument::from_raw(
             "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
         )
         .unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 =
-            if let XmlNode::Element(e) = root.get_elements_by_tag_name("elem1").item(0).unwrap() {
-                e.clone()
-            } else {
-                unreachable!()
-            };
-        let elem2 =
-            if let XmlNode::Element(e) = root.get_elements_by_tag_name("elem2").item(0).unwrap() {
-                e.clone()
-            } else {
-                unreachable!()
-            };
+        let elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
         let attra = elem1.get_attribute_node("a").unwrap();
-        let attrc = elem2.get_attribute_node("c").unwrap();
-        let data1 = XmlResolvedText::from(XmlText {
-            data: info::XmlText::new(
-                "data1",
-                Some(doc.document.borrow().document_element().unwrap().into()),
-                doc.document.clone(),
-            ),
-        })
-        .as_node();
 
         // Element
+        assert_eq!("elem1", elem1.tag_name());
         assert_eq!("b", elem1.get_attribute("a").unwrap());
         assert_eq!(Some(attra.clone()), elem1.get_attribute_node("a"));
+    }
+
+    #[test]
+    fn test_element_element_mut() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
+        )
+        .unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
 
         // ElementMut
         elem1.set_attribute("d", "e").unwrap();
@@ -3632,6 +4090,37 @@ mod tests {
         elem1
             .remove_attribute_node(elem1.get_attribute_node("d").unwrap())
             .unwrap();
+    }
+
+    #[test]
+    fn test_element_node() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
+        )
+        .unwrap();
+        let root = doc.document_element().unwrap();
+        let elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let elem2 = root
+            .get_elements_by_tag_name("elem2")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let attra = elem1.get_attribute_node("a").unwrap();
+        let attrc = elem2.get_attribute_node("c").unwrap();
+        let data1 = XmlResolvedText::from(XmlText {
+            data: info::XmlText::new(
+                "data1",
+                Some(doc.document.borrow().document_element().unwrap().into()),
+                doc.document.clone(),
+            ),
+        })
+        .as_node();
 
         // Node (elem1)
         assert_eq!("elem1", elem1.node_name());
@@ -3666,29 +4155,21 @@ mod tests {
         }
         assert_eq!(Some(doc.clone()), elem2.owner_document());
         assert!(!elem2.has_child());
+    }
 
-        // XmlNode (elem1)
-        let node = elem1.as_node();
-        assert_eq!("elem1", node.node_name());
-        assert_eq!(None, node.node_value().unwrap());
-        assert_eq!(NodeType::Element, node.node_type());
-        assert_eq!(Some(root.as_node()), node.parent_node());
-        for child in node.child_nodes().iter() {
-            assert_eq!(data1, child);
-        }
-        assert_eq!(Some(data1.clone()), node.first_child());
-        assert_eq!(Some(data1.clone()), node.last_child());
-        assert_eq!(None, node.previous_sibling());
-        assert_eq!(Some(elem2.as_node()), node.next_sibling());
-        for child in node.attributes().unwrap().iter() {
-            assert_eq!(attra, child);
-        }
-        assert_eq!(Some(doc.clone()), node.owner_document());
-        assert!(node.has_child());
-
-        // AsStringValue
-        assert_eq!("data1", elem1.as_string_value().unwrap());
-        assert_eq!("", elem2.as_string_value().unwrap());
+    #[test]
+    fn test_element_node_mut() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
+        )
+        .unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
 
         // NodeMut
         elem1.set_node_value("a").err().unwrap();
@@ -3708,34 +4189,199 @@ mod tests {
         assert_eq!("data1f", elem1.as_string_value().unwrap());
         elem1.append_child(d).unwrap();
         assert_eq!("data1fd", elem1.as_string_value().unwrap());
-
-        // NamedNodeMapMut
-        let mut attrs = elem1.attributes().unwrap();
-        let a = doc.create_attribute("a").unwrap();
-        let e = doc.create_attribute("e").unwrap();
-        assert_ne!(None, attrs.set_named_item(a).unwrap());
-        assert_ne!(None, elem1.get_attribute_node("a"));
-        assert_eq!(None, attrs.set_named_item(e.clone()).unwrap());
-        assert_ne!(None, elem1.get_attribute_node("e"));
-        let removed = attrs.remove_named_item(e.name().as_str()).unwrap();
-        assert_eq!("e", removed.node_name());
-        assert_eq!(None, elem1.get_attribute_node("e"));
-        attrs.remove_named_item(e.name().as_str()).err().unwrap();
     }
 
     #[test]
-    fn test_text() {
+    fn test_element_as_node() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
+        )
+        .unwrap();
+        let root = doc.document_element().unwrap();
+        let elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let elem2 = root
+            .get_elements_by_tag_name("elem2")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let attra = elem1.get_attribute_node("a").unwrap();
+        let data1 = XmlResolvedText::from(XmlText {
+            data: info::XmlText::new(
+                "data1",
+                Some(doc.document.borrow().document_element().unwrap().into()),
+                doc.document.clone(),
+            ),
+        })
+        .as_node();
+
+        // AsNode (elem1)
+        let node = elem1.as_node();
+        assert_eq!("elem1", node.node_name());
+        assert_eq!(None, node.node_value().unwrap());
+        assert_eq!(NodeType::Element, node.node_type());
+        assert_eq!(Some(root.as_node()), node.parent_node());
+        for child in node.child_nodes().iter() {
+            assert_eq!(data1, child);
+        }
+        assert_eq!(Some(data1.clone()), node.first_child());
+        assert_eq!(Some(data1.clone()), node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(Some(elem2.as_node()), node.next_sibling());
+        for child in node.attributes().unwrap().iter() {
+            assert_eq!(attra, child);
+        }
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(node.has_child());
+    }
+
+    #[test]
+    fn test_element_as_string_value() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
+        )
+        .unwrap();
+        let root = doc.document_element().unwrap();
+        let elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let elem2 = root
+            .get_elements_by_tag_name("elem2")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // AsStringValue
+        assert_eq!("data1", elem1.as_string_value().unwrap());
+        assert_eq!("", elem2.as_string_value().unwrap());
+    }
+
+    #[test]
+    fn test_element_children() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
+        )
+        .unwrap();
+        let root = doc.document_element().unwrap();
+        let elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let data1 = XmlNode::ResolvedText(XmlResolvedText::from(XmlText {
+            data: info::XmlText::new("data1", None, doc.document.clone()),
+        }));
+
+        // HasChild
+        assert_eq!(vec![data1], elem1.children());
+    }
+
+    #[test]
+    fn test_element_debug() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
+        )
+        .unwrap();
+        let root = doc.document_element().unwrap();
+        let elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // fmt::Debug
+        assert_eq!("XmlElement { elem1 }", format!("{:?}", elem1));
+    }
+
+    #[test]
+    fn test_element_display() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
+        )
+        .unwrap();
+        let root = doc.document_element().unwrap();
+        let elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // fmt::Display
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+    }
+
+    #[test]
+    fn test_text_split_text_attribute() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // TextMut
+        let text2 = text.split_text(2).unwrap();
+
+        assert_eq!(Some("te"), text.node_value().unwrap().as_deref());
+        assert_eq!(Some("xt"), text2.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_text_split_text_element() {
         let (_, doc) = XmlDocument::from_raw("<root>text</root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut text = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
-            e.clone()
-        } else {
-            unreachable!()
-        };
+        let mut text = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // TextMut
+        let text2 = text.split_text(2).unwrap();
+
+        assert_eq!(Some("te"), text.node_value().unwrap().as_deref());
+        assert_eq!(Some("xt"), text2.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_text_character_data() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterData
+        assert_eq!("text", text.data().unwrap());
         assert_eq!(4, text.length());
         assert_eq!("ex", text.substring_data(1, 2));
+    }
+
+    #[test]
+    fn test_text_character_data_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterDataMut
         text.set_data("あいう").unwrap();
@@ -3748,13 +4394,20 @@ mod tests {
         assert_eq!(Some("あabcえお"), text.node_value().unwrap().as_deref());
         text.replace_data(1, 3, "いう").unwrap();
         assert_eq!(Some("あいうえお"), text.node_value().unwrap().as_deref());
-        text.set_data("text").unwrap();
+    }
+
+    #[test]
+    fn test_text_node() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // Node
         assert_eq!("#text", text.node_name());
         assert_eq!(Some("text".to_string()), text.node_value().unwrap());
         assert_eq!(NodeType::Text, text.node_type());
-        assert_eq!(Some(root.as_node()), text.parent_node());
+        assert_eq!(None, text.parent_node());
         assert_eq!(XmlNodeList::empty(), text.child_nodes());
         assert_eq!(None, text.first_child());
         assert_eq!(None, text.last_child());
@@ -3763,6 +4416,14 @@ mod tests {
         assert_eq!(None, text.attributes());
         assert_eq!(Some(doc.clone()), text.owner_document());
         assert!(!text.has_child());
+    }
+
+    #[test]
+    fn test_text_node_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // Nodemut
         let e = root.clone().as_node();
@@ -3773,13 +4434,21 @@ mod tests {
         text.remove_child(&e).err().unwrap();
         text.append_child(e.clone()).err().unwrap();
         text.set_node_value("text").unwrap();
+    }
 
-        // XmlNode
+    #[test]
+    fn test_text_as_node() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // AsNode
         let node = text.as_node();
         assert_eq!("#text", node.node_name());
         assert_eq!(Some("text".to_string()), node.node_value().unwrap());
         assert_eq!(NodeType::Text, node.node_type());
-        assert_eq!(Some(root.as_node()), node.parent_node());
+        assert_eq!(None, node.parent_node());
         assert_eq!(XmlNodeList::empty(), node.child_nodes());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
@@ -3788,40 +4457,58 @@ mod tests {
         assert_eq!(None, node.attributes());
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(!node.has_child());
+    }
+
+    #[test]
+    fn test_text_as_string_value() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // AsStringValue
         assert_eq!("text", text.as_string_value().unwrap());
     }
 
     #[test]
-    fn test_text_split_text() {
-        let (_, doc) = XmlDocument::from_raw("<root>text</root>").unwrap();
+    fn test_text_debug() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
         let root = doc.document_element().unwrap();
-        let mut text = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
-            e.clone()
-        } else {
-            unreachable!()
-        };
+        let attr = root.get_attribute_node("a").unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
-        let text2 = text.split_text(2).unwrap();
-
-        assert_eq!(Some("te"), text.node_value().unwrap().as_deref());
-        assert_eq!(Some("xt"), text2.node_value().unwrap().as_deref());
+        // fmt::Debug
+        assert_eq!("XmlText { text }", format!("{:?}", text));
     }
 
     #[test]
-    fn test_comment() {
+    fn test_text_display() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // fmt::Display
+        assert_eq!("text", format!("{}", text));
+    }
+
+    #[test]
+    fn test_comment_character_data() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = if let XmlNode::Comment(e) = root.child_nodes().item(0).unwrap() {
-            e.clone()
-        } else {
-            unreachable!()
-        };
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterData
+        assert_eq!(" comment ", comment.data().unwrap());
         assert_eq!(9, comment.length());
         assert_eq!("co", comment.substring_data(1, 2));
+    }
+
+    #[test]
+    fn test_comment_character_data_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterDataMut
         comment.set_data("あいう").unwrap();
@@ -3838,6 +4525,13 @@ mod tests {
         comment.replace_data(1, 3, "いう").unwrap();
         assert_eq!(Some("あいうえお"), comment.node_value().unwrap().as_deref());
         comment.set_data(" comment ").unwrap();
+    }
+
+    #[test]
+    fn test_comment_node() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // Node
         assert_eq!("#comment", comment.node_name());
@@ -3852,6 +4546,13 @@ mod tests {
         assert_eq!(None, comment.attributes());
         assert_eq!(Some(doc.clone()), comment.owner_document());
         assert!(!comment.has_child());
+    }
+
+    #[test]
+    fn test_comment_node_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // Nodemut
         let e = root.clone().as_node();
@@ -3862,8 +4563,15 @@ mod tests {
         comment.remove_child(&e).err().unwrap();
         comment.append_child(e.clone()).err().unwrap();
         comment.set_node_value(" comment ").unwrap();
+    }
 
-        // XmlNode
+    #[test]
+    fn test_comment_as_node() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // AsNode
         let node = comment.as_node();
         assert_eq!("#comment", node.node_name());
         assert_eq!(Some(" comment ".to_string()), node.node_value().unwrap());
@@ -3877,24 +4585,83 @@ mod tests {
         assert_eq!(None, node.attributes());
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(!node.has_child());
+    }
+
+    #[test]
+    fn test_comment_as_string_value() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // AsStringValue
         assert_eq!(" comment ", comment.as_string_value().unwrap());
     }
 
     #[test]
-    fn test_cdata() {
+    fn test_comment_debug() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // fmt::Debug
+        assert_eq!("XmlComment {  comment  }", format!("{:?}", comment));
+    }
+
+    #[test]
+    fn test_comment_display() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // fmt::Display
+        assert_eq!("<!-- comment -->", format!("{}", comment));
+    }
+
+    #[test]
+    fn test_cdata_split_text() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // TextMut
+        let cdata2 = cdata.split_text(1).unwrap();
+
+        assert_eq!(Some("c"), cdata.node_value().unwrap().as_deref());
+        assert_eq!(Some("data"), cdata2.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_cdata_character_data() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
-            e.clone()
-        } else {
-            unreachable!()
-        };
+        let cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
 
         // CharacterData
+        assert_eq!("&<>\"", cdata.data().unwrap());
         assert_eq!(4, cdata.length());
         assert_eq!("<>", cdata.substring_data(1, 2));
+    }
+
+    #[test]
+    fn test_cdata_character_data_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
 
         // CharacterDataMut
         cdata.set_data("あいう").unwrap();
@@ -3911,6 +4678,18 @@ mod tests {
         cdata.replace_data(1, 3, "いう").unwrap();
         assert_eq!(Some("あいうえお"), cdata.node_value().unwrap().as_deref());
         cdata.set_data("&<>\"").unwrap();
+    }
+
+    #[test]
+    fn test_cdata_node() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
 
         // Node
         assert_eq!("#text", cdata.node_name());
@@ -3925,6 +4704,18 @@ mod tests {
         assert_eq!(None, cdata.attributes());
         assert_eq!(Some(doc.clone()), cdata.owner_document());
         assert!(!cdata.has_child());
+    }
+
+    #[test]
+    fn test_cdata_node_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
 
         // Nodemut
         let e = root.clone().as_node();
@@ -3935,8 +4726,20 @@ mod tests {
         cdata.remove_child(&e).err().unwrap();
         cdata.append_child(e.clone()).err().unwrap();
         cdata.set_node_value("&<>\"").unwrap();
+    }
 
-        // XmlNode
+    #[test]
+    fn test_cdata_as_node() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // AsNode
         let node = cdata.as_node();
         assert_eq!("#text", node.node_name());
         assert_eq!(Some("&<>\"".to_string()), node.node_value().unwrap());
@@ -3950,45 +4753,446 @@ mod tests {
         assert_eq!(None, node.attributes());
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(!node.has_child());
+    }
+
+    #[test]
+    fn test_cdata_as_string_value() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
 
         // AsStringValue
         assert_eq!("&<>\"", cdata.as_string_value().unwrap());
     }
 
     #[test]
-    fn test_cdata_split_text() {
-        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
+    fn test_cdata_debug() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
-            e.clone()
-        } else {
-            unreachable!()
-        };
+        let cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
 
-        let cdata2 = cdata.split_text(1).unwrap();
-
-        assert_eq!(Some("c"), cdata.node_value().unwrap().as_deref());
-        assert_eq!(Some("data"), cdata2.node_value().unwrap().as_deref());
+        // fmt::Debug
+        assert_eq!(
+            "XmlResolvedText { data: [CData(XmlCDataSection { &<>\" })] }",
+            format!("{:?}", cdata)
+        );
     }
 
     #[test]
-    fn test_pi() {
+    fn test_cdata_display() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // fmt::Display
+        assert_eq!("<![CDATA[&<>\"]]>", format!("{}", cdata));
+    }
+
+    #[test]
+    fn test_doctype_document_type() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<!DOCTYPE root [<!NOTATION a SYSTEM 'b'><!ENTITY c 'd'>]><root />",
+        )
+        .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+
+        // DocumentType
+        assert_eq!("root", doctype.name());
+        assert_eq!(1, doctype.entities().length());
+        assert_eq!(1, doctype.notations().length());
+    }
+
+    #[test]
+    fn test_doctype_node() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<!DOCTYPE root [<!NOTATION a SYSTEM 'b'><!ENTITY c 'd'>]><root />",
+        )
+        .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let root = doc.document_element().unwrap();
+
+        // Node
+        assert_eq!("root", doctype.node_name());
+        assert_eq!(None, doctype.node_value().unwrap());
+        assert_eq!(NodeType::DocumentType, doctype.node_type());
+        assert_eq!(Some(doc.as_node()), doctype.parent_node());
+        assert_eq!(XmlNodeList::empty(), doctype.child_nodes());
+        assert_eq!(None, doctype.first_child());
+        assert_eq!(None, doctype.last_child());
+        assert_eq!(None, doctype.previous_sibling());
+        assert_eq!(Some(root.as_node()), doctype.next_sibling());
+        assert_eq!(None, doctype.attributes());
+        assert_eq!(Some(doc.clone()), doctype.owner_document());
+        assert!(!doctype.has_child());
+    }
+
+    #[test]
+    fn test_doctype_as_node() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<!DOCTYPE root [<!NOTATION a SYSTEM 'b'><!ENTITY c 'd'>]><root />",
+        )
+        .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let root = doc.document_element().unwrap();
+
+        // AsNode
+        let node = doctype.as_node();
+        assert_eq!("root", node.node_name());
+        assert_eq!(None, node.node_value().unwrap());
+        assert_eq!(NodeType::DocumentType, node.node_type());
+        assert_eq!(Some(doc.as_node()), node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(Some(root.as_node()), node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(!node.has_child());
+    }
+
+    #[test]
+    fn test_doctype_debug() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<!DOCTYPE root [<!NOTATION a SYSTEM 'b'><!ENTITY c 'd'>]><root />",
+        )
+        .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+
+        // fmt::Debug
+        assert_eq!("XmlDocumentType { root }", format!("{:?}", doctype));
+    }
+
+    #[test]
+    fn test_doctype_display() {
+        let (_, doc) = XmlDocument::from_raw(
+            "<!DOCTYPE root [<!NOTATION a SYSTEM 'b'><!ENTITY c 'd'>]><root />",
+        )
+        .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!DOCTYPE root [<!NOTATION a SYSTEM \"b\"><!ENTITY c \"d\">]>",
+            format!("{}", doctype)
+        );
+    }
+
+    #[test]
+    fn test_notation_notation() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!NOTATION a PUBLIC 'b' 'c'>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let notation = doctype.notations().item(0).unwrap();
+
+        // Notation
+        assert_eq!("b", notation.public_id().unwrap());
+        assert_eq!("c", notation.system_id().unwrap());
+    }
+
+    #[test]
+    fn test_notation_node() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!NOTATION a PUBLIC 'b' 'c'>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let notation = doctype.notations().item(0).unwrap();
+
+        // Node
+        assert_eq!("a", notation.node_name());
+        assert_eq!(None, notation.node_value().unwrap());
+        assert_eq!(NodeType::Notation, notation.node_type());
+        assert_eq!(None, notation.parent_node());
+        assert_eq!(XmlNodeList::empty(), notation.child_nodes());
+        assert_eq!(None, notation.first_child());
+        assert_eq!(None, notation.last_child());
+        assert_eq!(None, notation.previous_sibling());
+        assert_eq!(None, notation.next_sibling());
+        assert_eq!(None, notation.attributes());
+        assert_eq!(Some(doc.clone()), notation.owner_document());
+        assert!(!notation.has_child());
+    }
+
+    #[test]
+    fn test_notation_as_node() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!NOTATION a PUBLIC 'b' 'c'>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let notation = doctype.notations().item(0).unwrap();
+
+        // AsNode
+        let node = notation.as_node();
+        assert_eq!("a", node.node_name());
+        assert_eq!(None, node.node_value().unwrap());
+        assert_eq!(NodeType::Notation, node.node_type());
+        assert_eq!(None, node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(!node.has_child());
+    }
+
+    #[test]
+    fn test_notation_debug() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!NOTATION a PUBLIC 'b' 'c'>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let notation = doctype.notations().item(0).unwrap();
+
+        // fmt::Debug
+        assert_eq!("XmlNotation { a }", format!("{:?}", notation));
+    }
+
+    #[test]
+    fn test_notation_display() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!NOTATION a PUBLIC 'b' 'c'>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let notation = doctype.notations().item(0).unwrap();
+
+        // fmt::Display
+        assert_eq!("<!NOTATION a PUBLIC \"b\" \"c\">", format!("{}", notation));
+    }
+
+    #[test]
+    fn test_entity_entity() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!ENTITY a PUBLIC 'b' 'c' NDATA d>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let entity = doctype.entities().item(0).unwrap();
+
+        // Notation
+        assert_eq!("b", entity.public_id().unwrap());
+        assert_eq!("c", entity.system_id().unwrap());
+        assert_eq!("d", entity.notation_name().unwrap());
+    }
+
+    #[test]
+    fn test_entity_node() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!ENTITY a PUBLIC 'b' 'c' NDATA d>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let entity = doctype.entities().item(0).unwrap();
+
+        // Node
+        assert_eq!("a", entity.node_name());
+        assert_eq!(None, entity.node_value().unwrap());
+        assert_eq!(NodeType::Entity, entity.node_type());
+        assert_eq!(None, entity.parent_node());
+        assert_eq!(XmlNodeList::empty(), entity.child_nodes());
+        assert_eq!(None, entity.first_child());
+        assert_eq!(None, entity.last_child());
+        assert_eq!(None, entity.previous_sibling());
+        assert_eq!(None, entity.next_sibling());
+        assert_eq!(None, entity.attributes());
+        assert_eq!(Some(doc.clone()), entity.owner_document());
+        assert!(!entity.has_child());
+    }
+
+    #[test]
+    fn test_entity_as_node() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!ENTITY a PUBLIC 'b' 'c' NDATA d>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let entity = doctype.entities().item(0).unwrap();
+
+        // AsNode
+        let node = entity.as_node();
+        assert_eq!("a", node.node_name());
+        assert_eq!(None, node.node_value().unwrap());
+        assert_eq!(NodeType::Entity, node.node_type());
+        assert_eq!(None, node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(!node.has_child());
+    }
+
+    #[test]
+    fn test_entity_children() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!ENTITY a PUBLIC 'b' 'c' NDATA d>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let entity = doctype.entities().item(0).unwrap();
+
+        // HasChild
+        assert_eq!(0, entity.children().len());
+    }
+
+    #[test]
+    fn test_entity_debug() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!ENTITY a PUBLIC 'b' 'c' NDATA d>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let entity = doctype.entities().item(0).unwrap();
+
+        // fmt::Debug
+        assert_eq!("XmlEntity { a }", format!("{:?}", entity));
+    }
+
+    #[test]
+    fn test_entity_display() {
+        let (_, doc) =
+            XmlDocument::from_raw("<!DOCTYPE root [<!ENTITY a PUBLIC 'b' 'c' NDATA d>]><root />")
+                .unwrap();
+        let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
+        let entity = doctype.entities().item(0).unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!ENTITY a PUBLIC \"b\" \"c\" NDATA d>",
+            format!("{}", entity)
+        );
+    }
+
+    #[test]
+    fn test_ref_node() {
+        let (_, doc) = XmlDocument::from_raw("<root a='&amp;' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let eref = attr.child_nodes().item(0).unwrap().as_entity_ref().unwrap();
+
+        // Node
+        assert_eq!("amp", eref.node_name());
+        assert_eq!(None, eref.node_value().unwrap());
+        assert_eq!(NodeType::EntityReference, eref.node_type());
+        assert_eq!(Some(attr.as_node()), eref.parent_node());
+        assert_eq!(XmlNodeList::empty(), eref.child_nodes());
+        assert_eq!(None, eref.first_child());
+        assert_eq!(None, eref.last_child());
+        assert_eq!(None, eref.previous_sibling());
+        assert_eq!(None, eref.next_sibling());
+        assert_eq!(None, eref.attributes());
+        assert_eq!(Some(doc.clone()), eref.owner_document());
+        assert!(!eref.has_child());
+    }
+
+    #[test]
+    fn test_ref_as_node() {
+        let (_, doc) = XmlDocument::from_raw("<root a='&amp;' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let eref = attr.child_nodes().item(0).unwrap().as_entity_ref().unwrap();
+
+        // AsNode
+        let node = eref.as_node();
+        assert_eq!("amp", node.node_name());
+        assert_eq!(None, node.node_value().unwrap());
+        assert_eq!(NodeType::EntityReference, node.node_type());
+        assert_eq!(Some(attr.as_node()), node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(!node.has_child());
+    }
+
+    #[test]
+    fn test_ref_children() {
+        let (_, doc) = XmlDocument::from_raw("<root a='&amp;' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let eref = attr.child_nodes().item(0).unwrap().as_entity_ref().unwrap();
+
+        // HasChild
+        assert_eq!(0, eref.children().len());
+    }
+
+    #[test]
+    fn test_ref_debug() {
+        let (_, doc) = XmlDocument::from_raw("<root a='&amp;' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let eref = attr.child_nodes().item(0).unwrap().as_entity_ref().unwrap();
+
+        // fmt::Debug
+        assert_eq!("XmlEntityReference { amp }", format!("{:?}", eref));
+    }
+
+    #[test]
+    fn test_ref_display() {
+        let (_, doc) = XmlDocument::from_raw("<root a='&amp;' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let eref = attr.child_nodes().item(0).unwrap().as_entity_ref().unwrap();
+
+        // fmt::Display
+        assert_eq!("&amp;", format!("{}", eref));
+    }
+
+    #[test]
+    fn test_ref_impl() {
+        let (_, doc) = XmlDocument::from_raw("<root a='&amp;' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let eref = attr.child_nodes().item(0).unwrap().as_entity_ref().unwrap();
+
+        // XmlEntityReference
+        assert_eq!("&", eref.value().unwrap());
+    }
+
+    #[test]
+    fn test_pi_pi() {
         let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut pi = if let XmlNode::PI(e) = root.child_nodes().item(0).unwrap() {
-            e.clone()
-        } else {
-            unreachable!()
-        };
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // ProcessingInstruction
         assert_eq!("a", pi.target());
         assert_eq!("b", pi.data());
+    }
+
+    #[test]
+    fn test_pi_pi_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // ProcessingInstructionMut
         pi.set_data("c").unwrap();
         assert_eq!("c", pi.data());
-        pi.set_data("b").unwrap();
+    }
+
+    #[test]
+    fn test_pi_node() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // Node
         assert_eq!("a", pi.node_name());
@@ -4003,6 +5207,13 @@ mod tests {
         assert_eq!(None, pi.attributes());
         assert_eq!(Some(doc.clone()), pi.owner_document());
         assert!(!pi.has_child());
+    }
+
+    #[test]
+    fn test_pi_node_mut() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // NodeMut
         let e = root.clone().as_node();
@@ -4013,8 +5224,15 @@ mod tests {
         pi.remove_child(&e).err().unwrap();
         pi.append_child(e.clone()).err().unwrap();
         pi.set_node_value("b").unwrap();
+    }
 
-        // XmlNode
+    #[test]
+    fn test_pi_as_node() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+
+        // AsNode
         let node = pi.as_node();
         assert_eq!("a", node.node_name());
         assert_eq!(Some("b".to_string()), node.node_value().unwrap());
@@ -4028,13 +5246,53 @@ mod tests {
         assert_eq!(None, node.attributes());
         assert_eq!(Some(doc.clone()), node.owner_document());
         assert!(!node.has_child());
+    }
+
+    #[test]
+    fn test_pi_as_expanded_name() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+
+        // AsExpandedName
+        assert_eq!(
+            Some(("a".to_string(), None, None)),
+            pi.as_expanded_name().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_pi_as_string_value() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // AsStringValue
         assert_eq!("b", pi.as_string_value().unwrap());
     }
 
     #[test]
-    fn test_namespace() {
+    fn test_pi_debug() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+
+        // fmt::Debug
+        assert_eq!("XmlProcessingInstruction { a }", format!("{:?}", pi));
+    }
+
+    #[test]
+    fn test_pi_display() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+
+        // fmt::Display
+        assert_eq!("<?a b?>", format!("{}", pi));
+    }
+
+    #[test]
+    fn test_namespace_node() {
         let (_, doc) = XmlDocument::from_raw("<root xmlns:a='http://test/a'></root>").unwrap();
         let root = doc.document_element().unwrap();
         let namespaces = root.in_scope_namespace().unwrap();
@@ -4053,8 +5311,16 @@ mod tests {
         assert_eq!(None, ns.attributes());
         assert_eq!(None, ns.owner_document());
         assert!(!ns.has_child());
+    }
 
-        // XmlNode
+    #[test]
+    fn test_namespace_as_node() {
+        let (_, doc) = XmlDocument::from_raw("<root xmlns:a='http://test/a'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let namespaces = root.in_scope_namespace().unwrap();
+        let ns = namespaces.first().unwrap();
+
+        // AsNode
         let node = ns.as_node();
         assert_eq!("a", node.node_name());
         assert_eq!(
@@ -4071,30 +5337,107 @@ mod tests {
         assert_eq!(None, node.attributes());
         assert_eq!(None, node.owner_document());
         assert!(!node.has_child());
+    }
+
+    #[test]
+    fn test_namespace_as_expanded_name() {
+        let (_, doc) = XmlDocument::from_raw("<root xmlns:a='http://test/a'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let namespaces = root.in_scope_namespace().unwrap();
+        let ns = namespaces.first().unwrap();
+
+        // AsStringValue
+        assert_eq!(
+            Some(("a".to_string(), None, None)),
+            ns.as_expanded_name().unwrap()
+        );
+    }
+
+    #[test]
+    fn test_namespace_as_string_value() {
+        let (_, doc) = XmlDocument::from_raw("<root xmlns:a='http://test/a'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let namespaces = root.in_scope_namespace().unwrap();
+        let ns = namespaces.first().unwrap();
 
         // AsStringValue
         assert_eq!("http://test/a", ns.as_string_value().unwrap());
     }
 
     #[test]
-    fn test_resolved_text() {
+    fn test_namespace_debug() {
+        let (_, doc) = XmlDocument::from_raw("<root xmlns:a='http://test/a'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let namespaces = root.in_scope_namespace().unwrap();
+        let ns = namespaces.first().unwrap();
+
+        // fmt::Debug
+        assert_eq!("XmlNamespace { http://test/a }", format!("{:?}", ns));
+    }
+
+    #[test]
+    fn test_namespace_display() {
+        let (_, doc) = XmlDocument::from_raw("<root xmlns:a='http://test/a'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let namespaces = root.in_scope_namespace().unwrap();
+        let ns = namespaces.first().unwrap();
+
+        // fmt::Display
+        assert_eq!("xmlns:a=\"http://test/a\"", format!("{}", ns));
+    }
+
+    #[test]
+    fn test_namespace_impl() {
+        let (_, doc) = XmlDocument::from_raw("<root xmlns:a='http://test/a'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let namespaces = root.in_scope_namespace().unwrap();
+        let ns = namespaces.first().unwrap();
+
+        // XmlNamespace
+        assert!(!ns.implicit());
+    }
+
+    #[test]
+    fn test_resolved_text_character_data() {
         let (_, doc) =
             XmlDocument::from_raw("<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>").unwrap();
         let root = doc.document_element().unwrap();
-        let text = if let XmlNode::ResolvedText(e) = root.child_nodes().item(0).unwrap() {
-            e.clone()
-        } else {
-            unreachable!()
-        };
-        let a = if let XmlNode::Element(e) = root.child_nodes().item(1).unwrap() {
-            e.clone()
-        } else {
-            unreachable!()
-        };
+        let text = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
 
         // CharacterData
+        assert_eq!("abc", text.data().unwrap());
         assert_eq!(3, text.length());
         assert_eq!("bc", text.substring_data(1, 2));
+
+        let text = root
+            .child_nodes()
+            .item(2)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // CharacterData
+        assert_eq!(4, text.length());
+        assert_eq!("d&", text.substring_data(1, 2));
+    }
+
+    #[test]
+    fn test_resolved_text_node() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let text = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+        let a = root.child_nodes().item(1).unwrap().as_element().unwrap();
 
         // Node
         assert_eq!("#text", text.node_name());
@@ -4110,33 +5453,12 @@ mod tests {
         assert_eq!(Some(doc.clone()), text.owner_document());
         assert!(!text.has_child());
 
-        // XmlNode
-        let node = text.as_node();
-        assert_eq!("#text", node.node_name());
-        assert_eq!(Some("abc".to_string()), node.node_value().unwrap());
-        assert_eq!(NodeType::Text, node.node_type());
-        assert_eq!(Some(root.as_node()), node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
-        assert_eq!(None, node.first_child());
-        assert_eq!(None, node.last_child());
-        assert_eq!(None, node.previous_sibling());
-        assert_eq!(Some(a.as_node()), node.next_sibling());
-        assert_eq!(None, node.attributes());
-        assert_eq!(Some(doc.clone()), node.owner_document());
-        assert!(!node.has_child());
-
-        // AsStringValue
-        assert_eq!("abc", text.as_string_value().unwrap());
-
-        let text = if let XmlNode::ResolvedText(e) = root.child_nodes().item(2).unwrap() {
-            e.clone()
-        } else {
-            unreachable!()
-        };
-
-        // CharacterData
-        assert_eq!(4, text.length());
-        assert_eq!("d&", text.substring_data(1, 2));
+        let text = root
+            .child_nodes()
+            .item(2)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
 
         // Node
         assert_eq!("#text", text.node_name());
@@ -4151,9 +5473,109 @@ mod tests {
         assert_eq!(None, text.attributes());
         assert_eq!(Some(doc.clone()), text.owner_document());
         assert!(!text.has_child());
+    }
+
+    #[test]
+    fn test_resolved_text_as_node() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let text = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+        let a = root.child_nodes().item(1).unwrap().as_element().unwrap();
+
+        // AsNode
+        let node = text.as_node();
+        assert_eq!("#text", node.node_name());
+        assert_eq!(Some("abc".to_string()), node.node_value().unwrap());
+        assert_eq!(NodeType::Text, node.node_type());
+        assert_eq!(Some(root.as_node()), node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(None, node.previous_sibling());
+        assert_eq!(Some(a.as_node()), node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(!node.has_child());
+
+        let text = root
+            .child_nodes()
+            .item(2)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // AsNode
+        let node = text.as_node();
+        assert_eq!("#text", node.node_name());
+        assert_eq!(Some("あd&d".to_string()), node.node_value().unwrap());
+        assert_eq!(NodeType::Text, node.node_type());
+        assert_eq!(Some(root.as_node()), node.parent_node());
+        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.first_child());
+        assert_eq!(None, node.last_child());
+        assert_eq!(Some(a.as_node()), node.previous_sibling());
+        assert_eq!(None, node.next_sibling());
+        assert_eq!(None, node.attributes());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        assert!(!node.has_child());
+    }
+
+    #[test]
+    fn test_resolved_text_as_string_value() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let text = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // AsStringValue
+        assert_eq!("abc", text.as_string_value().unwrap());
+
+        let text = root
+            .child_nodes()
+            .item(2)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
 
         // AsStringValue
         assert_eq!("あd&d", text.as_string_value().unwrap());
+    }
+
+    #[test]
+    fn test_resolved_text_display() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let text = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // fmt::Display
+        assert_eq!("a<![CDATA[b]]>c", format!("{}", text));
+
+        let text = root
+            .child_nodes()
+            .item(2)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // fmt::Display
+        assert_eq!("&#x3042;d&amp;d", format!("{}", text));
     }
 }
 

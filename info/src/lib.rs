@@ -11,10 +11,28 @@ use xml_parser::model as parser;
 // TODO: Base URI is always empty string.
 // TODO: White Space Handling.
 // TODO: Parameter Entity Reference.
+// TODO: Improve process that updates document order.
+// TODO: Improve entity reference structure.
 
 // -----------------------------------------------------------------------------------------------
 
 pub type XmlNode<T> = Rc<RefCell<T>>;
+
+// -----------------------------------------------------------------------------------------------
+
+pub trait HasChildren {
+    fn append(&mut self, value: XmlItem) -> error::Result<XmlItem>;
+
+    fn delete_by_order(&mut self, order: i64) -> Option<XmlItem>;
+
+    fn insert_before_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem>;
+}
+
+// -----------------------------------------------------------------------------------------------
+
+pub trait HasOwner {
+    fn owner(&self) -> XmlNode<XmlDocument>;
+}
 
 // -----------------------------------------------------------------------------------------------
 
@@ -210,6 +228,39 @@ pub struct XmlAttribute {
     order: i64,
 }
 
+impl HasChildren for XmlAttribute {
+    fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
+        self.insert(value, self.values.len())
+    }
+
+    fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
+        if let Some(v) = self.values.iter().find(|v| v.order() == order).cloned() {
+            self.values.retain(|v| v.order() != order);
+            match v {
+                XmlAttributeValue::Reference(v) => Some(v.try_into().unwrap()),
+                XmlAttributeValue::Text(v) => Some(v.into()),
+            }
+        } else {
+            None
+        }
+    }
+
+    fn insert_before_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem> {
+        let index = self
+            .values
+            .iter()
+            .position(|v| order <= v.order())
+            .ok_or(error::Error::OufOfIndex(order))?;
+        self.insert(value, index)
+    }
+}
+
+impl HasOwner for XmlAttribute {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
+}
+
 impl HasQName for XmlAttribute {
     fn local_name(&self) -> &str {
         self.local_name.as_str()
@@ -390,6 +441,7 @@ impl fmt::Display for XmlAttribute {
 
         write!(f, "{}=\"", self.local_name.as_str())?;
 
+        // FIXME: in case of contain `'`.
         for value in self.values.as_slice() {
             value.fmt(f)?;
         }
@@ -418,7 +470,7 @@ impl XmlAttribute {
         for value in value.value.as_slice() {
             if let Some(v) = XmlAttributeValue::new(value, attribute.clone().into(), owner.clone())
             {
-                attribute.borrow_mut().push_value(v);
+                attribute.borrow_mut().values.push(v);
             }
         }
 
@@ -442,7 +494,7 @@ impl XmlAttribute {
         if let XmlDeclarationAttDefault::Value(_, values) = &value.value {
             for value in values.as_slice() {
                 if let Some(v) = XmlAttributeValue::new_from_declaration(value) {
-                    attribute.borrow_mut().push_value(v);
+                    attribute.borrow_mut().values.push(v);
                 }
             }
         }
@@ -460,41 +512,8 @@ impl XmlAttribute {
         }
     }
 
-    pub fn append(&mut self, value: XmlItem) -> error::Result<XmlAttributeValue> {
-        let v = XmlAttributeValue::try_from(value)?;
-        self.values.push(v.clone());
-        Ok(v)
-    }
-
-    pub fn delete_by_order(&mut self, order: i64) -> Option<XmlAttributeValue> {
-        if let Some(v) = self.values.iter().find(|v| v.order() == order).cloned() {
-            self.values.retain(|v| v.order() != order);
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub fn insert_at_order(
-        &mut self,
-        value: XmlItem,
-        order: i64,
-    ) -> error::Result<XmlAttributeValue> {
-        let index = self
-            .values
-            .iter()
-            .position(|v| order <= v.order())
-            .ok_or(error::Error::OufOfIndex(order))?;
-        let v = XmlAttributeValue::try_from(value)?;
-        self.values.insert(index, v.clone());
-        Ok(v)
-    }
-
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
-    }
-
     pub fn set_values(&mut self, value: &str) -> error::Result<()> {
+        // FIXME: in case of contain `'`.
         let xml = format!("{}='{}'", self.local_name(), value);
         let (rest, tree) = xml_parser::attribute(xml.as_str())?;
         if rest.is_empty() {
@@ -527,12 +546,16 @@ impl XmlAttribute {
         Some(self.declaration_def()?.ty)
     }
 
-    fn namespace(&self) -> bool {
-        self.prefix().map(|p| p == "xmlns").unwrap_or_default() || self.local_name() == "xmlns"
+    fn insert(&mut self, value: XmlItem, index: usize) -> error::Result<XmlItem> {
+        // FIXME: parent / owner.
+        // FIXME: document order.
+        let v = XmlAttributeValue::try_from(value.clone())?;
+        self.values.insert(index, v.clone());
+        Ok(value)
     }
 
-    fn push_value(&mut self, value: XmlAttributeValue) {
-        self.values.push(value);
+    fn namespace(&self) -> bool {
+        self.prefix().map(|p| p == "xmlns").unwrap_or_default() || self.local_name() == "xmlns"
     }
 }
 
@@ -627,6 +650,12 @@ pub struct XmlCData {
     order: i64,
 }
 
+impl HasOwner for XmlCData {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
+}
+
 impl Sortable for XmlCData {
     fn order(&self) -> i64 {
         self.order
@@ -706,10 +735,6 @@ impl XmlCData {
         self.data.chars().count()
     }
 
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
-    }
-
     pub fn split_at(&mut self, offset: usize) -> XmlNode<Self> {
         let mut chars = self.data.chars().collect::<Vec<char>>();
         let at = if offset < chars.len() {
@@ -744,6 +769,12 @@ pub struct XmlCharReference {
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
     order: i64,
+}
+
+impl HasOwner for XmlCharReference {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
 }
 
 impl Sortable for XmlCharReference {
@@ -818,10 +849,6 @@ impl XmlCharReference {
         self.num.as_str()
     }
 
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
-    }
-
     pub fn radix(&self) -> u32 {
         self.radix
     }
@@ -835,6 +862,12 @@ pub struct XmlComment {
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
     order: i64,
+}
+
+impl HasOwner for XmlComment {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
 }
 
 impl Sortable for XmlComment {
@@ -909,10 +942,6 @@ impl XmlComment {
 
     pub fn len(&self) -> usize {
         self.comment.chars().count()
-    }
-
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
     }
 
     pub fn substring(&self, range: Range<usize>) -> String {
@@ -1116,6 +1145,30 @@ pub struct XmlDocument {
     order: i64,
 }
 
+impl HasChildren for XmlDocument {
+    fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
+        self.insert(value, self.children.len())
+    }
+
+    fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
+        if let Some(v) = self.children.iter().find(|v| v.order() == order).cloned() {
+            self.children.retain(|v| v.order() != order);
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    fn insert_before_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem> {
+        let index = self
+            .children
+            .iter()
+            .position(|v| order <= v.order())
+            .ok_or(error::Error::OufOfIndex(order))?;
+        self.insert(value, index)
+    }
+}
+
 impl Sortable for XmlDocument {
     fn order(&self) -> i64 {
         self.order
@@ -1280,7 +1333,9 @@ impl XmlDocument {
     pub fn empty() -> XmlNode<Self> {
         let (_, tree) = xml_parser::document("<r />").unwrap();
         let doc = XmlDocument::new(&tree).unwrap();
-        doc.borrow_mut().clear_root();
+        doc.borrow_mut()
+            .children
+            .retain(|v| v.as_element().is_none());
         doc
     }
 
@@ -1288,86 +1343,40 @@ impl XmlDocument {
         self.children.iter().find_map(|v| v.as_document_type())
     }
 
-    pub fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
-        match value {
-            XmlItem::Comment(_) => {
-                self.children.push(value.clone());
-                Ok(value)
-            }
-            XmlItem::DocumentType(_) => {
-                if self.document_declaration().is_some() || self.document_element().is_ok() {
-                    Err(error::Error::InvalidType)
-                } else {
-                    self.children.push(value.clone());
-                    Ok(value)
-                }
-            }
-            XmlItem::Element(_) => {
-                if self.document_element().is_ok() {
-                    Err(error::Error::InvalidType)
-                } else {
-                    self.children.push(value.clone());
-                    Ok(value)
-                }
-            }
-            XmlItem::PI(_) => {
-                self.children.push(value.clone());
-                Ok(value)
-            }
-            _ => Err(error::Error::InvalidType),
-        }
-    }
-
-    pub fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
-        if let Some(v) = self.children.iter().find(|v| v.order() == order).cloned() {
-            self.children.retain(|v| v.order() != order);
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub fn insert_at_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem> {
-        let index = self
-            .children
-            .iter()
-            .position(|v| order <= v.order())
-            .ok_or(error::Error::OufOfIndex(order))?;
-        match value {
-            XmlItem::Comment(_) => {
-                self.children.insert(index, value.clone());
-                Ok(value)
-            }
-            XmlItem::DocumentType(_) => {
-                if self.document_declaration().is_some() || self.document_element().is_ok() {
-                    Err(error::Error::InvalidType)
-                } else {
-                    self.children.insert(index, value.clone());
-                    Ok(value)
-                }
-            }
-            XmlItem::Element(_) => {
-                if self.document_element().is_ok() {
-                    Err(error::Error::InvalidType)
-                } else {
-                    self.children.insert(index, value.clone());
-                    Ok(value)
-                }
-            }
-            XmlItem::PI(_) => {
-                self.children.insert(index, value.clone());
-                Ok(value)
-            }
-            _ => Err(error::Error::InvalidType),
-        }
-    }
-
     pub fn reset_order(&mut self) {
         self.set_order(&mut CountUp::default());
     }
 
-    fn clear_root(&mut self) {
-        self.children.retain(|v| v.as_element().is_none());
+    fn insert(&mut self, value: XmlItem, index: usize) -> error::Result<XmlItem> {
+        // FIXME: parent / owner.
+        // FIXME: document order.
+        match value {
+            XmlItem::Comment(_) => {
+                self.children.insert(index, value.clone());
+                Ok(value)
+            }
+            XmlItem::DocumentType(_) => {
+                if self.document_declaration().is_some() || self.document_element().is_ok() {
+                    Err(error::Error::InvalidType)
+                } else {
+                    self.children.insert(index, value.clone());
+                    Ok(value)
+                }
+            }
+            XmlItem::Element(_) => {
+                if self.document_element().is_ok() {
+                    Err(error::Error::InvalidType)
+                } else {
+                    self.children.insert(index, value.clone());
+                    Ok(value)
+                }
+            }
+            XmlItem::PI(_) => {
+                self.children.insert(index, value.clone());
+                Ok(value)
+            }
+            _ => Err(error::Error::InvalidType),
+        }
     }
 }
 
@@ -1448,12 +1457,15 @@ impl fmt::Display for XmlDocumentTypeDeclaration {
         write!(f, "{}", self.local_name.as_str())?;
 
         if let Some(pub_id) = self.public_identifier.as_deref() {
+            // FIXME: in case of contain `'`.
             write!(f, " PUBLIC \"{}\"", pub_id)?;
 
             if let Some(sys_id) = self.system_identifier.as_deref() {
+                // FIXME: in case of contain `'`.
                 write!(f, " \"{}\"", sys_id)?;
             }
         } else if let Some(sys_id) = self.system_identifier.as_deref() {
+            // FIXME: in case of contain `'`.
             write!(f, " SYSTEM \"{}\"", sys_id)?;
         }
 
@@ -1602,6 +1614,36 @@ pub struct XmlElement {
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
     order: i64,
+}
+
+impl HasChildren for XmlElement {
+    fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
+        self.insert(value, self.children.len())
+    }
+
+    fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
+        if let Some(v) = self.children.iter().find(|v| v.order() == order).cloned() {
+            self.children.retain(|v| v.order() != order);
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    fn insert_before_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem> {
+        let index = self
+            .children
+            .iter()
+            .position(|v| order <= v.order())
+            .ok_or(error::Error::OufOfIndex(order))?;
+        self.insert(value, index)
+    }
+}
+
+impl HasOwner for XmlElement {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
 }
 
 impl HasQName for XmlElement {
@@ -1854,54 +1896,8 @@ impl XmlElement {
         }
     }
 
-    pub fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
-        match value {
-            XmlItem::CData(_)
-            | XmlItem::CharReference(_)
-            | XmlItem::Comment(_)
-            | XmlItem::Element(_)
-            | XmlItem::PI(_)
-            | XmlItem::Text(_)
-            | XmlItem::Unexpanded(_) => {
-                self.children.push(value.clone());
-                Ok(value)
-            }
-            _ => Err(error::Error::InvalidType),
-        }
-    }
-
     pub fn append_attribute(&mut self, attr: XmlNode<XmlAttribute>) {
         self.attributes.push(attr);
-    }
-
-    pub fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
-        if let Some(v) = self.children.iter().find(|v| v.order() == order).cloned() {
-            self.children.retain(|v| v.order() != order);
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    pub fn insert_at_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem> {
-        let index = self
-            .children
-            .iter()
-            .position(|v| order <= v.order())
-            .ok_or(error::Error::OufOfIndex(order))?;
-        match value {
-            XmlItem::CData(_)
-            | XmlItem::CharReference(_)
-            | XmlItem::Comment(_)
-            | XmlItem::Element(_)
-            | XmlItem::PI(_)
-            | XmlItem::Text(_)
-            | XmlItem::Unexpanded(_) => {
-                self.children.insert(index, value.clone());
-                Ok(value)
-            }
-            _ => Err(error::Error::InvalidType),
-        }
     }
 
     pub fn namespaces(&self) -> error::Result<Vec<XmlNode<XmlNamespace>>> {
@@ -1928,10 +1924,6 @@ impl XmlElement {
         }
 
         Ok(items)
-    }
-
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
     }
 
     pub fn remove_attribute(&mut self, name: &str) -> Option<XmlNode<XmlAttribute>> {
@@ -2010,6 +2002,24 @@ impl XmlElement {
         Ok(None)
     }
 
+    fn insert(&mut self, value: XmlItem, index: usize) -> error::Result<XmlItem> {
+        // FIXME: parent / owner.
+        // FIXME: document order.
+        match value {
+            XmlItem::CData(_)
+            | XmlItem::CharReference(_)
+            | XmlItem::Comment(_)
+            | XmlItem::Element(_)
+            | XmlItem::PI(_)
+            | XmlItem::Text(_)
+            | XmlItem::Unexpanded(_) => {
+                self.children.insert(index, value.clone());
+                Ok(value)
+            }
+            _ => Err(error::Error::InvalidType),
+        }
+    }
+
     fn push_attribute(&mut self, attr: XmlNode<XmlAttribute>) {
         self.attributes.push(attr);
     }
@@ -2031,6 +2041,12 @@ pub struct XmlEntity {
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
     order: i64,
+}
+
+impl HasOwner for XmlEntity {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
 }
 
 impl Sortable for XmlEntity {
@@ -2074,18 +2090,23 @@ impl fmt::Display for XmlEntity {
         write!(f, "<!ENTITY {}", self.name.as_str())?;
 
         if let Some(pub_id) = self.public_identifier.as_deref() {
+            // FIXME: in case of contain `'`.
             write!(f, " PUBLIC \"{}\"", pub_id)?;
 
             if let Some(sys_id) = self.system_identifier.as_deref() {
+                // FIXME: in case of contain `'`.
                 write!(f, " \"{}\"", sys_id)?;
             }
         } else if let Some(sys_id) = self.system_identifier.as_deref() {
+            // FIXME: in case of contain `'`.
             write!(f, " SYSTEM \"{}\"", sys_id)?;
         } else if let Some(values) = self.values.as_deref() {
+            // FIXME: in case of contain `'`.
             write!(f, " \"")?;
             for value in values {
                 value.fmt(f)?;
             }
+            // FIXME: in case of contain `'`.
             write!(f, "\"",)?;
         }
 
@@ -2154,10 +2175,6 @@ impl XmlEntity {
 
     pub fn notation_name(&self) -> Option<&str> {
         self.notation_name.as_deref()
-    }
-
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
     }
 
     pub fn parent(&self) -> Option<XmlItem> {
@@ -2586,6 +2603,12 @@ pub struct XmlNotation {
     order: i64,
 }
 
+impl HasOwner for XmlNotation {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
+}
+
 impl Sortable for XmlNotation {
     fn order(&self) -> i64 {
         self.order
@@ -2627,12 +2650,15 @@ impl fmt::Display for XmlNotation {
         write!(f, "<!NOTATION {}", self.name.as_str())?;
 
         if let Some(pub_id) = self.public_identifier.as_deref() {
+            // FIXME: in case of contain `'`.
             write!(f, " PUBLIC \"{}\"", pub_id)?;
 
             if let Some(sys_id) = self.system_identifier.as_deref() {
+                // FIXME: in case of contain `'`.
                 write!(f, " \"{}\"", sys_id)?;
             }
         } else if let Some(sys_id) = self.system_identifier.as_deref() {
+            // FIXME: in case of contain `'`.
             write!(f, " SYSTEM \"{}\"", sys_id)?;
         }
 
@@ -2669,10 +2695,6 @@ impl XmlNotation {
         })
     }
 
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
-    }
-
     pub fn parent(&self) -> XmlItem {
         self.parent.clone()
     }
@@ -2688,6 +2710,12 @@ pub struct XmlProcessingInstruction {
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
     order: i64,
+}
+
+impl HasOwner for XmlProcessingInstruction {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
 }
 
 impl Sortable for XmlProcessingInstruction {
@@ -2771,10 +2799,6 @@ impl XmlProcessingInstruction {
         }
     }
 
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
-    }
-
     pub fn set_content(&mut self, content: &str) -> error::Result<()> {
         let xml = format!("<?{} {}?>", self.target, content);
         let (rest, tree) = xml_parser::pi(xml.as_str())?;
@@ -2795,6 +2819,12 @@ pub struct XmlReference {
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
     order: i64,
+}
+
+impl HasOwner for XmlReference {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
 }
 
 impl Sortable for XmlReference {
@@ -2889,10 +2919,6 @@ impl XmlReference {
         }
     }
 
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
-    }
-
     pub fn parent(&self) -> error::Result<XmlItem> {
         self.parent.clone().ok_or(error::Error::IsolatedNode)
     }
@@ -2938,6 +2964,12 @@ pub struct XmlText {
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
     order: i64,
+}
+
+impl HasOwner for XmlText {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
 }
 
 impl Sortable for XmlText {
@@ -3017,10 +3049,6 @@ impl XmlText {
         self.text.chars().count()
     }
 
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
-    }
-
     pub fn parent_item(&self) -> Option<XmlItem> {
         self.parent.clone()
     }
@@ -3061,6 +3089,12 @@ pub struct XmlUnexpandedEntityReference {
     parent: Option<XmlItem>,
     owner: XmlNode<XmlDocument>,
     order: i64,
+}
+
+impl HasOwner for XmlUnexpandedEntityReference {
+    fn owner(&self) -> XmlNode<XmlDocument> {
+        self.owner.clone()
+    }
 }
 
 impl Sortable for XmlUnexpandedEntityReference {
@@ -3138,10 +3172,6 @@ impl XmlUnexpandedEntityReference {
 
     pub fn entity(&self) -> XmlNode<XmlEntity> {
         self.entity.clone()
-    }
-
-    pub fn owner(&self) -> XmlNode<XmlDocument> {
-        self.owner.clone()
     }
 }
 
@@ -3861,14 +3891,14 @@ mod tests {
     }
 
     #[test]
-    fn test_document_insert_at_order() {
+    fn test_document_insert_before_order() {
         let (rest, tree) = xml_parser::document("<!--a--><?b?><!DOCTYPE c><c /><!--e-->").unwrap();
         assert_eq!("", rest);
 
         let doc = XmlDocument::new(&tree).unwrap();
 
         doc.borrow_mut()
-            .insert_at_order(XmlComment::new("f", None, doc.clone()).into(), 5)
+            .insert_before_order(XmlComment::new("f", None, doc.clone()).into(), 5)
             .unwrap();
         assert_eq!(
             "<!--a--><?b?><!DOCTYPE c><!--f--><c /><!--e-->",
@@ -3876,7 +3906,7 @@ mod tests {
         );
 
         doc.borrow_mut()
-            .insert_at_order(
+            .insert_before_order(
                 XmlProcessingInstruction::empty("g", doc.clone())
                     .unwrap()
                     .into(),
@@ -3889,7 +3919,7 @@ mod tests {
         );
 
         doc.borrow_mut()
-            .insert_at_order(
+            .insert_before_order(
                 XmlDocumentTypeDeclaration::empty("h", doc.clone()).into(),
                 5,
             )
@@ -3897,12 +3927,12 @@ mod tests {
             .unwrap();
 
         doc.borrow_mut()
-            .insert_at_order(XmlElement::empty("i", doc.clone()).unwrap().into(), 5)
+            .insert_before_order(XmlElement::empty("i", doc.clone()).unwrap().into(), 5)
             .err()
             .unwrap();
 
         doc.borrow_mut()
-            .insert_at_order(XmlText::new("f", None, doc.clone()).into(), 5)
+            .insert_before_order(XmlText::new("f", None, doc.clone()).into(), 5)
             .err()
             .unwrap();
     }
@@ -5218,7 +5248,7 @@ mod tests {
     }
 
     #[test]
-    fn test_atttibute_insert_at_order() {
+    fn test_atttibute_insert_before_order() {
         let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
         assert_eq!("", rest);
 
@@ -5227,17 +5257,17 @@ mod tests {
         let attr = root.borrow().attributes().iter().next().unwrap();
 
         attr.borrow_mut()
-            .insert_at_order(XmlText::new("3", None, doc.clone()).into(), 5)
+            .insert_before_order(XmlText::new("3", None, doc.clone()).into(), 5)
             .unwrap();
         assert_eq!("13&2", attr.borrow().normalized_value().unwrap());
 
         attr.borrow_mut()
-            .insert_at_order(XmlText::new("3", None, doc.clone()).into(), 7)
+            .insert_before_order(XmlText::new("3", None, doc.clone()).into(), 7)
             .err()
             .unwrap();
 
         attr.borrow_mut()
-            .insert_at_order(
+            .insert_before_order(
                 XmlCharReference::new("3042", 16, None, doc.clone())
                     .unwrap()
                     .into(),
@@ -5247,7 +5277,7 @@ mod tests {
         assert_eq!("13あ&2", attr.borrow().normalized_value().unwrap());
 
         attr.borrow_mut()
-            .insert_at_order(XmlComment::new("a", None, doc.clone()).into(), 5)
+            .insert_before_order(XmlComment::new("a", None, doc.clone()).into(), 5)
             .err()
             .unwrap();
     }
