@@ -1048,7 +1048,7 @@ impl XmlDeclarationAttList {
         value: &parser::DeclarationAtt<'_>,
         parent: XmlItem,
         owner: XmlNode<XmlDocument>,
-    ) -> Self {
+    ) -> XmlNode<Self> {
         let (local_name, prefix) = qname(&value.name);
 
         let atts = value
@@ -1057,12 +1057,12 @@ impl XmlDeclarationAttList {
             .map(|v| XmlDeclarationAttDef::new(v, parent.clone(), owner.clone()))
             .collect();
 
-        XmlDeclarationAttList {
+        node(XmlDeclarationAttList {
             local_name,
             prefix,
             atts,
             order: 0,
-        }
+        })
     }
 }
 
@@ -2352,96 +2352,6 @@ impl From<XmlNode<XmlUnexpandedEntityReference>> for XmlItem {
 impl From<XmlNode<XmlUnparsedEntity>> for XmlItem {
     fn from(value: XmlNode<XmlUnparsedEntity>) -> Self {
         XmlItem::Unparsed(value)
-    }
-}
-
-impl From<XmlAttribute> for XmlItem {
-    fn from(value: XmlAttribute) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlCData> for XmlItem {
-    fn from(value: XmlCData) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlCharReference> for XmlItem {
-    fn from(value: XmlCharReference) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlComment> for XmlItem {
-    fn from(value: XmlComment) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlDeclarationAttList> for XmlItem {
-    fn from(value: XmlDeclarationAttList) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlDocument> for XmlItem {
-    fn from(value: XmlDocument) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlDocumentTypeDeclaration> for XmlItem {
-    fn from(value: XmlDocumentTypeDeclaration) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlElement> for XmlItem {
-    fn from(value: XmlElement) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlEntity> for XmlItem {
-    fn from(value: XmlEntity) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlNamespace> for XmlItem {
-    fn from(value: XmlNamespace) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlNotation> for XmlItem {
-    fn from(value: XmlNotation) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlProcessingInstruction> for XmlItem {
-    fn from(value: XmlProcessingInstruction) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlText> for XmlItem {
-    fn from(value: XmlText) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlUnexpandedEntityReference> for XmlItem {
-    fn from(value: XmlUnexpandedEntityReference) -> Self {
-        XmlItem::from(node(value))
-    }
-}
-
-impl From<XmlUnparsedEntity> for XmlItem {
-    fn from(value: XmlUnparsedEntity) -> Self {
-        XmlItem::from(node(value))
     }
 }
 
