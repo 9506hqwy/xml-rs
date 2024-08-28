@@ -13,8 +13,8 @@ use xml_info::{
     ProcessingInstruction as InfoProcessingInstruction, Sortable as InfoSortable,
 };
 
+// TODO: re-implement DocumentFragment
 // TODO: re-implement ResolvedText
-// TODO: error handling for write method.
 
 pub type ExpandedName = (String, Option<String>, Option<String>);
 
@@ -37,7 +37,7 @@ pub trait Document: Node {
 
     fn document_element(&self) -> error::Result<XmlElement>;
 
-    fn get_elements_by_tag_name(&self, tag_name: &str) -> error::Result<XmlNodeList>;
+    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlElementList;
 }
 
 pub trait DocumentMut: Document + NodeMut {
@@ -45,11 +45,11 @@ pub trait DocumentMut: Document + NodeMut {
 
     fn create_document_fragment(&self) -> XmlDocumentFragment;
 
-    fn create_text_node(&self, data: &str) -> error::Result<XmlText>;
+    fn create_text_node(&self, data: &str) -> XmlText;
 
-    fn create_comment(&self, data: &str) -> error::Result<XmlComment>;
+    fn create_comment(&self, data: &str) -> XmlComment;
 
-    fn create_cdata_section(&self, data: &str) -> error::Result<XmlCDataSection>;
+    fn create_cdata_section(&self, data: &str) -> XmlCDataSection;
 
     fn create_processing_instruction(
         &self,
@@ -160,7 +160,7 @@ pub trait CharacterData: Node {
 
     fn length(&self) -> usize;
 
-    fn substring_data(&self, offset: usize, count: usize) -> String;
+    fn substring_data(&self, offset: usize, count: usize) -> error::Result<String>;
 }
 
 pub trait CharacterDataMut: CharacterData + NodeMut {
@@ -203,11 +203,11 @@ pub trait AttrMut: Attr + NodeMut {
 pub trait Element: Node {
     fn tag_name(&self) -> String;
 
-    fn get_attribute(&self, name: &str) -> error::Result<String>;
+    fn get_attribute(&self, name: &str) -> String;
 
     fn get_attribute_node(&self, name: &str) -> Option<XmlAttr>;
 
-    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList;
+    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlElementList;
 }
 
 pub trait ElementMut: Element + NodeMut {
@@ -217,12 +217,12 @@ pub trait ElementMut: Element + NodeMut {
 
     fn set_attribute_node(&mut self, new_attr: XmlAttr) -> error::Result<Option<XmlAttr>>;
 
-    fn remove_attribute_node(&mut self, old_attr: XmlAttr) -> error::Result<Option<XmlAttr>> {
+    fn remove_attribute_node(&mut self, old_attr: XmlAttr) -> error::Result<XmlAttr> {
         if let Some(attr) = self.get_attribute_node(old_attr.name().as_str()) {
             self.remove_attribute(old_attr.name().as_str())?;
-            Ok(Some(attr))
+            Ok(attr)
         } else {
-            Ok(None)
+            Err(error::DomException::NotFoundErr)?
         }
     }
 
@@ -711,6 +711,14 @@ impl fmt::Display for XmlNode {
 }
 
 impl XmlNode {
+    pub fn as_cdata(&self) -> Option<XmlCDataSection> {
+        if let XmlNode::CData(v) = self {
+            Some(v.clone())
+        } else {
+            None
+        }
+    }
+
     pub fn as_comment(&self) -> Option<XmlComment> {
         if let XmlNode::Comment(v) = self {
             Some(v.clone())
@@ -764,6 +772,25 @@ impl XmlNode {
             Some(v.clone())
         } else {
             None
+        }
+    }
+
+    fn children(&self) -> Vec<XmlNode> {
+        match self {
+            XmlNode::Element(v) => v.children(),
+            XmlNode::Attribute(v) => v.children(),
+            XmlNode::Text(_) => Vec::new(),
+            XmlNode::CData(_) => Vec::new(),
+            XmlNode::EntityReference(v) => v.children(),
+            XmlNode::Entity(v) => v.children(),
+            XmlNode::PI(_) => Vec::new(),
+            XmlNode::Comment(_) => Vec::new(),
+            XmlNode::Document(v) => v.children(),
+            XmlNode::DocumentType(_) => Vec::new(),
+            XmlNode::DocumentFragment(v) => v.children(),
+            XmlNode::Notation(_) => Vec::new(),
+            XmlNode::Namespace(_) => Vec::new(),
+            XmlNode::ResolvedText(_) => Vec::new(),
         }
     }
 }
@@ -854,7 +881,7 @@ impl Node for XmlDocumentFragment {
 
     fn child_nodes(&self) -> XmlNodeList {
         XmlNodeList {
-            nodes: self.children(),
+            node: self.as_node(),
         }
     }
 
@@ -952,20 +979,18 @@ impl Document for XmlDocument {
         self.root_element()
     }
 
-    fn get_elements_by_tag_name(&self, tag_name: &str) -> error::Result<XmlNodeList> {
-        let mut nodes: Vec<XmlNode> = vec![];
-
-        for v in self.root_element()?.elements_by_tag_name(tag_name) {
-            nodes.push(v.as_node())
+    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlElementList {
+        XmlElementList {
+            node: self.as_node(),
+            tag_name: tag_name.to_string(),
         }
-
-        Ok(XmlNodeList { nodes })
     }
 }
 
 impl DocumentMut for XmlDocument {
     fn create_element(&self, tag_name: &str) -> error::Result<XmlElement> {
-        let element = info::XmlElement::empty(tag_name, self.document.clone())?;
+        let element = info::XmlElement::empty(tag_name, self.document.clone())
+            .map_err(|_| error::DomException::InvalidCharacterErr)?;
         Ok(XmlElement { element })
     }
 
@@ -977,22 +1002,25 @@ impl DocumentMut for XmlDocument {
         }
     }
 
-    fn create_text_node(&self, data: &str) -> error::Result<XmlText> {
+    fn create_text_node(&self, data: &str) -> XmlText {
         let text = info::XmlText::empty(self.document.clone());
-        text.borrow_mut().insert(0, data)?;
-        Ok(XmlText { data: text })
+        // TODO: escape
+        text.borrow_mut().insert(0, data).unwrap();
+        XmlText { data: text }
     }
 
-    fn create_comment(&self, data: &str) -> error::Result<XmlComment> {
+    fn create_comment(&self, data: &str) -> XmlComment {
         let comment = info::XmlComment::empty(self.document.clone());
-        comment.borrow_mut().insert(0, data)?;
-        Ok(XmlComment { data: comment })
+        // TODO: escape?
+        comment.borrow_mut().insert(0, data).unwrap();
+        XmlComment { data: comment }
     }
 
-    fn create_cdata_section(&self, data: &str) -> error::Result<XmlCDataSection> {
+    fn create_cdata_section(&self, data: &str) -> XmlCDataSection {
         let cdata = info::XmlCData::empty(self.document.clone());
-        cdata.borrow_mut().insert(0, data)?;
-        Ok(XmlCDataSection { data: cdata })
+        // TODO: escape?
+        cdata.borrow_mut().insert(0, data).unwrap();
+        XmlCDataSection { data: cdata }
     }
 
     fn create_processing_instruction(
@@ -1000,18 +1028,25 @@ impl DocumentMut for XmlDocument {
         target: &str,
         data: &str,
     ) -> error::Result<XmlProcessingInstruction> {
-        let pi = info::XmlProcessingInstruction::empty(target, self.document.clone())?;
-        pi.borrow_mut().set_content(data)?;
+        let pi = info::XmlProcessingInstruction::empty(target, self.document.clone())
+            .map_err(|_| error::DomException::InvalidCharacterErr)?;
+        pi.borrow_mut()
+            .set_content(data)
+            .map_err(|_| error::DomException::InvalidCharacterErr)?;
         Ok(XmlProcessingInstruction { pi })
     }
 
     fn create_attribute(&self, name: &str) -> error::Result<XmlAttr> {
-        let attribute = info::XmlAttribute::empty(name, self.document.clone())?;
+        let attribute = info::XmlAttribute::empty(name, self.document.clone())
+            .map_err(|_| error::DomException::InvalidCharacterErr)?;
         Ok(XmlAttr { attribute })
     }
 
     fn create_entity_reference(&self, name: &str) -> error::Result<XmlEntityReference> {
-        let reference = info::XmlReference::new_from_value(name, self.document.clone())?;
+        let ref_name = format!("&{};", name);
+        let reference =
+            info::XmlReference::new_from_value(ref_name.as_str(), self.document.clone())
+                .map_err(|_| error::DomException::InvalidCharacterErr)?;
         Ok(XmlEntityReference { reference })
     }
 }
@@ -1035,7 +1070,7 @@ impl Node for XmlDocument {
 
     fn child_nodes(&self) -> XmlNodeList {
         XmlNodeList {
-            nodes: self.children(),
+            node: self.as_node(),
         }
     }
 
@@ -1070,7 +1105,7 @@ impl Node for XmlDocument {
 
 impl NodeMut for XmlDocument {
     fn set_node_value(&mut self, _: &str) -> error::Result<()> {
-        Err(error::Error::NoDataAllowedErr)
+        Err(error::DomException::NoDataAllowedErr)?
     }
 
     fn insert_before(
@@ -1079,20 +1114,29 @@ impl NodeMut for XmlDocument {
         ref_child: Option<&XmlNode>,
     ) -> error::Result<XmlNode> {
         if Some(self.clone()) != new_child.owner_document() {
-            return Err(error::Error::WrongDoucmentErr);
+            return Err(error::DomException::WrongDocumentErr)?;
         }
 
         let value = if let Some(r) = ref_child {
             if Some(self.clone()) != r.owner_document() {
-                return Err(error::Error::WrongDoucmentErr);
+                return Err(error::DomException::WrongDocumentErr)?;
             }
 
             // TODO: remove new_child from teee.
+            match self
+                .document
+                .borrow_mut()
+                .insert_before_order(new_child.try_into()?, r.order())
+            {
+                Ok(v) => Ok(v),
+                Err(xml_info::error::Error::OufOfIndex(_)) => Err(error::DomException::NotFoundErr),
+                _ => Err(error::DomException::HierarchyRequestErr),
+            }?
+        } else {
             self.document
                 .borrow_mut()
-                .insert_before_order(new_child.try_into()?, r.order())?
-        } else {
-            self.document.borrow_mut().append(new_child.try_into()?)?
+                .append(new_child.try_into()?)
+                .map_err(|_| error::DomException::HierarchyRequestErr)?
         };
 
         self.reset_order();
@@ -1102,7 +1146,7 @@ impl NodeMut for XmlDocument {
 
     fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
         if Some(self.clone()) != old_child.owner_document() {
-            return Err(error::Error::WrongDoucmentErr);
+            return Err(error::DomException::WrongDocumentErr)?;
         }
 
         match self
@@ -1111,7 +1155,7 @@ impl NodeMut for XmlDocument {
             .delete_by_order(old_child.order())
         {
             Some(v) => Ok(XmlNode::from(v)),
-            _ => Err(error::Error::NotFoundErr),
+            _ => Err(error::DomException::NotFoundErr)?,
         }
     }
 }
@@ -1165,6 +1209,18 @@ impl XmlDocument {
         Ok((rest, dom))
     }
 
+    fn elements_by_tag_name(&self, tag_name: &str) -> Vec<XmlElement> {
+        let mut elements: Vec<XmlElement> = vec![];
+
+        if let Ok(root) = self.root_element() {
+            for v in root.elements_by_tag_name(tag_name) {
+                elements.push(v)
+            }
+        }
+
+        elements
+    }
+
     fn root_element(&self) -> error::Result<XmlElement> {
         let element = self.document.borrow().document_element()?;
         Ok(XmlElement::from(element))
@@ -1178,38 +1234,73 @@ impl XmlDocument {
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct XmlNodeList {
-    nodes: Vec<XmlNode>,
+pub struct XmlElementList {
+    node: XmlNode,
+    tag_name: String,
 }
 
-impl NodeList for XmlNodeList {
+impl NodeList for XmlElementList {
     fn item(&self, index: usize) -> Option<XmlNode> {
-        let node = self.nodes.get(index);
-        node.cloned()
+        self.items().get(index).map(|v| v.as_node())
     }
 
     fn length(&self) -> usize {
-        self.nodes.len()
+        self.items().len()
     }
 }
 
-impl XmlNodeList {
-    pub fn empty() -> Self {
-        XmlNodeList { nodes: vec![] }
-    }
-
+impl XmlElementList {
     pub fn iter(&self) -> XmlNodeIter {
         XmlNodeIter {
-            nodes: self.clone(),
+            nodes: self.items().iter().map(|v| v.as_node()).collect(),
             index: 0,
+        }
+    }
+
+    fn items(&self) -> Vec<XmlElement> {
+        // TODO: cached
+        match &self.node {
+            XmlNode::Document(v) => v.elements_by_tag_name(self.tag_name.as_str()),
+            XmlNode::Element(v) => v.elements_by_tag_name(self.tag_name.as_str()),
+            _ => unreachable!(),
         }
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct XmlNodeList {
+    node: XmlNode,
+}
+
+impl NodeList for XmlNodeList {
+    fn item(&self, index: usize) -> Option<XmlNode> {
+        self.items().get(index).cloned()
+    }
+
+    fn length(&self) -> usize {
+        self.items().len()
+    }
+}
+
+impl XmlNodeList {
+    pub fn iter(&self) -> XmlNodeIter {
+        XmlNodeIter {
+            nodes: self.items(),
+            index: 0,
+        }
+    }
+
+    fn items(&self) -> Vec<XmlNode> {
+        self.node.children()
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
 pub struct XmlNodeIter {
-    nodes: XmlNodeList,
+    nodes: Vec<XmlNode>,
     index: usize,
 }
 
@@ -1217,9 +1308,9 @@ impl Iterator for XmlNodeIter {
     type Item = XmlNode;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let item = self.nodes.item(self.index);
+        let item = self.nodes.get(self.index);
         self.index += 1;
-        item
+        item.cloned()
     }
 }
 
@@ -1279,7 +1370,7 @@ where
             self.remove_item_from_parent(v.1.clone())?;
             Ok(v.1)
         } else {
-            Err(error::Error::NotFoundErr)
+            Err(error::DomException::NotFoundErr)?
         }
     }
 }
@@ -1314,7 +1405,7 @@ where
                     unreachable!()
                 }
             }
-            XmlNode::DocumentType(_) => Err(error::Error::NoModificationAllowedErr),
+            XmlNode::DocumentType(_) => Err(error::DomException::NoModificationAllowedErr)?,
             _ => unreachable!(),
         }
     }
@@ -1331,7 +1422,7 @@ where
                     unreachable!()
                 }
             }
-            XmlNode::DocumentType(_) => Err(error::Error::NoModificationAllowedErr),
+            XmlNode::DocumentType(_) => Err(error::DomException::NoModificationAllowedErr)?,
             _ => unreachable!(),
         }
     }
@@ -1402,7 +1493,7 @@ impl Node for XmlAttr {
 
     fn child_nodes(&self) -> XmlNodeList {
         XmlNodeList {
-            nodes: self.children(),
+            node: self.as_node(),
         }
     }
 
@@ -1438,6 +1529,7 @@ impl Node for XmlAttr {
 impl NodeMut for XmlAttr {
     fn set_node_value(&mut self, value: &str) -> error::Result<()> {
         self.attribute.borrow_mut().set_values(value)?;
+        self.owner_document().unwrap().reset_order();
         Ok(())
     }
 
@@ -1447,20 +1539,29 @@ impl NodeMut for XmlAttr {
         ref_child: Option<&XmlNode>,
     ) -> error::Result<XmlNode> {
         if self.owner_document() != new_child.owner_document() {
-            return Err(error::Error::WrongDoucmentErr);
+            return Err(error::DomException::WrongDocumentErr)?;
         }
 
         let value = if let Some(r) = ref_child {
             if self.owner_document() != r.owner_document() {
-                return Err(error::Error::WrongDoucmentErr);
+                return Err(error::DomException::WrongDocumentErr)?;
             }
 
             // TODO: remove new_child from teee.
+            match self
+                .attribute
+                .borrow_mut()
+                .insert_before_order(new_child.try_into()?, r.order())
+            {
+                Ok(v) => Ok(v),
+                Err(xml_info::error::Error::OufOfIndex(_)) => Err(error::DomException::NotFoundErr),
+                _ => Err(error::DomException::HierarchyRequestErr),
+            }?
+        } else {
             self.attribute
                 .borrow_mut()
-                .insert_before_order(new_child.try_into()?, r.order())?
-        } else {
-            self.attribute.borrow_mut().append(new_child.try_into()?)?
+                .append(new_child.try_into()?)
+                .map_err(|_| error::DomException::HierarchyRequestErr)?
         };
 
         self.owner_document().unwrap().reset_order();
@@ -1470,7 +1571,7 @@ impl NodeMut for XmlAttr {
 
     fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
         if self.owner_document() != old_child.owner_document() {
-            return Err(error::Error::WrongDoucmentErr);
+            return Err(error::DomException::WrongDocumentErr)?;
         }
 
         match self
@@ -1479,7 +1580,7 @@ impl NodeMut for XmlAttr {
             .delete_by_order(old_child.order())
         {
             Some(v) => Ok(XmlNode::from(v)),
-            _ => Err(error::Error::NotFoundErr),
+            _ => Err(error::DomException::NotFoundErr)?,
         }
     }
 }
@@ -1569,12 +1670,13 @@ impl Element for XmlElement {
         self.element.borrow().local_name().to_string()
     }
 
-    fn get_attribute(&self, name: &str) -> error::Result<String> {
+    fn get_attribute(&self, name: &str) -> String {
         let attr = self.get_attribute_node(name);
         if let Some(attr) = attr {
-            attr.value()
+            // FIXME:
+            attr.value().unwrap()
         } else {
-            Ok(String::new())
+            String::new()
         }
     }
 
@@ -1587,13 +1689,11 @@ impl Element for XmlElement {
             .map(XmlAttr::from)
     }
 
-    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlNodeList {
-        let nodes = self
-            .elements_by_tag_name(tag_name)
-            .iter()
-            .map(|v| v.as_node())
-            .collect();
-        XmlNodeList { nodes }
+    fn get_elements_by_tag_name(&self, tag_name: &str) -> XmlElementList {
+        XmlElementList {
+            node: self.as_node(),
+            tag_name: tag_name.to_string(),
+        }
     }
 }
 
@@ -1607,13 +1707,16 @@ impl ElementMut for XmlElement {
 
     fn remove_attribute(&mut self, name: &str) -> error::Result<()> {
         self.element.borrow_mut().remove_attribute(name);
-        self.owner_document().unwrap().reset_order();
         Ok(())
     }
 
     fn set_attribute_node(&mut self, new_attr: XmlAttr) -> error::Result<Option<XmlAttr>> {
         if self.owner_document() != new_attr.owner_document() {
-            return Err(error::Error::WrongDoucmentErr);
+            return Err(error::DomException::WrongDocumentErr)?;
+        }
+
+        if new_attr.attribute.borrow().order() != 0 {
+            return Err(error::DomException::InuseAttributeErr)?;
         }
 
         let attr = self
@@ -1654,7 +1757,7 @@ impl Node for XmlElement {
 
     fn child_nodes(&self) -> XmlNodeList {
         XmlNodeList {
-            nodes: self.children(),
+            node: self.as_node(),
         }
     }
 
@@ -1705,7 +1808,7 @@ impl Node for XmlElement {
 
 impl NodeMut for XmlElement {
     fn set_node_value(&mut self, _: &str) -> error::Result<()> {
-        Err(error::Error::NoDataAllowedErr)
+        Err(error::DomException::NoDataAllowedErr)?
     }
 
     fn insert_before(
@@ -1714,20 +1817,29 @@ impl NodeMut for XmlElement {
         ref_child: Option<&XmlNode>,
     ) -> error::Result<XmlNode> {
         if self.owner_document() != new_child.owner_document() {
-            return Err(error::Error::WrongDoucmentErr);
+            return Err(error::DomException::WrongDocumentErr)?;
         }
 
         let value = if let Some(r) = ref_child {
             if self.owner_document() != r.owner_document() {
-                return Err(error::Error::WrongDoucmentErr);
+                return Err(error::DomException::WrongDocumentErr)?;
             }
 
             // TODO: remove new_child from teee.
+            match self
+                .element
+                .borrow_mut()
+                .insert_before_order(new_child.try_into()?, r.order())
+            {
+                Ok(v) => Ok(v),
+                Err(xml_info::error::Error::OufOfIndex(_)) => Err(error::DomException::NotFoundErr),
+                _ => Err(error::DomException::HierarchyRequestErr),
+            }?
+        } else {
             self.element
                 .borrow_mut()
-                .insert_before_order(new_child.try_into()?, r.order())?
-        } else {
-            self.element.borrow_mut().append(new_child.try_into()?)?
+                .append(new_child.try_into()?)
+                .map_err(|_| error::DomException::HierarchyRequestErr)?
         };
 
         self.owner_document().unwrap().reset_order();
@@ -1737,12 +1849,12 @@ impl NodeMut for XmlElement {
 
     fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
         if self.owner_document() != old_child.owner_document() {
-            return Err(error::Error::WrongDoucmentErr);
+            return Err(error::DomException::WrongDocumentErr)?;
         }
 
         match self.element.borrow_mut().delete_by_order(old_child.order()) {
             Some(v) => Ok(XmlNode::from(v)),
-            _ => Err(error::Error::NotFoundErr),
+            _ => Err(error::DomException::NotFoundErr)?,
         }
     }
 }
@@ -1909,7 +2021,7 @@ impl Text for XmlText {}
 impl TextMut for XmlText {
     fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
         if self.length() < offset {
-            return Err(error::Error::IndexSizeErr);
+            return Err(error::DomException::IndexSizeErr)?;
         }
 
         let parent = self.data.borrow().parent_item();
@@ -1958,7 +2070,7 @@ impl TextMut for XmlText {
 
                 Ok(XmlResolvedText::from(XmlText::from(data2)))
             }
-            _ => Err(error::Error::HierarchyRequestErr),
+            _ => Err(error::DomException::HierarchyRequestErr)?,
         }
     }
 }
@@ -1972,15 +2084,15 @@ impl CharacterData for XmlText {
         self.data.borrow().len()
     }
 
-    fn substring_data(&self, offset: usize, count: usize) -> String {
-        self.data.borrow().substring(offset..(offset + count))
+    fn substring_data(&self, offset: usize, count: usize) -> error::Result<String> {
+        Ok(self.data.borrow().substring(offset..(offset + count)))
     }
 }
 
 impl CharacterDataMut for XmlText {
     fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
         if self.length() < offset {
-            Err(error::Error::IndexSizeErr)
+            Err(error::DomException::IndexSizeErr)?
         } else {
             self.data.borrow_mut().insert(offset, arg)?;
             Ok(())
@@ -1989,7 +2101,7 @@ impl CharacterDataMut for XmlText {
 
     fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
         if self.length() < (offset + count) {
-            Err(error::Error::IndexSizeErr)
+            Err(error::DomException::IndexSizeErr)?
         } else {
             self.data.borrow_mut().delete(offset, count);
             Ok(())
@@ -2020,7 +2132,9 @@ impl Node for XmlText {
     }
 
     fn child_nodes(&self) -> XmlNodeList {
-        XmlNodeList::empty()
+        XmlNodeList {
+            node: self.as_node(),
+        }
     }
 
     fn first_child(&self) -> Option<XmlNode> {
@@ -2062,11 +2176,11 @@ impl NodeMut for XmlText {
     }
 
     fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
-        Err(error::Error::HierarchyRequestErr)
+        Err(error::DomException::HierarchyRequestErr)?
     }
 
     fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
-        Err(error::Error::HierarchyRequestErr)
+        Err(error::DomException::HierarchyRequestErr)?
     }
 }
 
@@ -2120,15 +2234,15 @@ impl CharacterData for XmlComment {
         self.data.borrow().len()
     }
 
-    fn substring_data(&self, offset: usize, count: usize) -> String {
-        self.data.borrow().substring(offset..(offset + count))
+    fn substring_data(&self, offset: usize, count: usize) -> error::Result<String> {
+        Ok(self.data.borrow().substring(offset..(offset + count)))
     }
 }
 
 impl CharacterDataMut for XmlComment {
     fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
         if self.length() < offset {
-            Err(error::Error::IndexSizeErr)
+            Err(error::DomException::IndexSizeErr)?
         } else {
             self.data.borrow_mut().insert(offset, arg)?;
             Ok(())
@@ -2137,7 +2251,7 @@ impl CharacterDataMut for XmlComment {
 
     fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
         if self.length() < (offset + count) {
-            Err(error::Error::IndexSizeErr)
+            Err(error::DomException::IndexSizeErr)?
         } else {
             self.data.borrow_mut().delete(offset, count);
             Ok(())
@@ -2163,7 +2277,9 @@ impl Node for XmlComment {
     }
 
     fn child_nodes(&self) -> XmlNodeList {
-        XmlNodeList::empty()
+        XmlNodeList {
+            node: self.as_node(),
+        }
     }
 
     fn first_child(&self) -> Option<XmlNode> {
@@ -2205,11 +2321,11 @@ impl NodeMut for XmlComment {
     }
 
     fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
-        Err(error::Error::HierarchyRequestErr)
+        Err(error::DomException::HierarchyRequestErr)?
     }
 
     fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
-        Err(error::Error::HierarchyRequestErr)
+        Err(error::DomException::HierarchyRequestErr)?
     }
 }
 
@@ -2257,7 +2373,7 @@ impl Text for XmlCDataSection {}
 impl TextMut for XmlCDataSection {
     fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
         if self.length() < offset {
-            return Err(error::Error::IndexSizeErr);
+            return Err(error::DomException::IndexSizeErr)?;
         }
 
         let v = self.data.borrow().parent()?;
@@ -2294,15 +2410,15 @@ impl CharacterData for XmlCDataSection {
         self.data.borrow().len()
     }
 
-    fn substring_data(&self, offset: usize, count: usize) -> String {
-        self.data.borrow().substring(offset..(offset + count))
+    fn substring_data(&self, offset: usize, count: usize) -> error::Result<String> {
+        Ok(self.data.borrow().substring(offset..(offset + count)))
     }
 }
 
 impl CharacterDataMut for XmlCDataSection {
     fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
         if self.length() < offset {
-            Err(error::Error::IndexSizeErr)
+            Err(error::DomException::IndexSizeErr)?
         } else {
             self.data.borrow_mut().insert(offset, arg)?;
             Ok(())
@@ -2311,7 +2427,7 @@ impl CharacterDataMut for XmlCDataSection {
 
     fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
         if self.length() < (offset + count) {
-            Err(error::Error::IndexSizeErr)
+            Err(error::DomException::IndexSizeErr)?
         } else {
             self.data.borrow_mut().delete(offset, count);
             Ok(())
@@ -2342,7 +2458,9 @@ impl Node for XmlCDataSection {
     }
 
     fn child_nodes(&self) -> XmlNodeList {
-        XmlNodeList::empty()
+        XmlNodeList {
+            node: self.as_node(),
+        }
     }
 
     fn first_child(&self) -> Option<XmlNode> {
@@ -2384,11 +2502,11 @@ impl NodeMut for XmlCDataSection {
     }
 
     fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
-        Err(error::Error::HierarchyRequestErr)
+        Err(error::DomException::HierarchyRequestErr)?
     }
 
     fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
-        Err(error::Error::HierarchyRequestErr)
+        Err(error::DomException::HierarchyRequestErr)?
     }
 }
 
@@ -2491,7 +2609,9 @@ impl Node for XmlDocumentType {
     }
 
     fn child_nodes(&self) -> XmlNodeList {
-        XmlNodeList::empty()
+        XmlNodeList {
+            node: self.as_node(),
+        }
     }
 
     fn first_child(&self) -> Option<XmlNode> {
@@ -2592,7 +2712,9 @@ impl Node for XmlNotation {
     }
 
     fn child_nodes(&self) -> XmlNodeList {
-        XmlNodeList::empty()
+        XmlNodeList {
+            node: self.as_node(),
+        }
     }
 
     fn first_child(&self) -> Option<XmlNode> {
@@ -2696,7 +2818,7 @@ impl Node for XmlEntity {
 
     fn child_nodes(&self) -> XmlNodeList {
         XmlNodeList {
-            nodes: self.children(),
+            node: self.as_node(),
         }
     }
 
@@ -2805,7 +2927,7 @@ impl Node for XmlEntityReference {
 
     fn child_nodes(&self) -> XmlNodeList {
         XmlNodeList {
-            nodes: self.children(),
+            node: self.as_node(),
         }
     }
 
@@ -2935,7 +3057,9 @@ impl Node for XmlProcessingInstruction {
     }
 
     fn child_nodes(&self) -> XmlNodeList {
-        XmlNodeList::empty()
+        XmlNodeList {
+            node: self.as_node(),
+        }
     }
 
     fn first_child(&self) -> Option<XmlNode> {
@@ -2977,11 +3101,11 @@ impl NodeMut for XmlProcessingInstruction {
     }
 
     fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
-        Err(error::Error::HierarchyRequestErr)
+        Err(error::DomException::HierarchyRequestErr)?
     }
 
     fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
-        Err(error::Error::HierarchyRequestErr)
+        Err(error::DomException::HierarchyRequestErr)?
     }
 }
 
@@ -3050,7 +3174,9 @@ impl Node for XmlNamespace {
     }
 
     fn child_nodes(&self) -> XmlNodeList {
-        XmlNodeList { nodes: vec![] }
+        XmlNodeList {
+            node: self.as_node(),
+        }
     }
 
     fn first_child(&self) -> Option<XmlNode> {
@@ -3144,7 +3270,7 @@ impl Text for XmlResolvedText {}
 impl TextMut for XmlResolvedText {
     fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
         if self.length() < offset {
-            Err(error::Error::IndexSizeErr)
+            Err(error::DomException::IndexSizeErr)?
         } else {
             let mut data2 = XmlResolvedText { data: vec![] };
             let mut length = 0;
@@ -3161,7 +3287,7 @@ impl TextMut for XmlResolvedText {
                     XmlNode::EntityReference(v) => {
                         length += v.value()?.chars().count();
                         if offset <= length {
-                            return Err(error::Error::NoDataAllowedErr);
+                            return Err(error::DomException::NoDataAllowedErr)?;
                         }
                     }
                     XmlNode::Text(v) => {
@@ -3198,20 +3324,21 @@ impl CharacterData for XmlResolvedText {
         self.data().unwrap_or_default().chars().count()
     }
 
-    fn substring_data(&self, offset: usize, count: usize) -> String {
-        self.data()
+    fn substring_data(&self, offset: usize, count: usize) -> error::Result<String> {
+        Ok(self
+            .data()
             .unwrap_or_default()
             .chars()
             .skip(offset)
             .take(count)
-            .collect()
+            .collect())
     }
 }
 
 impl CharacterDataMut for XmlResolvedText {
     fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
         if self.length() < offset {
-            Err(error::Error::IndexSizeErr)
+            Err(error::DomException::IndexSizeErr)?
         } else {
             let mut length = 0;
             for d in self.data.as_mut_slice() {
@@ -3226,7 +3353,7 @@ impl CharacterDataMut for XmlResolvedText {
                     XmlNode::EntityReference(v) => {
                         length += v.value()?.chars().count();
                         if offset <= length {
-                            return Err(error::Error::NoDataAllowedErr);
+                            return Err(error::DomException::NoDataAllowedErr)?;
                         }
                     }
                     XmlNode::Text(v) => {
@@ -3245,7 +3372,7 @@ impl CharacterDataMut for XmlResolvedText {
 
     fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
         if self.length() < (offset + count) {
-            Err(error::Error::IndexSizeErr)
+            Err(error::DomException::IndexSizeErr)?
         } else {
             let mut length = 0;
             for d in self.data.as_mut_slice() {
@@ -3260,7 +3387,7 @@ impl CharacterDataMut for XmlResolvedText {
                     XmlNode::EntityReference(v) => {
                         length += v.value()?.chars().count();
                         if offset < length {
-                            return Err(error::Error::NoDataAllowedErr);
+                            return Err(error::DomException::NoDataAllowedErr)?;
                         }
                     }
                     XmlNode::Text(v) => {
@@ -3296,7 +3423,9 @@ impl Node for XmlResolvedText {
     }
 
     fn child_nodes(&self) -> XmlNodeList {
-        XmlNodeList::empty()
+        XmlNodeList {
+            node: self.as_node(),
+        }
     }
 
     fn first_child(&self) -> Option<XmlNode> {
@@ -3338,11 +3467,11 @@ impl NodeMut for XmlResolvedText {
     }
 
     fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
-        Err(error::Error::HierarchyRequestErr)
+        Err(error::DomException::HierarchyRequestErr)?
     }
 
     fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
-        Err(error::Error::HierarchyRequestErr)
+        Err(error::DomException::HierarchyRequestErr)?
     }
 }
 
@@ -3413,11 +3542,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_dom_implmentation() {
+    fn test_dom_implmentation_html() {
         let m = XmlDomImplementation {};
         assert!(!m.has_feature("html", None));
+    }
+
+    #[test]
+    fn test_dom_implmentation_xml() {
+        let m = XmlDomImplementation {};
         assert!(m.has_feature("xml", None));
+    }
+
+    #[test]
+    fn test_dom_implmentation_xml_09() {
+        let m = XmlDomImplementation {};
         assert!(!m.has_feature("xml", Some("0.9")));
+    }
+
+    #[test]
+    fn test_dom_implmentation_xml_10() {
+        let m = XmlDomImplementation {};
         assert!(m.has_feature("xml", Some("1.0")));
     }
 
@@ -3574,50 +3718,180 @@ mod tests {
     #[test]
     fn test_document_document() {
         let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
-        let elem = XmlElement {
-            element: doc.document.borrow().document_element().unwrap(),
-        };
-        let root = XmlNode::Element(elem.clone());
+        let elem = doc.root_element().unwrap();
+        let root = elem.as_node();
 
         // Document
         assert_eq!(None, doc.doc_type());
         assert_eq!(XmlDomImplementation {}, doc.implementation());
         assert_eq!(elem, doc.document_element().unwrap());
-        for child in doc.get_elements_by_tag_name("root").unwrap().iter() {
+        for child in doc.get_elements_by_tag_name("root").iter() {
             assert_eq!(root, child);
         }
     }
 
     #[test]
-    fn test_document_document_mut() {
+    fn test_document_document_mut_create_element_ok() {
         let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
 
         // DocumentMut
         let elem = doc.create_element("e").unwrap();
         assert_eq!("e", elem.tag_name());
-        let _ = doc.create_document_fragment();
-        let text = doc.create_text_node("t").unwrap();
+        assert_eq!(None, elem.parent_node());
+        assert_eq!(Some(doc.clone()), elem.owner_document());
+        assert_eq!(0, elem.element.borrow().order());
+    }
+
+    #[test]
+    fn test_document_document_mut_create_element_err4() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
+        let err = doc.create_element("<").err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::InvalidCharacterErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_document_document_mut_create_document_fragment_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
+        let node = doc.create_document_fragment();
+        assert_eq!(None, node.parent_node());
+        assert_eq!(Some(doc.clone()), node.owner_document());
+        // FIXME:
+        //assert_eq!(0, node.document.borrow().order());
+    }
+
+    #[test]
+    fn test_document_document_mut_create_text_node_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
+        let text = doc.create_text_node("t");
         assert_eq!("t", text.data().unwrap());
-        let comment = doc.create_comment("c").unwrap();
+        assert_eq!(None, text.parent_node());
+        assert_eq!(Some(doc.clone()), text.owner_document());
+        assert_eq!(0, text.data.borrow().order());
+    }
+
+    #[test]
+    fn test_document_document_mut_create_comment_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
+        let comment = doc.create_comment("c");
         assert_eq!("c", comment.data().unwrap());
-        let cdata = doc.create_cdata_section("d").unwrap();
+        assert_eq!(None, comment.parent_node());
+        assert_eq!(Some(doc.clone()), comment.owner_document());
+        assert_eq!(0, comment.data.borrow().order());
+    }
+
+    #[test]
+    fn test_document_document_mut_create_cdata_section_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
+        let cdata = doc.create_cdata_section("d");
         assert_eq!("d", cdata.data().unwrap());
+        assert_eq!(None, cdata.parent_node());
+        assert_eq!(Some(doc.clone()), cdata.owner_document());
+        assert_eq!(0, cdata.data.borrow().order());
+    }
+
+    #[test]
+    fn test_document_document_mut_create_processing_instruction_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
         let pi = doc.create_processing_instruction("t", "c").unwrap();
         assert_eq!("t", pi.target());
         assert_eq!("c", pi.data());
+        assert_eq!(None, pi.parent_node());
+        assert_eq!(Some(doc.clone()), pi.owner_document());
+        assert_eq!(0, pi.pi.borrow().order());
+    }
+
+    #[test]
+    fn test_document_document_mut_create_processing_instruction_err4_target() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
+        let err = doc.create_processing_instruction("xml", "c").err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::InvalidCharacterErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_document_document_mut_create_processing_instruction_err4_content() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
+        let err = doc.create_processing_instruction("t", "?>").err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::InvalidCharacterErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_document_document_mut_create_attribute_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
         let attr = doc.create_attribute("a").unwrap();
         assert_eq!("a", attr.name());
-        let eref = doc.create_entity_reference("&amp;").unwrap();
+        assert_eq!(None, attr.parent_node());
+        assert_eq!(Some(doc.clone()), attr.owner_document());
+        assert_eq!(0, attr.attribute.borrow().order());
+    }
+
+    #[test]
+    fn test_document_document_mut_create_attribute_err4() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
+        let err = doc.create_attribute("<").err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::InvalidCharacterErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_document_document_mut_create_entity_reference_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
+        let eref = doc.create_entity_reference("amp").unwrap();
         assert_eq!("amp", eref.node_name());
+        assert_eq!(None, eref.parent_node());
+        assert_eq!(Some(doc.clone()), eref.owner_document());
+        assert_eq!(0, eref.reference.borrow().order());
+    }
+
+    #[test]
+    fn test_document_document_mut_create_entity_reference_err4() {
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
+
+        // DocumentMut
+        let err = doc.create_entity_reference("<").err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::InvalidCharacterErr),
+            err
+        );
     }
 
     #[test]
     fn test_document_node() {
         let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
-        let elem = XmlElement {
-            element: doc.document.borrow().document_element().unwrap(),
-        };
-        let root = XmlNode::Element(elem.clone());
+        let elem = doc.root_element().unwrap();
+        let root = elem.as_node();
 
         // Node
         assert_eq!("#document", doc.node_name());
@@ -3637,36 +3911,240 @@ mod tests {
     }
 
     #[test]
-    fn test_document_node_mut() {
-        let (_, mut doc) = XmlDocument::from_raw("<root></root>").unwrap();
+    fn test_document_node_mut_set_node_value_err5() {
+        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
 
         // NodeMut
-        doc.set_node_value("a").err().unwrap();
+        let err = doc.set_node_value("a").err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::NoDataAllowedErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_document_node_mut_insert_before_ok() {
+        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+
+        // NodeMut
         let a = doc
-            .insert_before(doc.create_comment("a").unwrap().as_node(), None)
+            .insert_before(doc.create_comment("a").as_node(), None)
             .unwrap();
         assert_eq!("<root /><!--a-->", format!("{}", doc));
+        // FIXME:
+        //assert_eq!(Some(doc.as_node()), a.parent_node());
+        assert_eq!(Some(doc.clone()), a.owner_document());
+        assert_ne!(0, a.as_comment().unwrap().data.borrow().order());
         let b = doc
-            .insert_before(doc.create_comment("b").unwrap().as_node(), Some(&a))
+            .insert_before(doc.create_comment("b").as_node(), Some(&a))
             .unwrap();
         assert_eq!("<root /><!--b--><!--a-->", format!("{}", doc));
-        let _ = doc
-            .replace_child(doc.create_comment("c").unwrap().as_node(), &b)
+        // FIXME:
+        //assert_eq!(Some(doc.as_node()), b.parent_node());
+        assert_eq!(Some(doc.clone()), b.owner_document());
+        assert_ne!(0, b.as_comment().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_document_node_mut_insert_before_err2() {
+        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+
+        // NodeMut
+        let err = doc
+            .insert_before(doc.create_attribute("a").unwrap().as_node(), None)
+            .err()
+            .unwrap();
+        assert_eq!("<root />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_document_node_mut_insert_before_err3() {
+        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // NodeMut
+        let err = doc
+            .insert_before(doc2.create_comment("a").as_node(), None)
+            .err()
+            .unwrap();
+        assert_eq!("<root />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_document_node_mut_insert_before_err7() {
+        let (_, mut doc) = XmlDocument::from_raw("<root><e><ee /></e></root>").unwrap();
+        let ee = doc.get_elements_by_tag_name("ee").item(0).unwrap();
+
+        // NodeMut
+        let err = doc
+            .insert_before(doc.create_comment("a").as_node(), Some(&ee))
+            .err()
+            .unwrap();
+        assert_eq!("<root><e><ee /></e></root>", format!("{}", doc));
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
+    }
+
+    #[test]
+    fn test_document_node_mut_replace_child_ok() {
+        let (_, mut doc) = XmlDocument::from_raw("<root /><!--b--><!--a-->").unwrap();
+        let b = doc.child_nodes().iter().nth(1).unwrap();
+
+        // NodeMut
+        let b = doc
+            .replace_child(doc.create_comment("c").as_node(), &b)
             .unwrap();
         assert_eq!("<root /><!--c--><!--a-->", format!("{}", doc));
+        // FIXME:
+        //assert_eq!(None, b.parent_node());
+        assert_eq!(Some(doc.clone()), b.owner_document());
+        assert_eq!(0, b.as_comment().unwrap().data.borrow().order());
+
+        let c = doc.child_nodes().iter().nth(1).unwrap();
+        // FIXME:
+        //assert_eq!(Some(doc.as_node()), c.parent_node());
+        assert_eq!(Some(doc.clone()), c.owner_document());
+        assert_ne!(0, c.as_comment().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_document_node_mut_replace_child_err2() {
+        let (_, mut doc) = XmlDocument::from_raw("<root /><!--b--><!--a-->").unwrap();
+        let b = doc.child_nodes().iter().nth(1).unwrap();
+
+        // NodeMut
+        let err = doc
+            .replace_child(doc.create_attribute("c").unwrap().as_node(), &b)
+            .err()
+            .unwrap();
+        assert_eq!("<root /><!--b--><!--a-->", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_document_node_mut_replace_child_err3() {
+        let (_, mut doc) = XmlDocument::from_raw("<root /><!--b--><!--a-->").unwrap();
+        let b = doc.child_nodes().iter().nth(1).unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // NodeMut
+        let err = doc
+            .replace_child(doc2.create_comment("c").as_node(), &b)
+            .err()
+            .unwrap();
+        assert_eq!("<root /><!--b--><!--a-->", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_document_node_mut_replace_child_err7() {
+        let (_, mut doc) =
+            XmlDocument::from_raw("<root><e><ee /></e></root><!--b--><!--a-->").unwrap();
+        let ee = doc.get_elements_by_tag_name("ee").item(0).unwrap();
+
+        // NodeMut
+        let err = doc
+            .replace_child(doc.create_comment("c").as_node(), &ee)
+            .err()
+            .unwrap();
+        // FIXME:
+        //assert_eq!("<root><e><ee /></e></root><!--b--><!--a-->", format!("{}", doc));
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
+    }
+
+    #[test]
+    fn test_document_node_mut_remove_child_ok() {
+        let (_, mut doc) = XmlDocument::from_raw("<root /><!--c--><!--a-->").unwrap();
+        let a = doc.child_nodes().iter().last().unwrap();
+
+        // NodeMut
         let a = doc.remove_child(&a).unwrap();
         assert_eq!("<root /><!--c-->", format!("{}", doc));
-        doc.append_child(a).unwrap();
-        assert_eq!("<root /><!--c--><!--a-->", format!("{}", doc));
+        // FIXME:
+        //assert_eq!(None, a.parent_node());
+        assert_eq!(Some(doc.clone()), a.owner_document());
+        assert_eq!(0, a.as_comment().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_document_node_mut_remove_child_err7() {
+        let (_, mut doc) =
+            XmlDocument::from_raw("<root><e><ee /></e></root><!--c--><!--a-->").unwrap();
+        let ee = doc.get_elements_by_tag_name("ee").item(0).unwrap();
+
+        // NodeMut
+        let err = doc.remove_child(&ee).err().unwrap();
+        assert_eq!(
+            "<root><e><ee /></e></root><!--c--><!--a-->",
+            format!("{}", doc)
+        );
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
+    }
+
+    #[test]
+    fn test_document_node_mut_append_child_ok() {
+        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+
+        // NodeMut
+        let a = doc.append_child(doc.create_comment("a").as_node()).unwrap();
+        assert_eq!("<root /><!--a-->", format!("{}", doc));
+        // FIXME:
+        //assert_eq!(Some(doc.as_node()), a.parent_node());
+        assert_eq!(Some(doc.clone()), a.owner_document());
+        assert_ne!(0, a.as_comment().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_document_node_mut_append_child_err2() {
+        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+
+        // NodeMut
+        let err = doc
+            .append_child(doc.create_attribute("a").unwrap().as_node())
+            .err()
+            .unwrap();
+        assert_eq!("<root />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_document_node_mut_append_child_err3() {
+        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // NodeMut
+        let err = doc
+            .append_child(doc2.create_comment("a").as_node())
+            .err()
+            .unwrap();
+        assert_eq!("<root />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
     }
 
     #[test]
     fn test_document_as_node() {
         let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
-        let elem = XmlElement {
-            element: doc.document.borrow().document_element().unwrap(),
-        };
-        let root = XmlNode::Element(elem.clone());
+        let elem = doc.root_element().unwrap();
+        let root = elem.as_node();
 
         // AsNode
         let node = doc.as_node();
@@ -3697,10 +4175,8 @@ mod tests {
     #[test]
     fn test_document_children() {
         let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
-        let elem = XmlElement {
-            element: doc.document.borrow().document_element().unwrap(),
-        };
-        let root = XmlNode::Element(elem.clone());
+        let elem = doc.root_element().unwrap();
+        let root = elem.as_node();
 
         // HasChild
         assert_eq!(vec![root], doc.children());
@@ -3728,9 +4204,7 @@ mod tests {
     #[test]
     fn test_document_impl() {
         let (_, mut doc) = XmlDocument::from_raw("<root></root>").unwrap();
-        let elem = XmlElement {
-            element: doc.document.borrow().document_element().unwrap(),
-        };
+        let elem = doc.root_element().unwrap();
 
         // XmlDocument
         assert_eq!(elem, doc.root_element().unwrap());
@@ -3738,22 +4212,53 @@ mod tests {
     }
 
     #[test]
-    fn test_node_list_node_list() {
+    fn test_element_list_node_list() {
         let (_, doc) = XmlDocument::from_raw("<root><e>1</e><e>2</e></root>").unwrap();
-        let children = doc.root_element().unwrap().get_elements_by_tag_name("e");
+        let mut root = doc.root_element().unwrap();
+        let children = root.get_elements_by_tag_name("e");
 
         // NodeList
         assert_eq!("1", children.item(0).unwrap().as_string_value().unwrap());
         assert_eq!(2, children.length());
+
+        root.append_child(doc.create_element("e").unwrap().as_node())
+            .unwrap();
+        assert_eq!(3, children.length());
+    }
+
+    #[test]
+    fn test_element_list_impl() {
+        let (_, doc) = XmlDocument::from_raw("<root><e>1</e><e>2</e></root>").unwrap();
+        let children = doc.root_element().unwrap().get_elements_by_tag_name("e");
+
+        // XmlElementList
+        let iter = children.iter();
+        assert_eq!(2, iter.count());
+    }
+
+    #[test]
+    fn test_node_list_node_list() {
+        let (_, doc) = XmlDocument::from_raw("<root><e>1</e><e>2</e></root>").unwrap();
+        let mut root = doc.root_element().unwrap();
+        let children = root.child_nodes();
+
+        // NodeList
+        assert_eq!("1", children.item(0).unwrap().as_string_value().unwrap());
+        assert_eq!(2, children.length());
+
+        root.append_child(doc.create_element("e").unwrap().as_node())
+            .unwrap();
+        assert_eq!(3, children.length());
     }
 
     #[test]
     fn test_node_list_impl() {
+        let (_, doc) = XmlDocument::from_raw("<root><e>1</e><e>2</e></root>").unwrap();
+        let children = doc.root_element().unwrap().child_nodes();
+
         // AsNodeList
-        let list = XmlNodeList::empty();
-        assert_eq!(0, list.length());
-        let iter = list.iter();
-        assert_eq!(0, iter.count());
+        let iter = children.iter();
+        assert_eq!(2, iter.count());
     }
 
     #[test]
@@ -3768,7 +4273,8 @@ mod tests {
     #[test]
     fn test_named_noed_map_named_node_map() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
-        let attrs = doc.root_element().unwrap().attributes().unwrap();
+        let mut root = doc.root_element().unwrap();
+        let attrs = root.attributes().unwrap();
 
         // NamedNodeMap
         assert_eq!(
@@ -3781,10 +4287,14 @@ mod tests {
         );
         assert_eq!("2", attrs.item(1).unwrap().as_string_value().unwrap());
         assert_eq!(2, attrs.length());
+
+        root.set_attribute("c", "3").unwrap();
+        // FIXME:
+        //assert_eq!(3, attrs.length());
     }
 
     #[test]
-    fn test_named_noed_map_named_node_map_mut() {
+    fn test_named_noed_map_named_node_map_mut_set_named_item_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
         let mut root = doc.root_element().unwrap();
         let mut attrs = root.attributes().unwrap();
@@ -3794,24 +4304,99 @@ mod tests {
             .set_named_item(doc.create_attribute("c").unwrap())
             .unwrap();
         assert_eq!(None, c);
+
         let c = attrs.get_named_item("c").unwrap();
-        assert_eq!(c, attrs.get_named_item("c").unwrap());
+        // FIXME:
+        //assert_eq!(Some(root.as_node()), c.parent_node());
+        assert_eq!(Some(doc.clone()), c.owner_document());
         assert_eq!(c, root.get_attribute_node("c").unwrap());
+        assert_ne!(0, c.attribute.borrow().order());
+
         let d = root
             .set_attribute_node(doc.create_attribute("d").unwrap())
             .unwrap();
         assert_eq!(None, d);
+
         let d = root.get_attribute_node("d").unwrap();
         // FIXME:
         //assert_eq!(d, attrs.get_named_item("d").unwrap());
         assert_eq!(d, root.get_attribute_node("d").unwrap());
-        attrs.remove_named_item("c").unwrap();
-        assert_eq!(None, attrs.get_named_item("c"));
-        assert_eq!(None, root.get_attribute_node("c"));
-        root.remove_attribute("d").unwrap();
+    }
+
+    #[test]
+    fn test_named_noed_map_named_node_map_mut_set_named_item_err3() {
+        let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
+        let root = doc.root_element().unwrap();
+        let mut attrs = root.attributes().unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // NamedNodeMapMut
+        let err = attrs
+            .set_named_item(doc2.create_attribute("c").unwrap())
+            .err()
+            .unwrap();
+        assert_eq!("<root a=\"1\" b=\"2\" />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_named_noed_map_named_node_map_mut_set_named_item_err9() {
+        let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'><e c='3' /></root>").unwrap();
+        let root = doc.root_element().unwrap();
+        let mut attrs = root.attributes().unwrap();
+        let c = doc
+            .get_elements_by_tag_name("e")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap()
+            .get_attribute_node("c")
+            .unwrap();
+
+        // NamedNodeMapMut
+        let err = attrs.set_named_item(c).err().unwrap();
+        assert_eq!(
+            "<root a=\"1\" b=\"2\"><e c=\"3\" /></root>",
+            format!("{}", doc)
+        );
+        assert_eq!(
+            error::Error::Dom(error::DomException::InuseAttributeErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_named_noed_map_named_node_map_mut_remove_named_item_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
+        let mut root = doc.root_element().unwrap();
+        let mut attrs = root.attributes().unwrap();
+
+        // NamedNodeMapMut
+        let a = attrs.remove_named_item("a").unwrap();
+        assert_eq!(None, a.parent_node());
+        assert_eq!(Some(doc.clone()), a.owner_document());
+        assert_eq!(None, root.get_attribute_node("a"));
+        assert_eq!(0, a.attribute.borrow().order());
+
+        root.remove_attribute("b").unwrap();
         // FIXME:
-        //assert_eq!(None, attrs.get_named_item("d"));
-        assert_eq!(None, root.get_attribute_node("d"));
+        //assert_eq!(None, attrs.get_named_item("b"));
+        assert_eq!(None, root.get_attribute_node("b"));
+    }
+
+    #[test]
+    fn test_named_noed_map_named_node_map_mut_remove_named_item_err7() {
+        let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
+        let root = doc.root_element().unwrap();
+        let mut attrs = root.attributes().unwrap();
+
+        // NamedNodeMapMut
+        let err = attrs.remove_named_item("c").err().unwrap();
+        assert_eq!("<root a=\"1\" b=\"2\" />", format!("{}", doc));
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
 
     #[test]
@@ -3849,6 +4434,7 @@ mod tests {
         assert_eq!("b", attr.value().unwrap());
     }
 
+    // TODO: more case.
     #[test]
     fn test_attr_attr_mut() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
@@ -3861,6 +4447,12 @@ mod tests {
         // AttrMut
         attr.set_value("c").unwrap();
         assert_eq!("c", attr.value().unwrap());
+        for v in attr.children() {
+            // FIXME:
+            //assert_eq!(Some(attr.as_node()), v.parent_node());
+            assert_eq!(Some(doc.clone()), v.owner_document());
+            assert_ne!(0, v.as_text().unwrap().data.borrow().order());
+        }
     }
 
     #[test]
@@ -3893,33 +4485,269 @@ mod tests {
     }
 
     #[test]
-    fn test_attr_node_mut() {
+    fn test_attr_node_mut_set_node_value_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
-        let mut attr = doc
-            .document_element()
-            .unwrap()
-            .get_attribute_node("a")
-            .unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
 
         // NodeMut
         attr.set_node_value("a&amp;b&amp;c").unwrap();
         assert_eq!("a&b&c", attr.value().unwrap());
+        for v in attr.children() {
+            match v {
+                XmlNode::EntityReference(v) => {
+                    // FIXME:
+                    //assert_eq!(Some(attr.as_node()), v.parent_node());
+                    assert_eq!(Some(doc.clone()), v.owner_document());
+                    assert_ne!(0, v.reference.borrow().order());
+                }
+                XmlNode::Text(v) => {
+                    // FIXME:
+                    //assert_eq!(Some(attr.as_node()), v.parent_node());
+                    assert_eq!(Some(doc.clone()), v.owner_document());
+                    assert_ne!(0, v.data.borrow().order());
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn test_attr_node_mut_insert_before_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+
+        // NodeMut
         let d = attr
-            .insert_before(doc.create_text_node("d").unwrap().as_node(), None)
+            .insert_before(doc.create_text_node("d").as_node(), None)
             .unwrap();
-        assert_eq!("a&b&cd", attr.value().unwrap());
+        assert_eq!("bd", attr.value().unwrap());
+        // FIXME:
+        //assert_eq!(Some(attr.as_node()), d.parent_node());
+        assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.as_text().unwrap().data.borrow().order());
         let e = attr
-            .insert_before(doc.create_text_node("e").unwrap().as_node(), Some(&d))
+            .insert_before(doc.create_text_node("e").as_node(), Some(&d))
             .unwrap();
-        assert_eq!("a&b&ced", attr.value().unwrap());
-        let _ = attr
-            .replace_child(doc.create_text_node("f").unwrap().as_node(), &e)
+        assert_eq!("bed", attr.value().unwrap());
+        // FIXME:
+        //assert_eq!(Some(attr.as_node()), e.parent_node());
+        assert_eq!(Some(doc.clone()), e.owner_document());
+        assert_ne!(0, e.as_text().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_attr_node_mut_insert_before_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+
+        // NodeMut
+        let err = attr
+            .insert_before(doc.create_comment("d").as_node(), None)
+            .err()
             .unwrap();
-        assert_eq!("a&b&cfd", attr.value().unwrap());
+        assert_eq!("<root a=\"b\" />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_attr_node_mut_insert_before_err3() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // NodeMut
+        let err = attr
+            .insert_before(doc2.create_text_node("d").as_node(), None)
+            .err()
+            .unwrap();
+        assert_eq!("<root a=\"b\" />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_attr_node_mut_insert_before_err7() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'><e /></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+        let e = root.get_elements_by_tag_name("e").item(0).unwrap();
+
+        // NodeMut
+        let err = attr
+            .insert_before(doc.create_text_node("d").as_node(), Some(&e))
+            .err()
+            .unwrap();
+        assert_eq!("<root a=\"b\"><e /></root>", format!("{}", doc));
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
+    }
+
+    #[test]
+    fn test_attr_node_mut_replace_child_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b&amp;e'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+        let e = attr.children().last().cloned().unwrap();
+
+        // NodeMut
+        let e = attr
+            .replace_child(doc.create_text_node("f").as_node(), &e)
+            .unwrap();
+        assert_eq!("b&f", attr.value().unwrap());
+        assert_eq!(None, e.parent_node());
+        assert_eq!(Some(doc.clone()), e.owner_document());
+        assert_eq!(0, e.as_text().unwrap().data.borrow().order());
+
+        let f = attr.children().last().cloned().unwrap();
+        // FIXME:
+        //assert_eq!(Some(attr.as_node()), f.parent_node());
+        assert_eq!(Some(doc.clone()), f.owner_document());
+        assert_ne!(0, f.as_text().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_attr_node_mut_replace_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b&amp;e'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+        let e = attr.children().last().cloned().unwrap();
+
+        // NodeMut
+        let err = attr
+            .replace_child(doc.create_comment("f").as_node(), &e)
+            .err()
+            .unwrap();
+        assert_eq!("<root a=\"b&amp;e\" />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_attr_node_mut_replace_child_err3() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b&amp;e'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+        let e = attr.children().last().cloned().unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // NodeMut
+        let err = attr
+            .replace_child(doc2.create_text_node("f").as_node(), &e)
+            .err()
+            .unwrap();
+        assert_eq!("<root a=\"b&amp;e\" />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_attr_node_mut_replace_child_err7() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b&amp;e'><e /></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+        let e = root.get_elements_by_tag_name("e").item(0).unwrap();
+
+        // NodeMut
+        let err = attr
+            .replace_child(doc.create_text_node("f").as_node(), &e)
+            .err()
+            .unwrap();
+        assert_eq!("<root a=\"b&amp;e\"><e /></root>", format!("{}", doc));
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
+    }
+
+    #[test]
+    fn test_attr_node_mut_remove_child_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b&amp;d'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+        let d = attr.children().last().cloned().unwrap();
+
+        // NodeMut
         let d = attr.remove_child(&d).unwrap();
-        assert_eq!("a&b&cf", attr.value().unwrap());
-        attr.append_child(d).unwrap();
-        assert_eq!("a&b&cfd", attr.value().unwrap());
+        assert_eq!("b&", attr.value().unwrap());
+        assert_eq!(None, d.parent_node());
+        assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_eq!(0, d.as_text().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_attr_node_mut_remove_child_err7() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b&amp;d'><e /></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+        let e = root.get_elements_by_tag_name("e").item(0).unwrap();
+
+        // NodeMut
+        let err = attr.remove_child(&e).err().unwrap();
+        assert_eq!("<root a=\"b&amp;d\"><e /></root>", format!("{}", doc));
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
+    }
+
+    #[test]
+    fn test_attr_node_mut_append_child_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+
+        // NodeMut
+        let d = attr
+            .append_child(doc.create_text_node("d").as_node())
+            .unwrap();
+        assert_eq!("bd", attr.value().unwrap());
+        // FIXME:
+        //assert_eq!(Some(attr.as_node()), d.parent_node());
+        assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.as_text().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_attr_node_mut_append_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+
+        // NodeMut
+        let err = attr
+            .append_child(doc.create_comment("d").as_node())
+            .err()
+            .unwrap();
+        assert_eq!("<root a=\"b\" />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_attr_node_mut_append_child_err3() {
+        let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut attr = root.get_attribute_node("a").unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // NodeMut
+        let err = attr
+            .append_child(doc2.create_text_node("d").as_node())
+            .err()
+            .unwrap();
+        assert_eq!("<root a=\"b\" />", format!("{}", doc));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
     }
 
     #[test]
@@ -3961,8 +4789,6 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-
-        dbg!(&attr.parent_node());
 
         // AsExpandedName
         assert_eq!(
@@ -4059,20 +4885,17 @@ mod tests {
             .unwrap()
             .as_element()
             .unwrap();
-        let attra = elem1.get_attribute_node("a").unwrap();
+        let attra = elem1.attributes().unwrap().item(0).unwrap();
 
         // Element
         assert_eq!("elem1", elem1.tag_name());
-        assert_eq!("b", elem1.get_attribute("a").unwrap());
-        assert_eq!(Some(attra.clone()), elem1.get_attribute_node("a"));
+        assert_eq!("b", elem1.get_attribute("a"));
+        assert_eq!(Some(attra), elem1.get_attribute_node("a"));
     }
 
     #[test]
-    fn test_element_element_mut() {
-        let (_, doc) = XmlDocument::from_raw(
-            "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
-        )
-        .unwrap();
+    fn test_element_element_mut_set_attribute_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut elem1 = root
             .get_elements_by_tag_name("elem1")
@@ -4083,13 +4906,182 @@ mod tests {
 
         // ElementMut
         elem1.set_attribute("d", "e").unwrap();
-        elem1.remove_attribute("d").unwrap();
-        elem1
-            .set_attribute_node(doc.create_attribute("d").unwrap())
+        let d = elem1.get_attribute_node("d").unwrap();
+        assert_eq!("e", d.value().unwrap());
+        // FIXME:
+        //assert_eq!(Some(elem1.as_node()), d.parent_node());
+        assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.attribute.borrow().order());
+    }
+
+    #[test]
+    fn test_element_element_mut_set_attribute_err4() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
             .unwrap();
-        elem1
+
+        // ElementMut
+        let err = elem1.set_attribute("<", "e").err().unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(
+            error::Error::Dom(error::DomException::InvalidCharacterErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_element_element_mut_remove_attribute_ok() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root><elem1 a=\"b\" d='e'>data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // ElementMut
+        elem1.remove_attribute("d").unwrap();
+        assert_eq!(None, elem1.get_attribute_node("d"));
+        elem1.remove_attribute("d").unwrap();
+        assert_eq!(None, elem1.get_attribute_node("d"));
+    }
+
+    #[test]
+    fn test_element_element_mut_set_attribute_node_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // ElementMut
+        assert_eq!(
+            None,
+            elem1
+                .set_attribute_node(doc.create_attribute("d").unwrap())
+                .unwrap()
+        );
+        let d = elem1.get_attribute_node("d").unwrap();
+        assert_eq!("", d.value().unwrap());
+        // FIXME:
+        //assert_eq!(Some(elem1.as_node()), d.parent_node());
+        assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.attribute.borrow().order());
+
+        let a = elem1
+            .set_attribute_node(doc.create_attribute("a").unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!("b", a.value().unwrap());
+        // FIXME:
+        //assert_eq!(None, a.parent_node());
+        assert_eq!(Some(doc.clone()), a.owner_document());
+        assert_eq!(0, a.attribute.borrow().order());
+    }
+
+    #[test]
+    fn test_element_element_mut_set_attribute_node_err3() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // ElementMut
+        let err = elem1
+            .set_attribute_node(doc2.create_attribute("d").unwrap())
+            .err()
+            .unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_element_element_mut_set_attribute_node_err9() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1><e c='3' /></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let c = root
+            .get_elements_by_tag_name("e")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap()
+            .get_attribute_node("c")
+            .unwrap();
+
+        // ElementMut
+        let err = elem1.set_attribute_node(c).err().unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(
+            error::Error::Dom(error::DomException::InuseAttributeErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_element_element_mut_remove_attribute_node_ok() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root><elem1 a=\"b\" d='e'>data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // ElementMut
+        let d = elem1
             .remove_attribute_node(elem1.get_attribute_node("d").unwrap())
             .unwrap();
+        assert_eq!("e", d.value().unwrap());
+        // FIXME:
+        //assert_eq!(None, d.parent_node());
+        assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_eq!(0, d.attribute.borrow().order());
+    }
+
+    #[test]
+    fn test_element_element_mut_remove_attribute_node_err7() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root><elem1 a=\"b\" d='e'>data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let a = elem1.get_attribute_node("a").unwrap();
+
+        // ElementMut
+        elem1.remove_attribute_node(a.clone()).unwrap();
+        let err = elem1.remove_attribute_node(a).err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
 
     #[test]
@@ -4145,7 +5137,7 @@ mod tests {
         assert_eq!(None, elem2.node_value().unwrap());
         assert_eq!(NodeType::Element, elem2.node_type());
         assert_eq!(Some(root.as_node()), elem2.parent_node());
-        assert_eq!(XmlNodeList { nodes: vec![] }, elem2.child_nodes());
+        assert_eq!(0, elem2.child_nodes().length());
         assert_eq!(None, elem2.first_child());
         assert_eq!(None, elem2.last_child());
         assert_eq!(Some(elem1.as_node()), elem2.previous_sibling());
@@ -4158,11 +5150,8 @@ mod tests {
     }
 
     #[test]
-    fn test_element_node_mut() {
-        let (_, doc) = XmlDocument::from_raw(
-            "<root><elem1 a=\"b\">data1</elem1><elem2 c=\"d\"></elem2></root>",
-        )
-        .unwrap();
+    fn test_element_node_mut_set_node_value_err5() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut elem1 = root
             .get_elements_by_tag_name("elem1")
@@ -4172,23 +5161,398 @@ mod tests {
             .unwrap();
 
         // NodeMut
-        elem1.set_node_value("a").err().unwrap();
+        let err = elem1.set_node_value("a").err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::NoDataAllowedErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_element_node_mut_insert_before_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // NodeMut
         let d = elem1
-            .insert_before(doc.create_text_node("d").unwrap().as_node(), None)
+            .insert_before(doc.create_text_node("d").as_node(), None)
             .unwrap();
         assert_eq!("data1d", elem1.as_string_value().unwrap());
+        // FIXME:
+        //assert_eq!(Some(elem1.as_node()), d.parent_node());
+        assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.as_text().unwrap().data.borrow().order());
         let e = elem1
-            .insert_before(doc.create_text_node("e").unwrap().as_node(), Some(&d))
+            .insert_before(doc.create_text_node("e").as_node(), Some(&d))
             .unwrap();
         assert_eq!("data1ed", elem1.as_string_value().unwrap());
-        let _ = elem1
-            .replace_child(doc.create_text_node("f").unwrap().as_node(), &e)
+        // FIXME:
+        //assert_eq!(Some(elem1.as_node()), e.parent_node());
+        assert_eq!(Some(doc.clone()), e.owner_document());
+        assert_ne!(0, e.as_text().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_element_node_mut_insert_before_err2_not_allowed() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a='b'>data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
             .unwrap();
-        assert_eq!("data1fd", elem1.as_string_value().unwrap());
-        let d = elem1.remove_child(&d).unwrap();
-        assert_eq!("data1f", elem1.as_string_value().unwrap());
-        elem1.append_child(d).unwrap();
-        assert_eq!("data1fd", elem1.as_string_value().unwrap());
+
+        // NodeMut
+        let err = elem1
+            .insert_before(doc.create_attribute("d").unwrap().as_node(), None)
+            .err()
+            .unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_element_node_mut_insert_before_err2_ancestor() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root><elem1 a='b'><elem2>data1</elem2></elem1></root>")
+                .unwrap();
+        let root = doc.document_element().unwrap();
+        let elem1 = root.get_elements_by_tag_name("elem1").item(0).unwrap();
+        let elem2 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // NodeMut
+        /* FIXME:
+        let err = elem2.insert_before(elem1, None).err().unwrap();
+        assert_eq!("<elem2>data1</elem2>", format!("{}", elem2));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+        */
+    }
+
+    #[test]
+    fn test_element_node_mut_insert_before_err3() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a='b'>data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // NodeMut
+        let err = elem1
+            .insert_before(doc2.create_text_node("d").as_node(), None)
+            .err()
+            .unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_element_node_mut_insert_before_err7() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root><elem1 a='b'>data1</elem1><e /></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let e = root.get_elements_by_tag_name("e").item(0).unwrap();
+
+        // NodeMut
+        let err = elem1
+            .insert_before(doc.create_text_node("d").as_node(), Some(&e))
+            .err()
+            .unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
+    }
+
+    #[test]
+    fn test_element_node_mut_replace_child_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let t = elem1.child_nodes().item(0).unwrap();
+
+        // NodeMut
+        let t = elem1
+            .replace_child(doc.create_text_node("f").as_node(), &t)
+            .unwrap();
+        assert_eq!("f", elem1.as_string_value().unwrap());
+        // FIXME:
+        //assert_eq!(None, t.parent_node());
+        assert_eq!(Some(doc.clone()), t.owner_document());
+        assert_eq!(0, t.as_text().unwrap().data.borrow().order());
+
+        let f = elem1.child_nodes().item(0).unwrap();
+        // FIXME:
+        //assert_eq!(Some(elem1.as_node()), f.parent_node());
+        assert_eq!(Some(doc.clone()), f.owner_document());
+        assert_ne!(
+            0,
+            f.as_resolved_text().unwrap().data.first().unwrap().order()
+        );
+    }
+
+    #[test]
+    fn test_element_node_mut_replace_child_err2_not_allowed() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let t = elem1.child_nodes().item(0).unwrap();
+
+        // NodeMut
+        let err = elem1
+            .replace_child(doc.create_attribute("f").unwrap().as_node(), &t)
+            .err()
+            .unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_element_node_mut_replace_child_err2_ancestor() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root><elem1 a='b'><elem2>data1</elem2></elem1></root>")
+                .unwrap();
+        let root = doc.document_element().unwrap();
+        let elem1 = root.get_elements_by_tag_name("elem1").item(0).unwrap();
+        let elem2 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let t = elem2.child_nodes().item(0).unwrap();
+
+        // NodeMut
+        /* FIXME:
+        let err = elem2.replace_child(elem1, &t).err().unwrap();
+        assert_eq!("<elem2>data1</elem2>", format!("{}", elem2));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+        */
+    }
+
+    #[test]
+    fn test_element_node_mut_replace_child_err3() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let t = elem1.child_nodes().item(0).unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // NodeMut
+        let err = elem1
+            .replace_child(doc2.create_text_node("f").as_node(), &t)
+            .err()
+            .unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_element_node_mut_replace_child_err7() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1><e /></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let e = root.get_elements_by_tag_name("e").item(0).unwrap();
+
+        // NodeMut
+        let err = elem1
+            .replace_child(doc.create_text_node("f").as_node(), &e)
+            .err()
+            .unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
+    }
+
+    #[test]
+    fn test_element_node_mut_remove_child_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let t = elem1.child_nodes().item(0).unwrap();
+
+        // NodeMut
+        let d = elem1.remove_child(&t).unwrap();
+        assert_eq!("", elem1.as_string_value().unwrap());
+        // FIXME:
+        //assert_eq!(None, d.parent_node());
+        assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_eq!(0, d.as_text().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_element_node_mut_remove_child_err7() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1><e /></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let e = root.get_elements_by_tag_name("e").item(0).unwrap();
+
+        // NodeMut
+        let err = elem1.remove_child(&e).err().unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
+    }
+
+    #[test]
+    fn test_element_node_mut_append_child_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // NodeMut
+        let d = elem1
+            .append_child(doc.create_text_node("d").as_node())
+            .unwrap();
+        assert_eq!("data1d", elem1.as_string_value().unwrap());
+        // FIXME:
+        //assert_eq!(Some(doc.as_node()), d.parent_node());
+        assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.as_text().unwrap().data.borrow().order());
+    }
+
+    #[test]
+    fn test_element_node_mut_append_child_err2_not_allowed() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // NodeMut
+        let err = elem1
+            .append_child(doc.create_attribute("d").unwrap().as_node())
+            .err()
+            .unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_element_node_mut_append_child_err2_ancestor() {
+        let (_, doc) =
+            XmlDocument::from_raw("<root><elem1 a='b'><elem2>data1</elem2></elem1></root>")
+                .unwrap();
+        let root = doc.document_element().unwrap();
+        let elem1 = root.get_elements_by_tag_name("elem1").item(0).unwrap();
+        let elem2 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+
+        // NodeMut
+        /* FIXME:
+        let err = elem2.append_child(elem1).err().unwrap();
+        assert_eq!("<elem2>data1</elem2>", format!("{}", elem2));
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+        */
+    }
+
+    #[test]
+    fn test_element_node_mut_append_child_err3() {
+        let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut elem1 = root
+            .get_elements_by_tag_name("elem1")
+            .item(0)
+            .unwrap()
+            .as_element()
+            .unwrap();
+        let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
+
+        // NodeMut
+        let err = elem1
+            .append_child(doc2.create_text_node("d").as_node())
+            .err()
+            .unwrap();
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!(
+            error::Error::Dom(error::DomException::WrongDocumentErr),
+            err
+        );
     }
 
     #[test]
@@ -4323,7 +5687,7 @@ mod tests {
     }
 
     #[test]
-    fn test_text_split_text_attribute() {
+    fn test_text_split_text_ok_attribute() {
         let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
         let attr = doc
             .document_element()
@@ -4337,10 +5701,25 @@ mod tests {
 
         assert_eq!(Some("te"), text.node_value().unwrap().as_deref());
         assert_eq!(Some("xt"), text2.node_value().unwrap().as_deref());
+        // FIXME:
+        //assert_eq!(Some(attr.as_node()), text2.parent_node());
+        assert_eq!(Some(doc.clone()), text2.owner_document());
+        assert_ne!(
+            0,
+            text2
+                .data
+                .first()
+                .unwrap()
+                .as_text()
+                .unwrap()
+                .data
+                .borrow()
+                .order()
+        );
     }
 
     #[test]
-    fn test_text_split_text_element() {
+    fn test_text_split_text_ok_element() {
         let (_, doc) = XmlDocument::from_raw("<root>text</root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut text = root
@@ -4355,6 +5734,40 @@ mod tests {
 
         assert_eq!(Some("te"), text.node_value().unwrap().as_deref());
         assert_eq!(Some("xt"), text2.node_value().unwrap().as_deref());
+        assert_eq!(Some(root.as_node()), text2.parent_node());
+        assert_eq!(Some(doc.clone()), text2.owner_document());
+        assert_ne!(
+            0,
+            text2
+                .data
+                .first()
+                .unwrap()
+                .as_text()
+                .unwrap()
+                .data
+                .borrow()
+                .order()
+        );
+
+        // FIXME:
+        //assert_eq!(Some(text.as_node()), text2.previous_sibling());
+        //assert_eq!(Some(text2.as_node()), text.next_sibling());
+    }
+
+    #[test]
+    fn test_text_split_text_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // TextMut
+        let err = text.split_text(5).err().unwrap();
+        assert_eq!("text", text.node_value().unwrap().unwrap());
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
     }
 
     #[test]
@@ -4370,11 +5783,40 @@ mod tests {
         // CharacterData
         assert_eq!("text", text.data().unwrap());
         assert_eq!(4, text.length());
-        assert_eq!("ex", text.substring_data(1, 2));
     }
 
     #[test]
-    fn test_text_character_data_mut() {
+    fn test_text_character_data_substring_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // CharacterData
+        assert_eq!("ex", text.substring_data(1, 2).unwrap());
+    }
+
+    #[test]
+    fn test_text_character_data_substring_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // CharacterData
+        // FIXME:
+        //let err = text.substring_data(5, 1).err().unwrap();
+        //assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+    }
+
+    #[test]
+    fn test_text_character_data_mut_set_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
         let attr = doc
             .document_element()
@@ -4386,14 +5828,111 @@ mod tests {
         // CharacterDataMut
         text.set_data("あいう").unwrap();
         assert_eq!(Some("あいう"), text.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_text_character_data_mut_append_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // CharacterDataMut
         text.append_data("えお").unwrap();
-        assert_eq!(Some("あいうえお"), text.node_value().unwrap().as_deref());
-        text.insert_data(1, "abc").unwrap();
-        assert_eq!(Some("あabcいうえお"), text.node_value().unwrap().as_deref());
-        text.delete_data(4, 2).unwrap();
-        assert_eq!(Some("あabcえお"), text.node_value().unwrap().as_deref());
+        assert_eq!(Some("textえお"), text.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_text_character_data_mut_insert_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // CharacterDataMut
+        text.insert_data(1, "あい").unwrap();
+        assert_eq!(Some("tあいext"), text.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_text_character_data_mut_insert_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // CharacterDataMut
+        let err = text.insert_data(5, "あい").err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+    }
+
+    #[test]
+    fn test_text_character_data_mut_delete_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // CharacterDataMut
+        text.delete_data(2, 1).unwrap();
+        assert_eq!(Some("tet"), text.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_text_character_data_mut_delete_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // CharacterDataMut
+        let err = text.delete_data(5, 1).err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+    }
+
+    #[test]
+    fn test_text_character_data_mut_replace_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // CharacterDataMut
         text.replace_data(1, 3, "いう").unwrap();
-        assert_eq!(Some("あいうえお"), text.node_value().unwrap().as_deref());
+        assert_eq!(Some("tいう"), text.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_text_character_data_mut_replace_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let attr = doc
+            .document_element()
+            .unwrap()
+            .get_attribute_node("a")
+            .unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // CharacterDataMut
+        let err = text.replace_data(5, 3, "いう").err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
     }
 
     #[test]
@@ -4407,8 +5946,8 @@ mod tests {
         assert_eq!("#text", text.node_name());
         assert_eq!(Some("text".to_string()), text.node_value().unwrap());
         assert_eq!(NodeType::Text, text.node_type());
-        assert_eq!(None, text.parent_node());
-        assert_eq!(XmlNodeList::empty(), text.child_nodes());
+        assert_eq!(None, text.parent_node()); // FIXME:
+        assert_eq!(0, text.child_nodes().length());
         assert_eq!(None, text.first_child());
         assert_eq!(None, text.last_child());
         assert_eq!(None, text.previous_sibling());
@@ -4419,21 +5958,79 @@ mod tests {
     }
 
     #[test]
-    fn test_text_node_mut() {
+    fn test_text_node_mut_set_node_value_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
         let root = doc.document_element().unwrap();
         let attr = root.get_attribute_node("a").unwrap();
         let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // Nodemut
-        let e = root.clone().as_node();
         text.set_node_value("abc").unwrap();
         assert_eq!(Some("abc"), text.node_value().unwrap().as_deref());
-        text.insert_before(e.clone(), Some(&e)).err().unwrap();
-        text.replace_child(e.clone(), &e).err().unwrap();
-        text.remove_child(&e).err().unwrap();
-        text.append_child(e.clone()).err().unwrap();
-        text.set_node_value("text").unwrap();
+    }
+
+    #[test]
+    fn test_text_node_mut_insert_before_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = text.insert_before(e.clone(), Some(&e)).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_text_node_mut_replace_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = text.replace_child(e.clone(), &e).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_text_node_mut_remove_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = text.remove_child(&e).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_text_node_mut_append_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
+        let root = doc.document_element().unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
+        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = text.append_child(e.clone()).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
     }
 
     #[test]
@@ -4448,8 +6045,8 @@ mod tests {
         assert_eq!("#text", node.node_name());
         assert_eq!(Some("text".to_string()), node.node_value().unwrap());
         assert_eq!(NodeType::Text, node.node_type());
-        assert_eq!(None, node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.parent_node()); // FIXME:
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(None, node.previous_sibling());
@@ -4501,11 +6098,32 @@ mod tests {
         // CharacterData
         assert_eq!(" comment ", comment.data().unwrap());
         assert_eq!(9, comment.length());
-        assert_eq!("co", comment.substring_data(1, 2));
     }
 
     #[test]
-    fn test_comment_character_data_mut() {
+    fn test_comment_character_data_substring_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // CharacterData
+        assert_eq!("co", comment.substring_data(1, 2).unwrap());
+    }
+
+    #[test]
+    fn test_comment_character_data_substring_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // CharacterData
+        // FIXME:
+        //let err = comment.substring_data(10, 1).err().unwrap();
+        //assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+    }
+
+    #[test]
+    fn test_comment_character_data_mut_set_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
@@ -4513,18 +6131,89 @@ mod tests {
         // CharacterDataMut
         comment.set_data("あいう").unwrap();
         assert_eq!(Some("あいう"), comment.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_comment_character_data_mut_append_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // CharacterDataMut
         comment.append_data("えお").unwrap();
-        assert_eq!(Some("あいうえお"), comment.node_value().unwrap().as_deref());
-        comment.insert_data(1, "abc").unwrap();
         assert_eq!(
-            Some("あabcいうえお"),
+            Some(" comment えお"),
             comment.node_value().unwrap().as_deref()
         );
+    }
+
+    #[test]
+    fn test_comment_character_data_mut_insert_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // CharacterDataMut
+        comment.insert_data(1, "あい").unwrap();
+        assert_eq!(
+            Some(" あいcomment "),
+            comment.node_value().unwrap().as_deref()
+        );
+    }
+
+    #[test]
+    fn test_comment_character_data_mut_insert_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // CharacterDataMut
+        let err = comment.insert_data(10, "あい").err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+    }
+
+    #[test]
+    fn test_comment_character_data_mut_delete_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // CharacterDataMut
         comment.delete_data(4, 2).unwrap();
-        assert_eq!(Some("あabcえお"), comment.node_value().unwrap().as_deref());
+        assert_eq!(Some(" comnt "), comment.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_comment_character_data_mut_delete_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // CharacterDataMut
+        let err = comment.delete_data(10, 2).err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+    }
+
+    #[test]
+    fn test_comment_character_data_mut_replace_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // CharacterDataMut
         comment.replace_data(1, 3, "いう").unwrap();
-        assert_eq!(Some("あいうえお"), comment.node_value().unwrap().as_deref());
-        comment.set_data(" comment ").unwrap();
+        assert_eq!(Some(" いうment "), comment.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_comment_character_data_mut_replace_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // CharacterDataMut
+        let err = comment.replace_data(10, 3, "いう").err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
     }
 
     #[test]
@@ -4538,7 +6227,7 @@ mod tests {
         assert_eq!(Some(" comment ".to_string()), comment.node_value().unwrap());
         assert_eq!(NodeType::Comment, comment.node_type());
         assert_eq!(Some(root.as_node()), comment.parent_node());
-        assert_eq!(XmlNodeList::empty(), comment.child_nodes());
+        assert_eq!(0, comment.child_nodes().length());
         assert_eq!(None, comment.first_child());
         assert_eq!(None, comment.last_child());
         assert_eq!(None, comment.previous_sibling());
@@ -4549,20 +6238,74 @@ mod tests {
     }
 
     #[test]
-    fn test_comment_node_mut() {
+    fn test_comment_node_mut_set_node_value_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // Nodemut
-        let e = root.clone().as_node();
         comment.set_node_value("abc").unwrap();
         assert_eq!(Some("abc"), comment.node_value().unwrap().as_deref());
-        comment.insert_before(e.clone(), Some(&e)).err().unwrap();
-        comment.replace_child(e.clone(), &e).err().unwrap();
-        comment.remove_child(&e).err().unwrap();
-        comment.append_child(e.clone()).err().unwrap();
-        comment.set_node_value(" comment ").unwrap();
+    }
+
+    #[test]
+    fn test_comment_node_mut_insert_before_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = comment.insert_before(e.clone(), Some(&e)).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_comment_node_mut_replace_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = comment.replace_child(e.clone(), &e).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_comment_node_mut_remove_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = comment.remove_child(&e).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_comment_node_mut_append_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = comment.append_child(e.clone()).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
     }
 
     #[test]
@@ -4577,7 +6320,7 @@ mod tests {
         assert_eq!(Some(" comment ".to_string()), node.node_value().unwrap());
         assert_eq!(NodeType::Comment, node.node_type());
         assert_eq!(Some(root.as_node()), node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(None, node.previous_sibling());
@@ -4618,7 +6361,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cdata_split_text() {
+    fn test_cdata_split_text_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut cdata = root
@@ -4633,6 +6376,41 @@ mod tests {
 
         assert_eq!(Some("c"), cdata.node_value().unwrap().as_deref());
         assert_eq!(Some("data"), cdata2.node_value().unwrap().as_deref());
+        assert_eq!(Some(root.as_node()), cdata2.parent_node());
+        assert_eq!(Some(doc.clone()), cdata2.owner_document());
+        assert_ne!(
+            0,
+            cdata2
+                .data
+                .first()
+                .unwrap()
+                .as_cdata()
+                .unwrap()
+                .data
+                .borrow()
+                .order()
+        );
+
+        // FIXME:
+        //assert_eq!(Some(cdata.as_node()), cdata2.previous_sibling());
+        //assert_eq!(Some(cdata2.as_node()), cdata.next_sibling());
+    }
+
+    #[test]
+    fn test_cdata_split_text_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // TextMut
+        let err = cdata.split_text(6).err().unwrap();
+        assert_eq!("cdata", cdata.node_value().unwrap().unwrap());
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
     }
 
     #[test]
@@ -4649,11 +6427,42 @@ mod tests {
         // CharacterData
         assert_eq!("&<>\"", cdata.data().unwrap());
         assert_eq!(4, cdata.length());
-        assert_eq!("<>", cdata.substring_data(1, 2));
     }
 
     #[test]
-    fn test_cdata_character_data_mut() {
+    fn test_cdata_character_data_substring_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // CharacterData
+        assert_eq!("<>", cdata.substring_data(1, 2).unwrap());
+    }
+
+    #[test]
+    fn test_cdata_character_data_substring_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // CharacterData
+        // FIXME:
+        //let err = cdata.substring_data(5, 1).err().unwrap();
+        //assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+    }
+
+    #[test]
+    fn test_cdata_character_data_mut_set_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut cdata = root
@@ -4666,18 +6475,120 @@ mod tests {
         // CharacterDataMut
         cdata.set_data("あいう").unwrap();
         assert_eq!(Some("あいう"), cdata.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_cdata_character_data_mut_append_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // CharacterDataMut
         cdata.append_data("えお").unwrap();
-        assert_eq!(Some("あいうえお"), cdata.node_value().unwrap().as_deref());
+        assert_eq!(Some("&<>\"えお"), cdata.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_cdata_character_data_mut_insert_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // CharacterDataMut
         cdata.insert_data(1, "abc").unwrap();
-        assert_eq!(
-            Some("あabcいうえお"),
-            cdata.node_value().unwrap().as_deref()
-        );
-        cdata.delete_data(4, 2).unwrap();
-        assert_eq!(Some("あabcえお"), cdata.node_value().unwrap().as_deref());
+        assert_eq!(Some("&abc<>\""), cdata.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_cdata_character_data_mut_insert_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // CharacterDataMut
+        let err = cdata.insert_data(5, "abc").err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+    }
+
+    #[test]
+    fn test_cdata_character_data_mut_delete_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // CharacterDataMut
+        cdata.delete_data(1, 2).unwrap();
+        assert_eq!(Some("&\""), cdata.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_cdata_character_data_mut_delete_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // CharacterDataMut
+        // FIXME:
+        //let err = cdata.delete_data(1, 2).err().unwrap();
+        //assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+    }
+
+    #[test]
+    fn test_cdata_character_data_mut_replace_data_ok() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // CharacterDataMut
         cdata.replace_data(1, 3, "いう").unwrap();
-        assert_eq!(Some("あいうえお"), cdata.node_value().unwrap().as_deref());
-        cdata.set_data("&<>\"").unwrap();
+        assert_eq!(Some("&いう"), cdata.node_value().unwrap().as_deref());
+    }
+
+    #[test]
+    fn test_cdata_character_data_mut_replace_data_err0() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // CharacterDataMut
+        // FIXME*
+        //let err = cdata.replace_data(1, 3, "いう").err().unwrap();
+        //assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
     }
 
     #[test]
@@ -4691,12 +6602,14 @@ mod tests {
             .as_resolved_text()
             .unwrap();
 
+        // TODO: CDATA Section Test
+
         // Node
         assert_eq!("#text", cdata.node_name());
         assert_eq!(Some("&<>\"".to_string()), cdata.node_value().unwrap());
         assert_eq!(NodeType::Text, cdata.node_type());
         assert_eq!(Some(root.as_node()), cdata.parent_node());
-        assert_eq!(XmlNodeList::empty(), cdata.child_nodes());
+        assert_eq!(0, cdata.child_nodes().length());
         assert_eq!(None, cdata.first_child());
         assert_eq!(None, cdata.last_child());
         assert_eq!(None, cdata.previous_sibling());
@@ -4706,8 +6619,9 @@ mod tests {
         assert!(!cdata.has_child());
     }
 
+    // TODO: more case.
     #[test]
-    fn test_cdata_node_mut() {
+    fn test_cdata_node_mut_set_node_value_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut cdata = root
@@ -4718,14 +6632,88 @@ mod tests {
             .unwrap();
 
         // Nodemut
-        let e = root.clone().as_node();
         cdata.set_node_value("abc").unwrap();
         assert_eq!(Some("abc"), cdata.node_value().unwrap().as_deref());
-        cdata.insert_before(e.clone(), Some(&e)).err().unwrap();
-        cdata.replace_child(e.clone(), &e).err().unwrap();
-        cdata.remove_child(&e).err().unwrap();
-        cdata.append_child(e.clone()).err().unwrap();
-        cdata.set_node_value("&<>\"").unwrap();
+    }
+
+    #[test]
+    fn test_cdata_node_mut_insert_before_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = cdata.insert_before(e.clone(), Some(&e)).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_cdata_node_mut_replace_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = cdata.replace_child(e.clone(), &e).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_cdata_node_mut_remove_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = cdata.remove_child(&e).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_cdata_node_mut_append_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut cdata = root
+            .child_nodes()
+            .item(0)
+            .unwrap()
+            .as_resolved_text()
+            .unwrap();
+
+        // Nodemut
+        let e = root.as_node();
+        let err = cdata.append_child(e.clone()).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
     }
 
     #[test]
@@ -4745,7 +6733,7 @@ mod tests {
         assert_eq!(Some("&<>\"".to_string()), node.node_value().unwrap());
         assert_eq!(NodeType::Text, node.node_type());
         assert_eq!(Some(root.as_node()), node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(None, node.previous_sibling());
@@ -4831,7 +6819,7 @@ mod tests {
         assert_eq!(None, doctype.node_value().unwrap());
         assert_eq!(NodeType::DocumentType, doctype.node_type());
         assert_eq!(Some(doc.as_node()), doctype.parent_node());
-        assert_eq!(XmlNodeList::empty(), doctype.child_nodes());
+        assert_eq!(0, doctype.child_nodes().length());
         assert_eq!(None, doctype.first_child());
         assert_eq!(None, doctype.last_child());
         assert_eq!(None, doctype.previous_sibling());
@@ -4856,7 +6844,7 @@ mod tests {
         assert_eq!(None, node.node_value().unwrap());
         assert_eq!(NodeType::DocumentType, node.node_type());
         assert_eq!(Some(doc.as_node()), node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(None, node.previous_sibling());
@@ -4918,8 +6906,8 @@ mod tests {
         assert_eq!("a", notation.node_name());
         assert_eq!(None, notation.node_value().unwrap());
         assert_eq!(NodeType::Notation, notation.node_type());
-        assert_eq!(None, notation.parent_node());
-        assert_eq!(XmlNodeList::empty(), notation.child_nodes());
+        assert_eq!(None, notation.parent_node()); // FIXME:
+        assert_eq!(0, notation.child_nodes().length());
         assert_eq!(None, notation.first_child());
         assert_eq!(None, notation.last_child());
         assert_eq!(None, notation.previous_sibling());
@@ -4942,8 +6930,8 @@ mod tests {
         assert_eq!("a", node.node_name());
         assert_eq!(None, node.node_value().unwrap());
         assert_eq!(NodeType::Notation, node.node_type());
-        assert_eq!(None, node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.parent_node()); // FIXME:
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(None, node.previous_sibling());
@@ -5003,8 +6991,8 @@ mod tests {
         assert_eq!("a", entity.node_name());
         assert_eq!(None, entity.node_value().unwrap());
         assert_eq!(NodeType::Entity, entity.node_type());
-        assert_eq!(None, entity.parent_node());
-        assert_eq!(XmlNodeList::empty(), entity.child_nodes());
+        assert_eq!(None, entity.parent_node()); // FIXME:
+        assert_eq!(0, entity.child_nodes().length());
         assert_eq!(None, entity.first_child());
         assert_eq!(None, entity.last_child());
         assert_eq!(None, entity.previous_sibling());
@@ -5027,8 +7015,8 @@ mod tests {
         assert_eq!("a", node.node_name());
         assert_eq!(None, node.node_value().unwrap());
         assert_eq!(NodeType::Entity, node.node_type());
-        assert_eq!(None, node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(None, node.parent_node()); // FIXME:
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(None, node.previous_sibling());
@@ -5089,7 +7077,7 @@ mod tests {
         assert_eq!(None, eref.node_value().unwrap());
         assert_eq!(NodeType::EntityReference, eref.node_type());
         assert_eq!(Some(attr.as_node()), eref.parent_node());
-        assert_eq!(XmlNodeList::empty(), eref.child_nodes());
+        assert_eq!(0, eref.child_nodes().length());
         assert_eq!(None, eref.first_child());
         assert_eq!(None, eref.last_child());
         assert_eq!(None, eref.previous_sibling());
@@ -5112,7 +7100,7 @@ mod tests {
         assert_eq!(None, node.node_value().unwrap());
         assert_eq!(NodeType::EntityReference, node.node_type());
         assert_eq!(Some(attr.as_node()), node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(None, node.previous_sibling());
@@ -5199,7 +7187,7 @@ mod tests {
         assert_eq!(Some("b".to_string()), pi.node_value().unwrap());
         assert_eq!(NodeType::PI, pi.node_type());
         assert_eq!(Some(root.as_node()), pi.parent_node());
-        assert_eq!(XmlNodeList::empty(), pi.child_nodes());
+        assert_eq!(0, pi.child_nodes().length());
         assert_eq!(None, pi.first_child());
         assert_eq!(None, pi.last_child());
         assert_eq!(None, pi.previous_sibling());
@@ -5210,20 +7198,74 @@ mod tests {
     }
 
     #[test]
-    fn test_pi_node_mut() {
+    fn test_pi_node_mut_set_node_value_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // NodeMut
-        let e = root.clone().as_node();
         pi.set_node_value("c").unwrap();
         assert_eq!("c", pi.data());
-        pi.insert_before(e.clone(), Some(&e)).err().unwrap();
-        pi.replace_child(e.clone(), &e).err().unwrap();
-        pi.remove_child(&e).err().unwrap();
-        pi.append_child(e.clone()).err().unwrap();
-        pi.set_node_value("b").unwrap();
+    }
+
+    #[test]
+    fn test_pi_node_mut_insert_before_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+
+        // NodeMut
+        let e = root.as_node();
+        let err = pi.insert_before(e.clone(), Some(&e)).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_pi_node_mut_replace_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+
+        // NodeMut
+        let e = root.as_node();
+        let err = pi.replace_child(e.clone(), &e).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_pi_node_mut_remove_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+
+        // NodeMut
+        let e = root.as_node();
+        let err = pi.remove_child(&e).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
+    }
+
+    #[test]
+    fn test_pi_node_mut_append_child_err2() {
+        let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+
+        // NodeMut
+        let e = root.as_node();
+        let err = pi.append_child(e.clone()).err().unwrap();
+        assert_eq!(
+            error::Error::Dom(error::DomException::HierarchyRequestErr),
+            err
+        );
     }
 
     #[test]
@@ -5238,7 +7280,7 @@ mod tests {
         assert_eq!(Some("b".to_string()), node.node_value().unwrap());
         assert_eq!(NodeType::PI, node.node_type());
         assert_eq!(Some(root.as_node()), node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(None, node.previous_sibling());
@@ -5303,7 +7345,7 @@ mod tests {
         assert_eq!(Some("http://test/a".to_string()), ns.node_value().unwrap());
         assert_eq!(NodeType::Attribute, ns.node_type());
         assert_eq!(None, ns.parent_node());
-        assert_eq!(XmlNodeList::empty(), ns.child_nodes());
+        assert_eq!(0, ns.child_nodes().length());
         assert_eq!(None, ns.first_child());
         assert_eq!(None, ns.last_child());
         assert_eq!(None, ns.previous_sibling());
@@ -5329,7 +7371,7 @@ mod tests {
         );
         assert_eq!(NodeType::Attribute, node.node_type());
         assert_eq!(None, node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(None, node.previous_sibling());
@@ -5412,7 +7454,7 @@ mod tests {
         // CharacterData
         assert_eq!("abc", text.data().unwrap());
         assert_eq!(3, text.length());
-        assert_eq!("bc", text.substring_data(1, 2));
+        assert_eq!("bc", text.substring_data(1, 2).unwrap());
 
         let text = root
             .child_nodes()
@@ -5423,7 +7465,7 @@ mod tests {
 
         // CharacterData
         assert_eq!(4, text.length());
-        assert_eq!("d&", text.substring_data(1, 2));
+        assert_eq!("d&", text.substring_data(1, 2).unwrap());
     }
 
     #[test]
@@ -5444,7 +7486,7 @@ mod tests {
         assert_eq!(Some("abc".to_string()), text.node_value().unwrap());
         assert_eq!(NodeType::Text, text.node_type());
         assert_eq!(Some(root.as_node()), text.parent_node());
-        assert_eq!(XmlNodeList::empty(), text.child_nodes());
+        assert_eq!(0, text.child_nodes().length());
         assert_eq!(None, text.first_child());
         assert_eq!(None, text.last_child());
         assert_eq!(None, text.previous_sibling());
@@ -5465,7 +7507,7 @@ mod tests {
         assert_eq!(Some("あd&d".to_string()), text.node_value().unwrap());
         assert_eq!(NodeType::Text, text.node_type());
         assert_eq!(Some(root.as_node()), text.parent_node());
-        assert_eq!(XmlNodeList::empty(), text.child_nodes());
+        assert_eq!(0, text.child_nodes().length());
         assert_eq!(None, text.first_child());
         assert_eq!(None, text.last_child());
         assert_eq!(Some(a.as_node()), text.previous_sibling());
@@ -5494,7 +7536,7 @@ mod tests {
         assert_eq!(Some("abc".to_string()), node.node_value().unwrap());
         assert_eq!(NodeType::Text, node.node_type());
         assert_eq!(Some(root.as_node()), node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(None, node.previous_sibling());
@@ -5516,7 +7558,7 @@ mod tests {
         assert_eq!(Some("あd&d".to_string()), node.node_value().unwrap());
         assert_eq!(NodeType::Text, node.node_type());
         assert_eq!(Some(root.as_node()), node.parent_node());
-        assert_eq!(XmlNodeList::empty(), node.child_nodes());
+        assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
         assert_eq!(None, node.last_child());
         assert_eq!(Some(a.as_node()), node.previous_sibling());

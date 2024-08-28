@@ -2,16 +2,31 @@ use xml_parser::nom;
 
 type ParseError<'a> = nom::Err<nom::error::Error<&'a str>>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
-    HierarchyRequestErr,
-    IndexSizeErr,
+    Dom(DomException),
     Info(xml_info::error::Error),
+    Parse(String),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum DomException {
+    IndexSizeErr,
+    DomStringSizeErr,
+    HierarchyRequestErr,
+    WrongDocumentErr,
+    InvalidCharacterErr,
     NoDataAllowedErr,
     NoModificationAllowedErr,
     NotFoundErr,
-    Parse(String),
-    WrongDoucmentErr,
+    NotSupportErr,
+    InuseAttributeErr,
+}
+
+impl From<DomException> for Error {
+    fn from(value: DomException) -> Self {
+        Error::Dom(value)
+    }
 }
 
 impl<'a> From<ParseError<'a>> for Error {

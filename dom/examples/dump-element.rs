@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(file_path)?;
 
     let (_, dom) = xml_dom::XmlDocument::from_raw(&contents)?;
-    let elements = dom.get_elements_by_tag_name("*")?;
+    let elements = dom.get_elements_by_tag_name("*");
 
     for element in elements.iter() {
         if let xml_dom::XmlNode::Element(element) = element {

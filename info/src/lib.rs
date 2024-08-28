@@ -63,6 +63,8 @@ pub trait Sortable {
     fn order(&self) -> i64;
 
     fn set_order(&mut self, numbering: &mut impl Numbering);
+
+    fn clear_order(&mut self);
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -234,8 +236,9 @@ impl HasChildren for XmlAttribute {
     }
 
     fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
-        if let Some(v) = self.values.iter().find(|v| v.order() == order).cloned() {
+        if let Some(mut v) = self.values.iter().find(|v| v.order() == order).cloned() {
             self.values.retain(|v| v.order() != order);
+            v.clear_order();
             match v {
                 XmlAttributeValue::Reference(v) => Some(v.try_into().unwrap()),
                 XmlAttributeValue::Text(v) => Some(v.into()),
@@ -282,6 +285,10 @@ impl Sortable for XmlAttribute {
         for value in self.values.as_mut_slice() {
             value.set_order(numbering);
         }
+    }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
     }
 }
 
@@ -513,6 +520,7 @@ impl XmlAttribute {
     }
 
     pub fn set_values(&mut self, value: &str) -> error::Result<()> {
+        // TODO: `from_dtd`` update false to true.
         // FIXME: in case of contain `'`.
         let xml = format!("{}='{}'", self.local_name(), value);
         let (rest, tree) = xml_parser::attribute(xml.as_str())?;
@@ -579,6 +587,13 @@ impl Sortable for XmlAttributeValue {
         match self {
             XmlAttributeValue::Reference(v) => v.borrow_mut().set_order(numbering),
             XmlAttributeValue::Text(v) => v.borrow_mut().set_order(numbering),
+        }
+    }
+
+    fn clear_order(&mut self) {
+        match self {
+            XmlAttributeValue::Reference(v) => v.borrow_mut().clear_order(),
+            XmlAttributeValue::Text(v) => v.borrow_mut().clear_order(),
         }
     }
 }
@@ -663,6 +678,10 @@ impl Sortable for XmlCData {
 
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
+    }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
     }
 }
 
@@ -785,6 +804,10 @@ impl Sortable for XmlCharReference {
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
     }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
+    }
 }
 
 impl Character for XmlCharReference {
@@ -877,6 +900,10 @@ impl Sortable for XmlComment {
 
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
+    }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
     }
 }
 
@@ -1055,6 +1082,10 @@ impl Sortable for XmlDeclarationAttList {
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
     }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
+    }
 }
 
 impl PartialEq<XmlDeclarationAttList> for XmlDeclarationAttList {
@@ -1151,8 +1182,9 @@ impl HasChildren for XmlDocument {
     }
 
     fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
-        if let Some(v) = self.children.iter().find(|v| v.order() == order).cloned() {
+        if let Some(mut v) = self.children.iter().find(|v| v.order() == order).cloned() {
             self.children.retain(|v| v.order() != order);
+            v.clear_order();
             Some(v)
         } else {
             None
@@ -1180,6 +1212,10 @@ impl Sortable for XmlDocument {
         for child in self.children.as_mut_slice() {
             child.set_order(numbering);
         }
+    }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
     }
 }
 
@@ -1415,6 +1451,10 @@ impl Sortable for XmlDocumentTypeDeclaration {
             child.set_order(numbering);
         }
     }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
+    }
 }
 
 impl DocumentTypeDeclaration for XmlDocumentTypeDeclaration {
@@ -1622,8 +1662,9 @@ impl HasChildren for XmlElement {
     }
 
     fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
-        if let Some(v) = self.children.iter().find(|v| v.order() == order).cloned() {
+        if let Some(mut v) = self.children.iter().find(|v| v.order() == order).cloned() {
             self.children.retain(|v| v.order() != order);
+            v.clear_order();
             Some(v)
         } else {
             None
@@ -1675,6 +1716,10 @@ impl Sortable for XmlElement {
         for mut child in self.children().iter() {
             child.set_order(numbering);
         }
+    }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
     }
 }
 
@@ -1934,6 +1979,7 @@ impl XmlElement {
             .cloned()
         {
             self.attributes.retain(|v| v.borrow().local_name() != name);
+            v.borrow_mut().clear_order();
             Some(v)
         } else {
             None
@@ -2056,6 +2102,10 @@ impl Sortable for XmlEntity {
 
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
+    }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
     }
 }
 
@@ -2277,6 +2327,26 @@ impl Sortable for XmlItem {
             XmlItem::PI(v) => v.borrow_mut().set_order(numbering),
             XmlItem::Text(v) => v.borrow_mut().set_order(numbering),
             XmlItem::Unexpanded(v) => v.borrow_mut().set_order(numbering),
+            XmlItem::Unparsed(_) => {}
+        }
+    }
+
+    fn clear_order(&mut self) {
+        match self {
+            XmlItem::Attribute(v) => v.borrow_mut().clear_order(),
+            XmlItem::CData(v) => v.borrow_mut().clear_order(),
+            XmlItem::CharReference(v) => v.borrow_mut().clear_order(),
+            XmlItem::Comment(v) => v.borrow_mut().clear_order(),
+            XmlItem::DeclarationAttList(v) => v.borrow_mut().clear_order(),
+            XmlItem::Document(v) => v.borrow_mut().clear_order(),
+            XmlItem::DocumentType(v) => v.borrow_mut().clear_order(),
+            XmlItem::Element(v) => v.borrow_mut().clear_order(),
+            XmlItem::Entity(v) => v.borrow_mut().clear_order(),
+            XmlItem::Namespace(v) => v.borrow_mut().clear_order(),
+            XmlItem::Notation(v) => v.borrow_mut().clear_order(),
+            XmlItem::PI(v) => v.borrow_mut().clear_order(),
+            XmlItem::Text(v) => v.borrow_mut().clear_order(),
+            XmlItem::Unexpanded(v) => v.borrow_mut().clear_order(),
             XmlItem::Unparsed(_) => {}
         }
     }
@@ -2552,6 +2622,10 @@ impl Sortable for XmlNamespace {
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
     }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
+    }
 }
 
 impl Namespace for XmlNamespace {
@@ -2616,6 +2690,10 @@ impl Sortable for XmlNotation {
 
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
+    }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
     }
 }
 
@@ -2726,6 +2804,10 @@ impl Sortable for XmlProcessingInstruction {
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
     }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
+    }
 }
 
 impl ProcessingInstruction for XmlProcessingInstruction {
@@ -2834,6 +2916,10 @@ impl Sortable for XmlReference {
 
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
+    }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
     }
 }
 
@@ -2980,6 +3066,10 @@ impl Sortable for XmlText {
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
     }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
+    }
 }
 
 impl Character for XmlText {
@@ -3104,6 +3194,10 @@ impl Sortable for XmlUnexpandedEntityReference {
 
     fn set_order(&mut self, numbering: &mut impl Numbering) {
         self.order = numbering.next();
+    }
+
+    fn clear_order(&mut self) {
+        self.order = 0;
     }
 }
 

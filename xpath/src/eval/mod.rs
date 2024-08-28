@@ -974,7 +974,7 @@ fn equal_qname(
 mod tests {
     use super::*;
     use crate::expr::parse;
-    use xml_dom::Document;
+    use xml_dom::{Document, NodeList};
 
     #[test]
     fn test_absolute_location_path_root() {
@@ -1007,12 +1007,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let root = doc
-            .get_elements_by_tag_name("root")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1034,12 +1029,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let root = doc
-            .get_elements_by_tag_name("root")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1061,12 +1051,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let root = doc
-            .get_elements_by_tag_name("root")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1088,12 +1073,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1115,12 +1095,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let ee2 = doc
-            .get_elements_by_tag_name("ee2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let ee2 = doc.get_elements_by_tag_name("ee2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1141,7 +1116,7 @@ mod tests {
         assert_eq!("", rest);
 
         let root = doc.document_element().unwrap();
-        let e1 = root.child_nodes().iter().next().unwrap();
+        let e1 = root.child_nodes().item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1161,12 +1136,7 @@ mod tests {
             xml_dom::XmlDocument::from_raw("<root><e1><ee1>1</ee1></e1></root>").unwrap();
         assert_eq!("", rest);
 
-        let ee1 = doc
-            .get_elements_by_tag_name("ee1")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let ee1 = doc.get_elements_by_tag_name("ee1").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1188,12 +1158,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let root = doc
-            .get_elements_by_tag_name("root")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1215,12 +1180,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let root = doc
-            .get_elements_by_tag_name("root")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1242,12 +1202,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1269,12 +1224,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1296,12 +1246,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let ee2 = doc
-            .get_elements_by_tag_name("ee2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let ee2 = doc.get_elements_by_tag_name("ee2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1323,12 +1268,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let ee2 = doc
-            .get_elements_by_tag_name("ee2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let ee2 = doc.get_elements_by_tag_name("ee2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1350,12 +1290,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let ee3 = doc
-            .get_elements_by_tag_name("ee3")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let ee3 = doc.get_elements_by_tag_name("ee3").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1377,12 +1312,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e3 = doc
-            .get_elements_by_tag_name("e3")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e3 = doc.get_elements_by_tag_name("e3").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1407,12 +1337,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .nth(1)
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(1).unwrap();
 
         let r = document(&expr, doc.clone(), &mut context).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1434,12 +1359,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let root = doc
-            .get_elements_by_tag_name("root")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1461,12 +1381,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let ee1 = doc
-            .get_elements_by_tag_name("ee1")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let ee1 = doc.get_elements_by_tag_name("ee1").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1488,12 +1403,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e1 = doc
-            .get_elements_by_tag_name("e1")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e1 = doc.get_elements_by_tag_name("e1").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1515,12 +1425,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1542,12 +1447,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let ee2 = doc
-            .get_elements_by_tag_name("ee2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let ee2 = doc.get_elements_by_tag_name("ee2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1569,12 +1469,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1596,12 +1491,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -1623,12 +1513,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let root = doc
-            .get_elements_by_tag_name("root")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -2002,12 +1887,7 @@ mod tests {
         let (rest, doc) = xml_dom::XmlDocument::from_raw("<root xml:lang='ja'/>").unwrap();
         assert_eq!("", rest);
 
-        let root = doc
-            .get_elements_by_tag_name("root")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -2538,9 +2418,7 @@ mod tests {
 
         let comment = doc
             .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
+            .item(0)
             .unwrap()
             .first_child()
             .unwrap();
@@ -2567,9 +2445,7 @@ mod tests {
 
         let text = doc
             .get_elements_by_tag_name("ee2")
-            .unwrap()
-            .iter()
-            .next()
+            .item(0)
             .unwrap()
             .first_child()
             .unwrap();
@@ -2596,9 +2472,7 @@ mod tests {
 
         let text = doc
             .get_elements_by_tag_name("ee2")
-            .unwrap()
-            .iter()
-            .next()
+            .item(0)
             .unwrap()
             .first_child()
             .unwrap();
@@ -2625,9 +2499,7 @@ mod tests {
 
         let text = doc
             .get_elements_by_tag_name("ee2")
-            .unwrap()
-            .iter()
-            .next()
+            .item(0)
             .unwrap()
             .first_child()
             .unwrap();
@@ -2655,12 +2527,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let ee2 = doc
-            .get_elements_by_tag_name("ee2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let ee2 = doc.get_elements_by_tag_name("ee2").item(0).unwrap();
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
         let nodes = if let model::Value::Node(n) = r {
@@ -2679,18 +2546,8 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let root = doc
-            .get_elements_by_tag_name("root")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let n = ancestor(e2);
         assert_eq!(vec![root, doc.as_node()], n);
@@ -2704,18 +2561,8 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let root = doc
-            .get_elements_by_tag_name("root")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let n = ancestor_and_self(e2.clone());
         assert_eq!(vec![e2, root, doc.as_node()], n);
@@ -2729,12 +2576,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let n = attributes(e2);
         assert!(n.is_empty());
@@ -2748,12 +2590,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
         let ee2 = e2.first_child().unwrap();
 
         let n = child(e2);
@@ -2768,12 +2605,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
         let ee2 = e2.first_child().unwrap();
         let text2 = ee2.first_child().unwrap();
 
@@ -2789,12 +2621,7 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
         let ee2 = e2.first_child().unwrap();
         let text2 = ee2.first_child().unwrap();
 
@@ -2810,24 +2637,9 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
-        let e3 = doc
-            .get_elements_by_tag_name("e3")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
-        let ee3 = doc
-            .get_elements_by_tag_name("ee3")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
+        let e3 = doc.get_elements_by_tag_name("e3").item(0).unwrap();
+        let ee3 = doc.get_elements_by_tag_name("ee3").item(0).unwrap();
         let text3 = ee3.first_child().unwrap();
 
         let n = following(e2);
@@ -2842,18 +2654,8 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
-        let e3 = doc
-            .get_elements_by_tag_name("e3")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
+        let e3 = doc.get_elements_by_tag_name("e3").item(0).unwrap();
 
         let n = following_sibling(e2);
         assert_eq!(vec![e3], n);
@@ -2867,25 +2669,10 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e1 = doc
-            .get_elements_by_tag_name("e1")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
-        let ee1 = doc
-            .get_elements_by_tag_name("ee1")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e1 = doc.get_elements_by_tag_name("e1").item(0).unwrap();
+        let ee1 = doc.get_elements_by_tag_name("ee1").item(0).unwrap();
         let text1 = ee1.first_child().unwrap();
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let n = preceding(e2);
         assert_eq!(vec![text1, ee1, e1], n);
@@ -2899,18 +2686,8 @@ mod tests {
         .unwrap();
         assert_eq!("", rest);
 
-        let e1 = doc
-            .get_elements_by_tag_name("e1")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
-        let e2 = doc
-            .get_elements_by_tag_name("e2")
-            .unwrap()
-            .iter()
-            .next()
-            .unwrap();
+        let e1 = doc.get_elements_by_tag_name("e1").item(0).unwrap();
+        let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
 
         let n = preceding_sibling(e2);
         assert_eq!(vec![e1], n);

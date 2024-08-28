@@ -2,7 +2,7 @@ use xml_parser::nom;
 
 type ParseError<'a> = nom::Err<nom::error::Error<&'a str>>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
     IsolatedNode,
     InvalidData(String),
