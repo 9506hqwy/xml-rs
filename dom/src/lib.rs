@@ -8,7 +8,7 @@ use xml_info as info;
 use xml_info::{
     Attribute as InfoAttribute, Character as InfoCharacter, Comment as InfoComment,
     Document as InfoDocument, DocumentTypeDeclaration as InfoDocumentTypeDeclaration,
-    Element as InfoElement, HasChildren as InfoHasChildren, HasOwner as InfoHasOwner,
+    Element as InfoElement, HasChildren as InfoHasChildren, HasContext as InfoHasContext,
     HasQName as InfoHasQName, Namespace as InfoNamespace, Notation as InfoNotation,
     ProcessingInstruction as InfoProcessingInstruction, Sortable as InfoSortable,
 };
@@ -586,6 +586,25 @@ impl AsStringValue for XmlNode {
 }
 
 impl XmlNode {
+    pub fn id(&self) -> usize {
+        match self {
+            XmlNode::Attribute(v) => v.attribute.borrow().id(),
+            XmlNode::CData(v) => v.data.borrow().id(),
+            XmlNode::Comment(v) => v.data.borrow().id(),
+            XmlNode::Document(v) => v.document.borrow().id(),
+            XmlNode::DocumentFragment(v) => v.document.borrow().id(),
+            XmlNode::DocumentType(v) => v.declaration.borrow().id(),
+            XmlNode::Element(v) => v.element.borrow().id(),
+            XmlNode::Entity(v) => v.entity.borrow().id(),
+            XmlNode::EntityReference(v) => v.reference.borrow().id(),
+            XmlNode::Namespace(v) => v.namespace.borrow().id(),
+            XmlNode::Notation(v) => v.notation.borrow().id(),
+            XmlNode::PI(v) => v.pi.borrow().id(),
+            XmlNode::ResolvedText(v) => v.data[0].id(),
+            XmlNode::Text(v) => v.data.borrow().id(),
+        }
+    }
+
     pub fn order(&self) -> i64 {
         match self {
             XmlNode::Attribute(v) => v.attribute.borrow().order(),
@@ -989,7 +1008,7 @@ impl Document for XmlDocument {
 
 impl DocumentMut for XmlDocument {
     fn create_element(&self, tag_name: &str) -> error::Result<XmlElement> {
-        let element = info::XmlElement::empty(tag_name, self.document.clone())
+        let element = info::XmlElement::empty(tag_name, self.document.borrow().context())
             .map_err(|_| error::DomException::InvalidCharacterErr)?;
         Ok(XmlElement { element })
     }
@@ -1003,21 +1022,21 @@ impl DocumentMut for XmlDocument {
     }
 
     fn create_text_node(&self, data: &str) -> XmlText {
-        let text = info::XmlText::empty(self.document.clone());
+        let text = info::XmlText::empty(self.document.borrow().context());
         // TODO: escape
         text.borrow_mut().insert(0, data).unwrap();
         XmlText { data: text }
     }
 
     fn create_comment(&self, data: &str) -> XmlComment {
-        let comment = info::XmlComment::empty(self.document.clone());
+        let comment = info::XmlComment::empty(self.document.borrow().context());
         // TODO: escape?
         comment.borrow_mut().insert(0, data).unwrap();
         XmlComment { data: comment }
     }
 
     fn create_cdata_section(&self, data: &str) -> XmlCDataSection {
-        let cdata = info::XmlCData::empty(self.document.clone());
+        let cdata = info::XmlCData::empty(self.document.borrow().context());
         // TODO: escape?
         cdata.borrow_mut().insert(0, data).unwrap();
         XmlCDataSection { data: cdata }
@@ -1028,7 +1047,7 @@ impl DocumentMut for XmlDocument {
         target: &str,
         data: &str,
     ) -> error::Result<XmlProcessingInstruction> {
-        let pi = info::XmlProcessingInstruction::empty(target, self.document.clone())
+        let pi = info::XmlProcessingInstruction::empty(target, self.document.borrow().context())
             .map_err(|_| error::DomException::InvalidCharacterErr)?;
         pi.borrow_mut()
             .set_content(data)
@@ -1037,7 +1056,7 @@ impl DocumentMut for XmlDocument {
     }
 
     fn create_attribute(&self, name: &str) -> error::Result<XmlAttr> {
-        let attribute = info::XmlAttribute::empty(name, self.document.clone())
+        let attribute = info::XmlAttribute::empty(name, self.document.borrow().context())
             .map_err(|_| error::DomException::InvalidCharacterErr)?;
         Ok(XmlAttr { attribute })
     }
@@ -1045,7 +1064,7 @@ impl DocumentMut for XmlDocument {
     fn create_entity_reference(&self, name: &str) -> error::Result<XmlEntityReference> {
         let ref_name = format!("&{};", name);
         let reference =
-            info::XmlReference::new_from_value(ref_name.as_str(), self.document.clone())
+            info::XmlReference::new_from_value(ref_name.as_str(), self.document.borrow().context())
                 .map_err(|_| error::DomException::InvalidCharacterErr)?;
         Ok(XmlEntityReference { reference })
     }
@@ -3739,6 +3758,7 @@ mod tests {
         assert_eq!("e", elem.tag_name());
         assert_eq!(None, elem.parent_node());
         assert_eq!(Some(doc.clone()), elem.owner_document());
+        assert_ne!(0, elem.element.borrow().id());
         assert_eq!(0, elem.element.borrow().order());
     }
 
@@ -3762,6 +3782,7 @@ mod tests {
         let node = doc.create_document_fragment();
         assert_eq!(None, node.parent_node());
         assert_eq!(Some(doc.clone()), node.owner_document());
+        assert_ne!(0, node.document.borrow().id());
         // FIXME:
         //assert_eq!(0, node.document.borrow().order());
     }
@@ -3775,6 +3796,7 @@ mod tests {
         assert_eq!("t", text.data().unwrap());
         assert_eq!(None, text.parent_node());
         assert_eq!(Some(doc.clone()), text.owner_document());
+        assert_ne!(0, text.data.borrow().id());
         assert_eq!(0, text.data.borrow().order());
     }
 
@@ -3787,6 +3809,7 @@ mod tests {
         assert_eq!("c", comment.data().unwrap());
         assert_eq!(None, comment.parent_node());
         assert_eq!(Some(doc.clone()), comment.owner_document());
+        assert_ne!(0, comment.data.borrow().id());
         assert_eq!(0, comment.data.borrow().order());
     }
 
@@ -3799,6 +3822,7 @@ mod tests {
         assert_eq!("d", cdata.data().unwrap());
         assert_eq!(None, cdata.parent_node());
         assert_eq!(Some(doc.clone()), cdata.owner_document());
+        assert_ne!(0, cdata.data.borrow().id());
         assert_eq!(0, cdata.data.borrow().order());
     }
 
@@ -3812,6 +3836,7 @@ mod tests {
         assert_eq!("c", pi.data());
         assert_eq!(None, pi.parent_node());
         assert_eq!(Some(doc.clone()), pi.owner_document());
+        assert_ne!(0, pi.pi.borrow().id());
         assert_eq!(0, pi.pi.borrow().order());
     }
 
@@ -3848,6 +3873,7 @@ mod tests {
         assert_eq!("a", attr.name());
         assert_eq!(None, attr.parent_node());
         assert_eq!(Some(doc.clone()), attr.owner_document());
+        assert_ne!(0, attr.attribute.borrow().id());
         assert_eq!(0, attr.attribute.borrow().order());
     }
 
@@ -3872,6 +3898,7 @@ mod tests {
         assert_eq!("amp", eref.node_name());
         assert_eq!(None, eref.parent_node());
         assert_eq!(Some(doc.clone()), eref.owner_document());
+        assert_ne!(0, eref.reference.borrow().id());
         assert_eq!(0, eref.reference.borrow().order());
     }
 
@@ -3934,6 +3961,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(doc.as_node()), a.parent_node());
         assert_eq!(Some(doc.clone()), a.owner_document());
+        assert_ne!(0, a.as_comment().unwrap().data.borrow().id());
         assert_ne!(0, a.as_comment().unwrap().data.borrow().order());
         let b = doc
             .insert_before(doc.create_comment("b").as_node(), Some(&a))
@@ -3942,6 +3970,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(doc.as_node()), b.parent_node());
         assert_eq!(Some(doc.clone()), b.owner_document());
+        assert_ne!(0, b.as_comment().unwrap().data.borrow().id());
         assert_ne!(0, b.as_comment().unwrap().data.borrow().order());
     }
 
@@ -4005,12 +4034,14 @@ mod tests {
         // FIXME:
         //assert_eq!(None, b.parent_node());
         assert_eq!(Some(doc.clone()), b.owner_document());
+        assert_ne!(0, b.as_comment().unwrap().data.borrow().id());
         assert_eq!(0, b.as_comment().unwrap().data.borrow().order());
 
         let c = doc.child_nodes().iter().nth(1).unwrap();
         // FIXME:
         //assert_eq!(Some(doc.as_node()), c.parent_node());
         assert_eq!(Some(doc.clone()), c.owner_document());
+        assert_ne!(0, c.as_comment().unwrap().data.borrow().id());
         assert_ne!(0, c.as_comment().unwrap().data.borrow().order());
     }
 
@@ -4076,6 +4107,7 @@ mod tests {
         // FIXME:
         //assert_eq!(None, a.parent_node());
         assert_eq!(Some(doc.clone()), a.owner_document());
+        assert_ne!(0, a.as_comment().unwrap().data.borrow().id());
         assert_eq!(0, a.as_comment().unwrap().data.borrow().order());
     }
 
@@ -4104,6 +4136,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(doc.as_node()), a.parent_node());
         assert_eq!(Some(doc.clone()), a.owner_document());
+        assert_ne!(0, a.as_comment().unwrap().data.borrow().id());
         assert_ne!(0, a.as_comment().unwrap().data.borrow().order());
     }
 
@@ -4310,6 +4343,7 @@ mod tests {
         //assert_eq!(Some(root.as_node()), c.parent_node());
         assert_eq!(Some(doc.clone()), c.owner_document());
         assert_eq!(c, root.get_attribute_node("c").unwrap());
+        assert_ne!(0, c.attribute.borrow().id());
         assert_ne!(0, c.attribute.borrow().order());
 
         let d = root
@@ -4379,6 +4413,7 @@ mod tests {
         assert_eq!(None, a.parent_node());
         assert_eq!(Some(doc.clone()), a.owner_document());
         assert_eq!(None, root.get_attribute_node("a"));
+        assert_ne!(0, a.attribute.borrow().id());
         assert_eq!(0, a.attribute.borrow().order());
 
         root.remove_attribute("b").unwrap();
@@ -4451,6 +4486,7 @@ mod tests {
             // FIXME:
             //assert_eq!(Some(attr.as_node()), v.parent_node());
             assert_eq!(Some(doc.clone()), v.owner_document());
+            assert_ne!(0, v.as_text().unwrap().data.borrow().id());
             assert_ne!(0, v.as_text().unwrap().data.borrow().order());
         }
     }
@@ -4464,7 +4500,7 @@ mod tests {
             .get_attribute_node("a")
             .unwrap();
         let text = XmlNode::Text(XmlText {
-            data: info::XmlText::new("b", None, doc.document.clone()),
+            data: info::XmlText::new("b", None, doc.document.borrow().context()),
         });
 
         // Node
@@ -4499,12 +4535,14 @@ mod tests {
                     // FIXME:
                     //assert_eq!(Some(attr.as_node()), v.parent_node());
                     assert_eq!(Some(doc.clone()), v.owner_document());
+                    assert_ne!(0, v.reference.borrow().id());
                     assert_ne!(0, v.reference.borrow().order());
                 }
                 XmlNode::Text(v) => {
                     // FIXME:
                     //assert_eq!(Some(attr.as_node()), v.parent_node());
                     assert_eq!(Some(doc.clone()), v.owner_document());
+                    assert_ne!(0, v.data.borrow().id());
                     assert_ne!(0, v.data.borrow().order());
                 }
                 _ => unreachable!(),
@@ -4526,6 +4564,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(attr.as_node()), d.parent_node());
         assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.as_text().unwrap().data.borrow().id());
         assert_ne!(0, d.as_text().unwrap().data.borrow().order());
         let e = attr
             .insert_before(doc.create_text_node("e").as_node(), Some(&d))
@@ -4534,6 +4573,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(attr.as_node()), e.parent_node());
         assert_eq!(Some(doc.clone()), e.owner_document());
+        assert_ne!(0, e.as_text().unwrap().data.borrow().id());
         assert_ne!(0, e.as_text().unwrap().data.borrow().order());
     }
 
@@ -4604,12 +4644,14 @@ mod tests {
         assert_eq!("b&f", attr.value().unwrap());
         assert_eq!(None, e.parent_node());
         assert_eq!(Some(doc.clone()), e.owner_document());
+        assert_ne!(0, e.as_text().unwrap().data.borrow().id());
         assert_eq!(0, e.as_text().unwrap().data.borrow().order());
 
         let f = attr.children().last().cloned().unwrap();
         // FIXME:
         //assert_eq!(Some(attr.as_node()), f.parent_node());
         assert_eq!(Some(doc.clone()), f.owner_document());
+        assert_ne!(0, f.as_text().unwrap().data.borrow().id());
         assert_ne!(0, f.as_text().unwrap().data.borrow().order());
     }
 
@@ -4680,6 +4722,7 @@ mod tests {
         assert_eq!("b&", attr.value().unwrap());
         assert_eq!(None, d.parent_node());
         assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.as_text().unwrap().data.borrow().id());
         assert_eq!(0, d.as_text().unwrap().data.borrow().order());
     }
 
@@ -4710,6 +4753,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(attr.as_node()), d.parent_node());
         assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.as_text().unwrap().data.borrow().id());
         assert_ne!(0, d.as_text().unwrap().data.borrow().order());
     }
 
@@ -4759,7 +4803,7 @@ mod tests {
             .get_attribute_node("a")
             .unwrap();
         let text = XmlNode::Text(XmlText {
-            data: info::XmlText::new("b", None, doc.document.clone()),
+            data: info::XmlText::new("b", None, doc.document.borrow().context()),
         });
 
         // AsNode
@@ -4839,7 +4883,7 @@ mod tests {
             .get_attribute_node("a")
             .unwrap();
         let text = XmlNode::Text(XmlText {
-            data: info::XmlText::new("b", None, doc.document.clone()),
+            data: info::XmlText::new("b", None, doc.document.borrow().context()),
         });
 
         // HasChild
@@ -4911,6 +4955,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(elem1.as_node()), d.parent_node());
         assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.attribute.borrow().id());
         assert_ne!(0, d.attribute.borrow().order());
     }
 
@@ -4976,6 +5021,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(elem1.as_node()), d.parent_node());
         assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.attribute.borrow().id());
         assert_ne!(0, d.attribute.borrow().order());
 
         let a = elem1
@@ -4986,6 +5032,7 @@ mod tests {
         // FIXME:
         //assert_eq!(None, a.parent_node());
         assert_eq!(Some(doc.clone()), a.owner_document());
+        assert_ne!(0, a.attribute.borrow().id());
         assert_eq!(0, a.attribute.borrow().order());
     }
 
@@ -5062,6 +5109,7 @@ mod tests {
         // FIXME:
         //assert_eq!(None, d.parent_node());
         assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.attribute.borrow().id());
         assert_eq!(0, d.attribute.borrow().order());
     }
 
@@ -5108,8 +5156,8 @@ mod tests {
         let data1 = XmlResolvedText::from(XmlText {
             data: info::XmlText::new(
                 "data1",
-                Some(doc.document.borrow().document_element().unwrap().into()),
-                doc.document.clone(),
+                Some(elem1.clone().element.into()),
+                doc.document.borrow().context(),
             ),
         })
         .as_node();
@@ -5187,6 +5235,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(elem1.as_node()), d.parent_node());
         assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.as_text().unwrap().data.borrow().id());
         assert_ne!(0, d.as_text().unwrap().data.borrow().order());
         let e = elem1
             .insert_before(doc.create_text_node("e").as_node(), Some(&d))
@@ -5195,6 +5244,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(elem1.as_node()), e.parent_node());
         assert_eq!(Some(doc.clone()), e.owner_document());
+        assert_ne!(0, e.as_text().unwrap().data.borrow().id());
         assert_ne!(0, e.as_text().unwrap().data.borrow().order());
     }
 
@@ -5312,12 +5362,14 @@ mod tests {
         // FIXME:
         //assert_eq!(None, t.parent_node());
         assert_eq!(Some(doc.clone()), t.owner_document());
+        assert_ne!(0, t.as_text().unwrap().data.borrow().id());
         assert_eq!(0, t.as_text().unwrap().data.borrow().order());
 
         let f = elem1.child_nodes().item(0).unwrap();
         // FIXME:
         //assert_eq!(Some(elem1.as_node()), f.parent_node());
         assert_eq!(Some(doc.clone()), f.owner_document());
+        assert_ne!(0, f.as_resolved_text().unwrap().data.first().unwrap().id());
         assert_ne!(
             0,
             f.as_resolved_text().unwrap().data.first().unwrap().order()
@@ -5439,6 +5491,7 @@ mod tests {
         // FIXME:
         //assert_eq!(None, d.parent_node());
         assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.as_text().unwrap().data.borrow().id());
         assert_eq!(0, d.as_text().unwrap().data.borrow().order());
     }
 
@@ -5480,6 +5533,7 @@ mod tests {
         // FIXME:
         //assert_eq!(Some(doc.as_node()), d.parent_node());
         assert_eq!(Some(doc.clone()), d.owner_document());
+        assert_ne!(0, d.as_text().unwrap().data.borrow().id());
         assert_ne!(0, d.as_text().unwrap().data.borrow().order());
     }
 
@@ -5578,8 +5632,8 @@ mod tests {
         let data1 = XmlResolvedText::from(XmlText {
             data: info::XmlText::new(
                 "data1",
-                Some(doc.document.borrow().document_element().unwrap().into()),
-                doc.document.clone(),
+                Some(elem1.clone().element.into()),
+                doc.document.borrow().context(),
             ),
         })
         .as_node();
@@ -5643,7 +5697,7 @@ mod tests {
             .as_element()
             .unwrap();
         let data1 = XmlNode::ResolvedText(XmlResolvedText::from(XmlText {
-            data: info::XmlText::new("data1", None, doc.document.clone()),
+            data: info::XmlText::new("data1", None, doc.document.borrow().context()),
         }));
 
         // HasChild
@@ -5714,6 +5768,18 @@ mod tests {
                 .unwrap()
                 .data
                 .borrow()
+                .id()
+        );
+        assert_ne!(
+            0,
+            text2
+                .data
+                .first()
+                .unwrap()
+                .as_text()
+                .unwrap()
+                .data
+                .borrow()
                 .order()
         );
     }
@@ -5736,6 +5802,18 @@ mod tests {
         assert_eq!(Some("xt"), text2.node_value().unwrap().as_deref());
         assert_eq!(Some(root.as_node()), text2.parent_node());
         assert_eq!(Some(doc.clone()), text2.owner_document());
+        assert_ne!(
+            0,
+            text2
+                .data
+                .first()
+                .unwrap()
+                .as_text()
+                .unwrap()
+                .data
+                .borrow()
+                .id()
+        );
         assert_ne!(
             0,
             text2
@@ -6378,6 +6456,18 @@ mod tests {
         assert_eq!(Some("data"), cdata2.node_value().unwrap().as_deref());
         assert_eq!(Some(root.as_node()), cdata2.parent_node());
         assert_eq!(Some(doc.clone()), cdata2.owner_document());
+        assert_ne!(
+            0,
+            cdata2
+                .data
+                .first()
+                .unwrap()
+                .as_cdata()
+                .unwrap()
+                .data
+                .borrow()
+                .id()
+        );
         assert_ne!(
             0,
             cdata2
