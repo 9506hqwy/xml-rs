@@ -9,7 +9,7 @@ pub enum Error {
     InvalidType,
     NotFoundDoumentElement,
     NotFoundReference(String),
-    OufOfIndex(i64),
+    OufOfIndex(usize),
     Parse(String),
 }
 

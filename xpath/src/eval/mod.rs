@@ -400,7 +400,8 @@ fn eval_axis_node_test(
             | expr::AxisName::AncestorOrSelf
             | expr::AxisName::Preceding
             | expr::AxisName::PrecedingSibling => {
-                nodes.sort_by_cached_key(|v| -v.order());
+                nodes.sort_by_cached_key(|v| v.order());
+                nodes.reverse();
             }
             _ => {
                 nodes.sort_by_cached_key(|v| v.order());

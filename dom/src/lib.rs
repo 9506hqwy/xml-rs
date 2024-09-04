@@ -10,7 +10,7 @@ use xml_info::{
     Document as InfoDocument, DocumentTypeDeclaration as InfoDocumentTypeDeclaration,
     Element as InfoElement, HasChildren as InfoHasChildren, HasContext as InfoHasContext,
     HasQName as InfoHasQName, Namespace as InfoNamespace, Notation as InfoNotation,
-    ProcessingInstruction as InfoProcessingInstruction, Sortable as InfoSortable,
+    ProcessingInstruction as InfoProcessingInstruction,
 };
 
 // TODO: re-implement DocumentFragment
@@ -605,7 +605,7 @@ impl XmlNode {
         }
     }
 
-    pub fn order(&self) -> i64 {
+    pub fn order(&self) -> usize {
         match self {
             XmlNode::Attribute(v) => v.attribute.borrow().order(),
             XmlNode::CData(v) => v.data.borrow().order(),
@@ -1145,7 +1145,7 @@ impl NodeMut for XmlDocument {
             match self
                 .document
                 .borrow_mut()
-                .insert_before_order(new_child.try_into()?, r.order())
+                .insert_before(new_child.try_into()?, r.id())
             {
                 Ok(v) => Ok(v),
                 Err(xml_info::error::Error::OufOfIndex(_)) => Err(error::DomException::NotFoundErr),
@@ -1158,8 +1158,6 @@ impl NodeMut for XmlDocument {
                 .map_err(|_| error::DomException::HierarchyRequestErr)?
         };
 
-        self.reset_order();
-
         Ok(XmlNode::from(value))
     }
 
@@ -1168,11 +1166,7 @@ impl NodeMut for XmlDocument {
             return Err(error::DomException::WrongDocumentErr)?;
         }
 
-        match self
-            .document
-            .borrow_mut()
-            .delete_by_order(old_child.order())
-        {
+        match self.document.borrow_mut().delete(old_child.id()) {
             Some(v) => Ok(XmlNode::from(v)),
             _ => Err(error::DomException::NotFoundErr)?,
         }
@@ -1243,10 +1237,6 @@ impl XmlDocument {
     fn root_element(&self) -> error::Result<XmlElement> {
         let element = self.document.borrow().document_element()?;
         Ok(XmlElement::from(element))
-    }
-
-    fn reset_order(&mut self) {
-        self.document.borrow_mut().reset_order();
     }
 }
 
@@ -1548,7 +1538,6 @@ impl Node for XmlAttr {
 impl NodeMut for XmlAttr {
     fn set_node_value(&mut self, value: &str) -> error::Result<()> {
         self.attribute.borrow_mut().set_values(value)?;
-        self.owner_document().unwrap().reset_order();
         Ok(())
     }
 
@@ -1570,7 +1559,7 @@ impl NodeMut for XmlAttr {
             match self
                 .attribute
                 .borrow_mut()
-                .insert_before_order(new_child.try_into()?, r.order())
+                .insert_before(new_child.try_into()?, r.id())
             {
                 Ok(v) => Ok(v),
                 Err(xml_info::error::Error::OufOfIndex(_)) => Err(error::DomException::NotFoundErr),
@@ -1583,8 +1572,6 @@ impl NodeMut for XmlAttr {
                 .map_err(|_| error::DomException::HierarchyRequestErr)?
         };
 
-        self.owner_document().unwrap().reset_order();
-
         Ok(XmlNode::from(value))
     }
 
@@ -1593,11 +1580,7 @@ impl NodeMut for XmlAttr {
             return Err(error::DomException::WrongDocumentErr)?;
         }
 
-        match self
-            .attribute
-            .borrow_mut()
-            .delete_by_order(old_child.order())
-        {
+        match self.attribute.borrow_mut().delete(old_child.id()) {
             Some(v) => Ok(XmlNode::from(v)),
             _ => Err(error::DomException::NotFoundErr)?,
         }
@@ -1747,8 +1730,6 @@ impl ElementMut for XmlElement {
             .borrow_mut()
             .append_attribute(new_attr.attribute);
 
-        self.owner_document().unwrap().reset_order();
-
         Ok(attr.map(XmlAttr::from))
     }
 
@@ -1848,7 +1829,7 @@ impl NodeMut for XmlElement {
             match self
                 .element
                 .borrow_mut()
-                .insert_before_order(new_child.try_into()?, r.order())
+                .insert_before(new_child.try_into()?, r.id())
             {
                 Ok(v) => Ok(v),
                 Err(xml_info::error::Error::OufOfIndex(_)) => Err(error::DomException::NotFoundErr),
@@ -1861,8 +1842,6 @@ impl NodeMut for XmlElement {
                 .map_err(|_| error::DomException::HierarchyRequestErr)?
         };
 
-        self.owner_document().unwrap().reset_order();
-
         Ok(XmlNode::from(value))
     }
 
@@ -1871,7 +1850,7 @@ impl NodeMut for XmlElement {
             return Err(error::DomException::WrongDocumentErr)?;
         }
 
-        match self.element.borrow_mut().delete_by_order(old_child.order()) {
+        match self.element.borrow_mut().delete(old_child.id()) {
             Some(v) => Ok(XmlNode::from(v)),
             _ => Err(error::DomException::NotFoundErr)?,
         }
@@ -2047,11 +2026,10 @@ impl TextMut for XmlText {
         match parent {
             Some(info::XmlItem::Attribute(v)) => {
                 let data2 = self.data.borrow_mut().split_at(offset);
-                let new_order = self.data.borrow().order() + 1;
 
                 let inserted = v
                     .borrow_mut()
-                    .insert_before_order(data2.clone().into(), new_order);
+                    .insert_after(data2.clone().into(), self.data.borrow().id());
 
                 match inserted {
                     Ok(_) => {}
@@ -2062,18 +2040,15 @@ impl TextMut for XmlText {
                         return Err(error::Error::from(e));
                     }
                 }
-
-                self.owner_document().unwrap().reset_order();
 
                 Ok(XmlResolvedText::from(XmlText::from(data2)))
             }
             Some(info::XmlItem::Element(v)) => {
                 let data2 = self.data.borrow_mut().split_at(offset);
-                let new_order = self.data.borrow().order() + 1;
 
                 let inserted = v
                     .borrow_mut()
-                    .insert_before_order(data2.clone().into(), new_order);
+                    .insert_after(data2.clone().into(), self.data.borrow().id());
 
                 match inserted {
                     Ok(_) => {}
@@ -2084,8 +2059,6 @@ impl TextMut for XmlText {
                         return Err(error::Error::from(e));
                     }
                 }
-
-                self.owner_document().unwrap().reset_order();
 
                 Ok(XmlResolvedText::from(XmlText::from(data2)))
             }
@@ -2398,11 +2371,10 @@ impl TextMut for XmlCDataSection {
         let v = self.data.borrow().parent()?;
 
         let data2 = self.data.borrow_mut().split_at(offset);
-        let new_order = self.data.borrow().order() + 1;
 
         let inserted = v
             .borrow_mut()
-            .insert_before_order(data2.clone().into(), new_order);
+            .insert_after(data2.clone().into(), self.data.borrow().id());
 
         match inserted {
             Ok(_) => {}
@@ -2413,8 +2385,6 @@ impl TextMut for XmlCDataSection {
                 return Err(error::Error::from(e));
             }
         }
-
-        self.owner_document().unwrap().reset_order();
 
         Ok(XmlResolvedText::from(XmlCDataSection::from(data2)))
     }
@@ -3256,7 +3226,9 @@ impl fmt::Debug for XmlNamespace {
         write!(
             f,
             "XmlNamespace {{ {} }}",
-            self.node_value().map_err(|_| fmt::Error)?.unwrap()
+            self.node_value()
+                .map_err(|_| fmt::Error)?
+                .unwrap_or_default()
         )
     }
 }
@@ -4236,12 +4208,11 @@ mod tests {
 
     #[test]
     fn test_document_impl() {
-        let (_, mut doc) = XmlDocument::from_raw("<root></root>").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
         let elem = doc.root_element().unwrap();
 
         // XmlDocument
         assert_eq!(elem, doc.root_element().unwrap());
-        doc.reset_order();
     }
 
     #[test]
@@ -6439,7 +6410,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cdata_split_text_ok() {
+    fn test_cdata_text_mut_split_text_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut cdata = root
@@ -6487,7 +6458,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cdata_split_text_err0() {
+    fn test_cdata_text_mut_split_text_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
         let root = doc.document_element().unwrap();
         let mut cdata = root

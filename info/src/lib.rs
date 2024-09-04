@@ -5,13 +5,12 @@ use std::convert;
 use std::fmt;
 use std::iter::Iterator;
 use std::ops::{Deref, Range};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use xml_parser::model as parser;
 
 // TODO: Base URI is always empty string.
 // TODO: White Space Handling.
 // TODO: Parameter Entity Reference.
-// TODO: Improve process that updates document order.
 // TODO: Improve entity reference structure.
 
 // -----------------------------------------------------------------------------------------------
@@ -22,25 +21,127 @@ pub type Singleton<T> = Rc<RefCell<T>>;
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait HasChildren {
-    fn append(&mut self, value: XmlItem) -> error::Result<XmlItem>;
+pub trait HasChildren: HasContext {
+    fn child_index(&self, id: usize) -> Option<usize>;
 
-    fn delete_by_order(&mut self, order: i64) -> Option<XmlItem>;
+    fn child_by_index(&self, index: usize) -> Option<XmlItem>;
 
-    fn insert_before_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem>;
+    fn last_child_or_self_id(&self) -> usize;
+
+    fn delete_by_id(&mut self, id: usize) -> Option<XmlItem>;
+
+    fn insert_by_id(&mut self, value: XmlItem, id: Option<usize>) -> error::Result<XmlItem>;
+
+    fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
+        let id = self.last_child_or_self_id();
+        value.set_order_after(id);
+        self.insert_by_id(value, None)
+    }
+
+    fn delete(&mut self, id: usize) -> Option<XmlItem> {
+        if let Some(v) = self.delete_by_id(id) {
+            v.clear_order();
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    fn insert_after(&mut self, value: XmlItem, id: usize) -> error::Result<XmlItem> {
+        let index = self.child_index(id).ok_or(error::Error::OufOfIndex(id))?;
+        if let Some(child) = self.child_by_index(index + 1) {
+            self.insert_before(value, child.id())
+        } else {
+            self.append(value)
+        }
+    }
+
+    fn insert_before(&mut self, value: XmlItem, id: usize) -> error::Result<XmlItem> {
+        self.child_index(id).ok_or(error::Error::OufOfIndex(id))?;
+        value
+            .set_order_before(id)
+            .ok_or(error::Error::OufOfIndex(id))?;
+        self.insert_by_id(value, Some(id))
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
 
 pub trait HasContext {
-    fn context(&self) -> Context;
+    fn context(&self) -> &Context;
+
+    fn context_mut(&mut self) -> &mut Context;
+
+    fn init_order_recursive(&self);
+
+    fn clear_order(&self) {
+        let id = self.context().info.borrow().id;
+        if let Some(version) = self.context().ordering.borrow_mut().remove(id) {
+            self.context().info.borrow_mut().order_cache = 0;
+            self.context().info.borrow_mut().order_version = version;
+        }
+    }
 
     fn id(&self) -> usize {
-        self.context().id
+        self.context().info.borrow().id
+    }
+
+    fn init_order(&self) {
+        let (order_cache, order_version) = self
+            .context()
+            .ordering
+            .borrow_mut()
+            .push(&self.context().info);
+        self.context().info.borrow_mut().order_cache = order_cache;
+        self.context().info.borrow_mut().order_version = order_version;
+    }
+
+    fn order(&self) -> usize {
+        let cache_version = self.context().info.borrow().order_version;
+        let order_version = self.context().ordering.borrow().version;
+        if cache_version < order_version {
+            let id = self.context().info.borrow().id;
+            let order = self.context().ordering.borrow().get(id);
+            self.context().info.borrow_mut().order_cache = order;
+            self.context().info.borrow_mut().order_version = order_version;
+            order
+        } else {
+            self.context().info.borrow().order_cache
+        }
     }
 
     fn owner(&self) -> XmlNode<XmlDocument> {
         self.context().document.clone()
+    }
+
+    fn set_order_after(&self, id: usize) -> Option<usize> {
+        let info = self.context().info.clone();
+        if self
+            .context()
+            .ordering
+            .borrow_mut()
+            .insert_after(id, &info)
+            .is_some()
+        {
+            Some(self.order())
+        } else {
+            None
+        }
+    }
+
+    fn set_order_before(&self, id: usize) -> Option<usize> {
+        let info = self.context().info.clone();
+        if self
+            .context()
+            .ordering
+            .borrow_mut()
+            .insert_before(id, &info)
+            .is_some()
+        {
+            Some(self.order())
+        } else {
+            None
+        }
     }
 }
 
@@ -61,20 +162,6 @@ pub trait HasQName {
             xml_nom::model::QName::Unprefixed(self.local_name())
         }
     }
-}
-
-// -----------------------------------------------------------------------------------------------
-
-pub trait Numbering {
-    fn next(&mut self) -> i64;
-}
-
-pub trait Sortable {
-    fn order(&self) -> i64;
-
-    fn set_order(&mut self, numbering: &mut impl Numbering);
-
-    fn clear_order(&mut self);
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -237,40 +324,68 @@ pub struct XmlAttribute {
     from_dtd: bool,
     parent: Option<XmlNode<XmlElement>>,
     context: Context,
-    order: i64,
 }
 
 impl HasChildren for XmlAttribute {
-    fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
-        self.insert(value, self.values.len())
+    fn child_index(&self, id: usize) -> Option<usize> {
+        self.values.iter().position(|v| v.id() == id)
     }
 
-    fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
-        if let Some(mut v) = self.values.iter().find(|v| v.order() == order).cloned() {
-            self.values.retain(|v| v.order() != order);
-            v.clear_order();
-            match v {
-                XmlAttributeValue::Reference(v) => Some(v.try_into().unwrap()),
-                XmlAttributeValue::Text(v) => Some(v.into()),
+    fn child_by_index(&self, index: usize) -> Option<XmlItem> {
+        match self.values.get(index) {
+            Some(XmlAttributeValue::Reference(v)) => v.clone().try_into().ok(),
+            Some(XmlAttributeValue::Text(v)) => Some(v.clone().into()),
+            None => None,
+        }
+    }
+
+    fn delete_by_id(&mut self, id: usize) -> Option<XmlItem> {
+        if let Some(index) = self.child_index(id) {
+            match self.values.remove(index) {
+                XmlAttributeValue::Reference(v) => v.clone().try_into().ok(),
+                XmlAttributeValue::Text(v) => Some(v.clone().into()),
             }
         } else {
             None
         }
     }
 
-    fn insert_before_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem> {
-        let index = self
-            .values
-            .iter()
-            .position(|v| order <= v.order())
-            .ok_or(error::Error::OufOfIndex(order))?;
-        self.insert(value, index)
+    fn last_child_or_self_id(&self) -> usize {
+        if let Some(last) = self.values.iter().last() {
+            last.id()
+        } else {
+            self.id()
+        }
+    }
+
+    fn insert_by_id(&mut self, value: XmlItem, id: Option<usize>) -> error::Result<XmlItem> {
+        // FIXME: parent / owner.
+        let v = XmlAttributeValue::try_from(value.clone())?;
+        if let Some(id) = id {
+            let index = self.child_index(id).unwrap();
+            self.values.insert(index, v.clone());
+        } else {
+            self.values.push(v);
+        }
+        Ok(value)
     }
 }
 
 impl HasContext for XmlAttribute {
-    fn context(&self) -> Context {
-        self.context.clone()
+    fn context(&self) -> &Context {
+        &self.context
+    }
+
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
+    }
+
+    fn init_order_recursive(&self) {
+        self.init_order();
+
+        for v in self.values() {
+            v.init_order_recursive();
+        }
     }
 }
 
@@ -281,24 +396,6 @@ impl HasQName for XmlAttribute {
 
     fn prefix(&self) -> Option<&str> {
         self.prefix.as_deref()
-    }
-}
-
-impl Sortable for XmlAttribute {
-    fn order(&self) -> i64 {
-        self.order
-    }
-
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
-
-        for value in self.values.as_mut_slice() {
-            value.set_order(numbering);
-        }
-    }
-
-    fn clear_order(&mut self) {
-        self.order = 0;
     }
 }
 
@@ -472,7 +569,7 @@ impl XmlAttribute {
     pub fn new(
         value: &parser::Attribute,
         parent: Option<XmlNode<XmlElement>>,
-        context: Context,
+        context: &Context,
     ) -> XmlNode<Self> {
         let (local_name, prefix) = attribute_name(&value.name);
         let attribute = node(XmlAttribute {
@@ -482,13 +579,10 @@ impl XmlAttribute {
             from_dtd: false,
             parent,
             context: context.next(),
-            order: 0,
         });
 
         for value in value.value.as_slice() {
-            if let Some(v) =
-                XmlAttributeValue::new(value, attribute.clone().into(), context.clone())
-            {
+            if let Some(v) = XmlAttributeValue::new(value, attribute.clone().into(), context) {
                 attribute.borrow_mut().values.push(v);
             }
         }
@@ -496,7 +590,7 @@ impl XmlAttribute {
         attribute
     }
 
-    pub fn new_from_declaration(value: &XmlDeclarationAttDef, context: Context) -> XmlNode<Self> {
+    pub fn new_from_declaration(value: &XmlDeclarationAttDef, context: &Context) -> XmlNode<Self> {
         let attribute = node(XmlAttribute {
             local_name: value.local_name().to_string(),
             prefix: value.prefix().map(|v| v.to_string()),
@@ -504,7 +598,6 @@ impl XmlAttribute {
             from_dtd: true,
             parent: None,
             context: context.zero(),
-            order: -1,
         });
 
         if let XmlDeclarationAttDefault::Value(_, values) = &value.value {
@@ -518,7 +611,7 @@ impl XmlAttribute {
         attribute
     }
 
-    pub fn empty(name: &str, context: Context) -> error::Result<XmlNode<Self>> {
+    pub fn empty(name: &str, context: &Context) -> error::Result<XmlNode<Self>> {
         let xml = format!("{}=''", name);
         let (rest, tree) = xml_parser::attribute(xml.as_str())?;
         if rest.is_empty() {
@@ -536,6 +629,11 @@ impl XmlAttribute {
         if rest.is_empty() {
             let attr = XmlAttribute::new(&tree, self.parent.clone(), self.context());
             self.values.clear();
+
+            for v in attr.borrow().values() {
+                v.init_order_recursive();
+            }
+
             self.values.extend_from_slice(attr.borrow().values());
             Ok(())
         } else {
@@ -563,14 +661,6 @@ impl XmlAttribute {
         Some(self.declaration_def()?.ty)
     }
 
-    fn insert(&mut self, value: XmlItem, index: usize) -> error::Result<XmlItem> {
-        // FIXME: parent / owner.
-        // FIXME: document order.
-        let v = XmlAttributeValue::try_from(value.clone())?;
-        self.values.insert(index, v.clone());
-        Ok(value)
-    }
-
     fn namespace(&self) -> bool {
         self.prefix().map(|p| p == "xmlns").unwrap_or_default() || self.local_name() == "xmlns"
     }
@@ -582,29 +672,6 @@ impl XmlAttribute {
 pub enum XmlAttributeValue {
     Text(XmlNode<XmlText>),
     Reference(XmlNode<XmlReference>),
-}
-
-impl Sortable for XmlAttributeValue {
-    fn order(&self) -> i64 {
-        match self {
-            XmlAttributeValue::Reference(v) => v.borrow().order(),
-            XmlAttributeValue::Text(v) => v.borrow().order(),
-        }
-    }
-
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        match self {
-            XmlAttributeValue::Reference(v) => v.borrow_mut().set_order(numbering),
-            XmlAttributeValue::Text(v) => v.borrow_mut().set_order(numbering),
-        }
-    }
-
-    fn clear_order(&mut self) {
-        match self {
-            XmlAttributeValue::Reference(v) => v.borrow_mut().clear_order(),
-            XmlAttributeValue::Text(v) => v.borrow_mut().clear_order(),
-        }
-    }
 }
 
 impl convert::TryFrom<XmlItem> for XmlAttributeValue {
@@ -634,7 +701,7 @@ impl fmt::Display for XmlAttributeValue {
 }
 
 impl XmlAttributeValue {
-    fn new(value: &parser::AttributeValue, parent: XmlItem, context: Context) -> Option<Self> {
+    fn new(value: &parser::AttributeValue, parent: XmlItem, context: &Context) -> Option<Self> {
         match value {
             parser::AttributeValue::Reference(v) => Some(XmlAttributeValue::Reference(
                 XmlReference::new(v, Some(parent), context),
@@ -657,6 +724,20 @@ impl XmlAttributeValue {
             XmlAttributeValue::Text(v) => Some(XmlAttributeValue::Text(v.clone())),
         }
     }
+
+    fn id(&self) -> usize {
+        match self {
+            XmlAttributeValue::Reference(v) => v.borrow().id(),
+            XmlAttributeValue::Text(ref v) => v.borrow().id(),
+        }
+    }
+
+    fn init_order_recursive(&self) {
+        match self {
+            XmlAttributeValue::Reference(v) => v.borrow().init_order_recursive(),
+            XmlAttributeValue::Text(ref v) => v.borrow().init_order_recursive(),
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -666,26 +747,19 @@ pub struct XmlCData {
     data: String,
     parent: Option<XmlNode<XmlElement>>,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlCData {
-    fn context(&self) -> Context {
-        self.context.clone()
-    }
-}
-
-impl Sortable for XmlCData {
-    fn order(&self) -> i64 {
-        self.order
+    fn context(&self) -> &Context {
+        &self.context
     }
 
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
     }
 
-    fn clear_order(&mut self) {
-        self.order = 0;
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
@@ -720,18 +794,18 @@ impl XmlCData {
     pub fn new(
         value: &str,
         parent: Option<XmlNode<XmlElement>>,
-        context: Context,
+        context: &Context,
     ) -> XmlNode<Self> {
         let data = value.to_string();
+
         node(XmlCData {
             data,
             parent,
             context: context.next(),
-            order: 0,
         })
     }
 
-    pub fn empty(context: Context) -> XmlNode<Self> {
+    pub fn empty(context: &Context) -> XmlNode<Self> {
         XmlCData::new("", None, context)
     }
 
@@ -791,26 +865,19 @@ pub struct XmlCharReference {
     radix: u32,
     parent: Option<XmlItem>,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlCharReference {
-    fn context(&self) -> Context {
-        self.context.clone()
-    }
-}
-
-impl Sortable for XmlCharReference {
-    fn order(&self) -> i64 {
-        self.order
+    fn context(&self) -> &Context {
+        &self.context
     }
 
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
     }
 
-    fn clear_order(&mut self) {
-        self.order = 0;
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
@@ -853,7 +920,7 @@ impl XmlCharReference {
         num: &str,
         radix: u32,
         parent: Option<XmlItem>,
-        context: Context,
+        context: &Context,
     ) -> error::Result<XmlNode<Self>> {
         let num = num.to_string();
         let text = match radix {
@@ -862,14 +929,14 @@ impl XmlCharReference {
             _ => unreachable!(),
         }?
         .to_string();
-        Ok(node(XmlCharReference {
+        let node = node(XmlCharReference {
             text,
             num,
             radix,
             parent,
             context: context.next(),
-            order: 0,
-        }))
+        });
+        Ok(node)
     }
 
     pub fn num(&self) -> &str {
@@ -888,26 +955,19 @@ pub struct XmlComment {
     comment: String,
     parent: Option<XmlItem>,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlComment {
-    fn context(&self) -> Context {
-        self.context.clone()
-    }
-}
-
-impl Sortable for XmlComment {
-    fn order(&self) -> i64 {
-        self.order
+    fn context(&self) -> &Context {
+        &self.context
     }
 
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
     }
 
-    fn clear_order(&mut self) {
-        self.order = 0;
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
@@ -934,17 +994,17 @@ impl fmt::Display for XmlComment {
 }
 
 impl XmlComment {
-    pub fn new(comment: &str, parent: Option<XmlItem>, context: Context) -> XmlNode<Self> {
+    pub fn new(comment: &str, parent: Option<XmlItem>, context: &Context) -> XmlNode<Self> {
         let comment = comment.to_string();
+
         node(XmlComment {
             comment,
             parent,
             context: context.next(),
-            order: 0,
         })
     }
 
-    pub fn empty(context: Context) -> XmlNode<Self> {
+    pub fn empty(context: &Context) -> XmlNode<Self> {
         XmlComment::new("", None, context)
     }
 
@@ -1001,7 +1061,7 @@ impl HasQName for XmlDeclarationAttDef {
 }
 
 impl XmlDeclarationAttDef {
-    fn new(value: &parser::DeclarationAttDef<'_>, parent: XmlItem, context: Context) -> Self {
+    fn new(value: &parser::DeclarationAttDef<'_>, parent: XmlItem, context: &Context) -> Self {
         let (local_name, prefix) = match &value.name {
             parser::DeclarationAttName::Attr(v) => qname(v),
             parser::DeclarationAttName::Namsspace(v) => attribute_name(v),
@@ -1030,7 +1090,7 @@ pub enum XmlDeclarationAttDefault {
 }
 
 impl XmlDeclarationAttDefault {
-    fn new(value: &parser::DeclarationAttDefault<'_>, parent: XmlItem, context: Context) -> Self {
+    fn new(value: &parser::DeclarationAttDefault<'_>, parent: XmlItem, context: &Context) -> Self {
         match value {
             parser::DeclarationAttDefault::Required => XmlDeclarationAttDefault::Required,
             parser::DeclarationAttDefault::Implied => XmlDeclarationAttDefault::Implied,
@@ -1038,7 +1098,7 @@ impl XmlDeclarationAttDefault {
                 let fixed = f.map(|v| v.to_string());
                 let value = vs
                     .iter()
-                    .filter_map(|v| XmlAttributeValue::new(v, parent.clone(), context.clone()))
+                    .filter_map(|v| XmlAttributeValue::new(v, parent.clone(), context))
                     .collect();
                 XmlDeclarationAttDefault::Value(fixed, value)
             }
@@ -1054,12 +1114,19 @@ pub struct XmlDeclarationAttList {
     prefix: Option<String>,
     atts: Vec<XmlDeclarationAttDef>,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlDeclarationAttList {
-    fn context(&self) -> Context {
-        self.context.clone()
+    fn context(&self) -> &Context {
+        &self.context
+    }
+
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
+    }
+
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
@@ -1070,20 +1137,6 @@ impl HasQName for XmlDeclarationAttList {
 
     fn prefix(&self) -> Option<&str> {
         self.prefix.as_deref()
-    }
-}
-
-impl Sortable for XmlDeclarationAttList {
-    fn order(&self) -> i64 {
-        self.order
-    }
-
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
-    }
-
-    fn clear_order(&mut self) {
-        self.order = 0;
     }
 }
 
@@ -1106,7 +1159,7 @@ impl XmlDeclarationAttList {
     pub fn new(
         value: &parser::DeclarationAtt<'_>,
         parent: XmlItem,
-        context: Context,
+        context: &Context,
     ) -> XmlNode<Self> {
         let (local_name, prefix) = qname(&value.name);
         let node = node(XmlDeclarationAttList {
@@ -1114,13 +1167,12 @@ impl XmlDeclarationAttList {
             prefix,
             atts: vec![],
             context: context.next(),
-            order: 0,
         });
 
         let mut atts = value
             .defs
             .iter()
-            .map(|v| XmlDeclarationAttDef::new(v, parent.clone(), context.clone()))
+            .map(|v| XmlDeclarationAttDef::new(v, parent.clone(), context))
             .collect();
         node.borrow_mut().atts.append(&mut atts);
 
@@ -1176,55 +1228,90 @@ pub struct XmlDocument {
     version: Option<String>,
     all_declarations_processed: bool,
     context: Option<Context>,
-    order: i64,
 }
 
 impl HasChildren for XmlDocument {
-    fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
-        self.insert(value, self.children.len())
+    fn child_index(&self, id: usize) -> Option<usize> {
+        self.children.iter().position(|v| v.id() == id)
     }
 
-    fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
-        if let Some(mut v) = self.children.iter().find(|v| v.order() == order).cloned() {
-            self.children.retain(|v| v.order() != order);
-            v.clear_order();
-            Some(v)
+    fn child_by_index(&self, index: usize) -> Option<XmlItem> {
+        self.children.get(index).cloned()
+    }
+
+    fn delete_by_id(&mut self, id: usize) -> Option<XmlItem> {
+        if let Some(index) = self.child_index(id) {
+            Some(self.children.remove(index))
         } else {
             None
         }
     }
 
-    fn insert_before_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem> {
-        let index = self
-            .children
-            .iter()
-            .position(|v| order <= v.order())
-            .ok_or(error::Error::OufOfIndex(order))?;
-        self.insert(value, index)
+    fn last_child_or_self_id(&self) -> usize {
+        if let Some(last) = self.children.iter().last() {
+            last.id()
+        } else {
+            self.id()
+        }
+    }
+
+    fn insert_by_id(&mut self, value: XmlItem, id: Option<usize>) -> error::Result<XmlItem> {
+        // FIXME: parent / owner.
+
+        fn add_or_insert(doc: &mut XmlDocument, value: XmlItem, id: Option<usize>) {
+            if let Some(id) = id {
+                let index = doc.child_index(id).unwrap();
+                doc.children.insert(index, value);
+            } else {
+                doc.children.push(value);
+            }
+        }
+
+        match value {
+            XmlItem::Comment(_) => {
+                add_or_insert(self, value.clone(), id);
+                Ok(value)
+            }
+            XmlItem::DocumentType(_) => {
+                if self.document_declaration().is_some() || self.document_element().is_ok() {
+                    Err(error::Error::InvalidType)
+                } else {
+                    add_or_insert(self, value.clone(), id);
+                    Ok(value)
+                }
+            }
+            XmlItem::Element(_) => {
+                if self.document_element().is_ok() {
+                    Err(error::Error::InvalidType)
+                } else {
+                    add_or_insert(self, value.clone(), id);
+                    Ok(value)
+                }
+            }
+            XmlItem::PI(_) => {
+                add_or_insert(self, value.clone(), id);
+                Ok(value)
+            }
+            _ => Err(error::Error::InvalidType),
+        }
     }
 }
 
 impl HasContext for XmlDocument {
-    fn context(&self) -> Context {
-        self.context.clone().unwrap()
-    }
-}
-
-impl Sortable for XmlDocument {
-    fn order(&self) -> i64 {
-        self.order
+    fn context(&self) -> &Context {
+        self.context.as_ref().unwrap()
     }
 
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
+    fn context_mut(&mut self) -> &mut Context {
+        self.context.as_mut().unwrap()
+    }
 
-        for child in self.children.as_mut_slice() {
-            child.set_order(numbering);
+    fn init_order_recursive(&self) {
+        self.init_order();
+
+        for v in self.children.as_slice() {
+            v.init_order_recursive();
         }
-    }
-
-    fn clear_order(&mut self) {
-        self.order = 0;
     }
 }
 
@@ -1328,52 +1415,47 @@ impl XmlDocument {
             version: xml_version(value),
             all_declarations_processed: true,
             context: None,
-            order: 0,
         });
 
-        let context = Context::from(document.clone());
+        let context = Context::new(document.clone());
         document.borrow_mut().context = Some(context.clone());
 
-        fn add_misc(context: Context, misc: &parser::Misc<'_>) {
-            let doc = context.clone().document;
+        fn add_misc(context: &Context, misc: &parser::Misc<'_>) {
+            let doc = context.document.clone();
             match misc {
                 parser::Misc::Comment(c) => {
                     let c = XmlComment::new(c.value, Some(doc.clone().into()), context);
-                    doc.borrow_mut().children.push(c.into());
+                    doc.borrow_mut().push_child(c.into());
                 }
                 parser::Misc::PI(p) => {
                     let p = XmlProcessingInstruction::new(p, Some(doc.clone().into()), context);
-                    doc.borrow_mut().children.push(p.into());
+                    doc.borrow_mut().push_child(p.into());
                 }
                 parser::Misc::Whitespace(_) => {}
             }
         }
 
         for h in value.prolog.heads.as_slice() {
-            add_misc(context.clone(), h);
+            add_misc(&context, h);
         }
 
         if let Some(d) = value.prolog.declaration_doc.as_ref() {
-            let doc_type = XmlDocumentTypeDeclaration::new(d, context.clone());
-            document.borrow_mut().children.push(doc_type.into());
+            let doc_type = XmlDocumentTypeDeclaration::new(d, &context);
+            document.borrow_mut().push_child(doc_type.into());
         }
 
         for t in value.prolog.tails.as_slice() {
-            add_misc(context.clone(), t);
+            add_misc(&context, t);
         }
 
-        let element = XmlElement::new(
-            &value.element,
-            Some(document.clone().into()),
-            context.clone(),
-        );
-        document.borrow_mut().children.push(element?.into());
+        let element = XmlElement::new(&value.element, Some(document.clone().into()), &context);
+        document.borrow_mut().push_child(element?.into());
 
         for h in value.miscs.as_slice() {
-            add_misc(context.clone(), h);
+            add_misc(&context, h);
         }
 
-        document.borrow_mut().reset_order();
+        document.borrow().init_order_recursive();
 
         Ok(document)
     }
@@ -1391,40 +1473,8 @@ impl XmlDocument {
         self.children.iter().find_map(|v| v.as_document_type())
     }
 
-    pub fn reset_order(&mut self) {
-        self.set_order(&mut CountUp::default());
-    }
-
-    fn insert(&mut self, value: XmlItem, index: usize) -> error::Result<XmlItem> {
-        // FIXME: parent / owner.
-        // FIXME: document order.
-        match value {
-            XmlItem::Comment(_) => {
-                self.children.insert(index, value.clone());
-                Ok(value)
-            }
-            XmlItem::DocumentType(_) => {
-                if self.document_declaration().is_some() || self.document_element().is_ok() {
-                    Err(error::Error::InvalidType)
-                } else {
-                    self.children.insert(index, value.clone());
-                    Ok(value)
-                }
-            }
-            XmlItem::Element(_) => {
-                if self.document_element().is_ok() {
-                    Err(error::Error::InvalidType)
-                } else {
-                    self.children.insert(index, value.clone());
-                    Ok(value)
-                }
-            }
-            XmlItem::PI(_) => {
-                self.children.insert(index, value.clone());
-                Ok(value)
-            }
-            _ => Err(error::Error::InvalidType),
-        }
+    fn push_child(&mut self, child: XmlItem) {
+        self.children.push(child);
     }
 }
 
@@ -1438,12 +1488,23 @@ pub struct XmlDocumentTypeDeclaration {
     public_identifier: Option<String>,
     children: Vec<XmlItem>,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlDocumentTypeDeclaration {
-    fn context(&self) -> Context {
-        self.context.clone()
+    fn context(&self) -> &Context {
+        &self.context
+    }
+
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
+    }
+
+    fn init_order_recursive(&self) {
+        self.init_order();
+
+        for v in self.children.as_slice() {
+            v.init_order_recursive();
+        }
     }
 }
 
@@ -1454,24 +1515,6 @@ impl HasQName for XmlDocumentTypeDeclaration {
 
     fn prefix(&self) -> Option<&str> {
         self.prefix.as_deref()
-    }
-}
-
-impl Sortable for XmlDocumentTypeDeclaration {
-    fn order(&self) -> i64 {
-        self.order
-    }
-
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
-
-        for child in self.children.as_mut_slice() {
-            child.set_order(numbering);
-        }
-    }
-
-    fn clear_order(&mut self) {
-        self.order = 0;
     }
 }
 
@@ -1541,7 +1584,7 @@ impl fmt::Display for XmlDocumentTypeDeclaration {
 }
 
 impl XmlDocumentTypeDeclaration {
-    pub fn new(value: &parser::DeclarationDoc<'_>, context: Context) -> XmlNode<Self> {
+    pub fn new(value: &parser::DeclarationDoc<'_>, context: &Context) -> XmlNode<Self> {
         let (local_name, prefix) = qname(&value.name);
 
         let (system_identifier, public_identifier) = match value.external_id.as_ref() {
@@ -1559,18 +1602,14 @@ impl XmlDocumentTypeDeclaration {
             public_identifier,
             children: vec![],
             context: context.next(),
-            order: 0,
         });
 
         for subset in &value.internal_subset {
             match subset {
                 parser::InternalSubset::Markup(v) => match v {
                     parser::DeclarationMarkup::Attributes(v) => {
-                        let attribute = XmlDeclarationAttList::new(
-                            v,
-                            declaration.clone().into(),
-                            context.clone(),
-                        );
+                        let attribute =
+                            XmlDeclarationAttList::new(v, declaration.clone().into(), context);
                         declaration.borrow_mut().push_child(attribute.into());
                     }
                     parser::DeclarationMarkup::Commnect(_) => {
@@ -1581,8 +1620,7 @@ impl XmlDocumentTypeDeclaration {
                     }
                     parser::DeclarationMarkup::Entity(v) => match v {
                         parser::DeclarationEntity::GeneralEntity(v) => {
-                            let entity =
-                                XmlEntity::new(v, declaration.clone().into(), context.clone());
+                            let entity = XmlEntity::new(v, declaration.clone().into(), context);
                             declaration.borrow_mut().push_child(entity.into());
                         }
                         parser::DeclarationEntity::ParameterEntity(_) => {
@@ -1590,15 +1628,14 @@ impl XmlDocumentTypeDeclaration {
                         }
                     },
                     parser::DeclarationMarkup::Notation(v) => {
-                        let notation =
-                            XmlNotation::new(v, declaration.clone().into(), context.clone());
+                        let notation = XmlNotation::new(v, declaration.clone().into(), context);
                         declaration.borrow_mut().push_child(notation.into());
                     }
                     parser::DeclarationMarkup::PI(v) => {
                         let pi = XmlProcessingInstruction::new(
                             v,
                             Some(declaration.clone().into()),
-                            context.clone(),
+                            context,
                         );
                         declaration.borrow_mut().push_child(pi.into());
                     }
@@ -1615,17 +1652,15 @@ impl XmlDocumentTypeDeclaration {
         declaration
     }
 
-    pub fn empty(name: &str, context: Context) -> XmlNode<Self> {
-        let declaration = XmlDocumentTypeDeclaration {
+    pub fn empty(name: &str, context: &Context) -> XmlNode<Self> {
+        node(XmlDocumentTypeDeclaration {
             local_name: name.to_string(),
             prefix: None,
             system_identifier: None,
             public_identifier: None,
             children: vec![],
             context: context.next(),
-            order: 0,
-        };
-        node(declaration)
+        })
     }
 
     pub fn attributes(&self) -> Vec<XmlNode<XmlDeclarationAttList>> {
@@ -1671,37 +1706,79 @@ pub struct XmlElement {
     base_uri: String,
     parent: Option<XmlItem>,
     context: Context,
-    order: i64,
 }
 
 impl HasChildren for XmlElement {
-    fn append(&mut self, value: XmlItem) -> error::Result<XmlItem> {
-        self.insert(value, self.children.len())
+    fn child_index(&self, id: usize) -> Option<usize> {
+        self.children.iter().position(|v| v.id() == id)
     }
 
-    fn delete_by_order(&mut self, order: i64) -> Option<XmlItem> {
-        if let Some(mut v) = self.children.iter().find(|v| v.order() == order).cloned() {
-            self.children.retain(|v| v.order() != order);
-            v.clear_order();
-            Some(v)
+    fn child_by_index(&self, index: usize) -> Option<XmlItem> {
+        self.children.get(index).cloned()
+    }
+
+    fn delete_by_id(&mut self, id: usize) -> Option<XmlItem> {
+        if let Some(index) = self.child_index(id) {
+            Some(self.children.remove(index))
         } else {
             None
         }
     }
 
-    fn insert_before_order(&mut self, value: XmlItem, order: i64) -> error::Result<XmlItem> {
-        let index = self
-            .children
-            .iter()
-            .position(|v| order <= v.order())
-            .ok_or(error::Error::OufOfIndex(order))?;
-        self.insert(value, index)
+    fn last_child_or_self_id(&self) -> usize {
+        if let Some(last) = self.children.iter().last() {
+            last.id()
+        } else {
+            self.id()
+        }
+    }
+
+    fn insert_by_id(&mut self, value: XmlItem, id: Option<usize>) -> error::Result<XmlItem> {
+        // FIXME: parent / owner.
+        match value {
+            XmlItem::CData(_)
+            | XmlItem::CharReference(_)
+            | XmlItem::Comment(_)
+            | XmlItem::Element(_)
+            | XmlItem::PI(_)
+            | XmlItem::Text(_)
+            | XmlItem::Unexpanded(_) => {
+                if let Some(id) = id {
+                    let index = self.child_index(id).unwrap();
+                    self.children.insert(index, value.clone());
+                } else {
+                    self.children.push(value.clone());
+                }
+                Ok(value)
+            }
+            _ => Err(error::Error::InvalidType),
+        }
     }
 }
 
 impl HasContext for XmlElement {
-    fn context(&self) -> Context {
-        self.context.clone()
+    fn context(&self) -> &Context {
+        &self.context
+    }
+
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
+    }
+
+    fn init_order_recursive(&self) {
+        self.init_order();
+
+        for child in self.namespace_attributes().iter() {
+            child.borrow().init_order_recursive();
+        }
+
+        for child in self.attributes_specified().iter() {
+            child.borrow().init_order_recursive();
+        }
+
+        for child in self.children.as_slice() {
+            child.init_order_recursive();
+        }
     }
 }
 
@@ -1712,32 +1789,6 @@ impl HasQName for XmlElement {
 
     fn prefix(&self) -> Option<&str> {
         self.prefix.as_deref()
-    }
-}
-
-impl Sortable for XmlElement {
-    fn order(&self) -> i64 {
-        self.order
-    }
-
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
-
-        for child in self.namespace_attributes().iter() {
-            child.borrow_mut().set_order(numbering);
-        }
-
-        for child in self.attributes_specified().iter() {
-            child.borrow_mut().set_order(numbering);
-        }
-
-        for mut child in self.children().iter() {
-            child.set_order(numbering);
-        }
-    }
-
-    fn clear_order(&mut self) {
-        self.order = 0;
     }
 }
 
@@ -1860,7 +1911,7 @@ impl XmlElement {
     pub fn new(
         value: &parser::Element<'_>,
         parent: Option<XmlItem>,
-        context: Context,
+        context: &Context,
     ) -> error::Result<XmlNode<Self>> {
         let (local_name, prefix) = qname(&value.name);
 
@@ -1872,18 +1923,17 @@ impl XmlElement {
             base_uri: String::new(),
             parent,
             context: context.next(),
-            order: 0,
         });
 
         for attribute in value.attributes.as_slice() {
-            let attr = XmlAttribute::new(attribute, Some(element.clone()), context.clone());
+            let attr = XmlAttribute::new(attribute, Some(element.clone()), context);
             element.borrow_mut().push_attribute(attr);
         }
 
         if let Some(content) = &value.content {
             if let Some(head) = content.head {
                 if !head.is_empty() {
-                    let text = XmlText::new(head, Some(element.clone().into()), context.clone());
+                    let text = XmlText::new(head, Some(element.clone().into()), context);
                     element.borrow_mut().push_child(text.into());
                 }
             }
@@ -1891,8 +1941,7 @@ impl XmlElement {
             for cell in content.children.as_slice() {
                 match &cell.child {
                     parser::Contents::Element(v) => {
-                        let child =
-                            XmlElement::new(v, Some(element.clone().into()), context.clone())?;
+                        let child = XmlElement::new(v, Some(element.clone().into()), context)?;
                         element.borrow_mut().push_child(child.into());
                     }
                     parser::Contents::Reference(v) => match v {
@@ -1901,43 +1950,39 @@ impl XmlElement {
                                 ch,
                                 *radix,
                                 Some(element.clone().into()),
-                                context.clone(),
+                                context,
                             )?;
                             element.borrow_mut().push_child(reference.into());
                         }
                         parser::Reference::Entity(v) => {
-                            let entity = entity(context.clone(), v)?;
+                            let entity = entity(context, v)?;
                             let entity = XmlUnexpandedEntityReference::new(
                                 entity,
                                 Some(element.clone().into()),
-                                context.clone(),
+                                context,
                             );
                             element.borrow_mut().push_child(entity.into());
                         }
                     },
                     parser::Contents::CData(v) => {
-                        let cdata = XmlCData::new(v.value, Some(element.clone()), context.clone());
+                        let cdata = XmlCData::new(v.value, Some(element.clone()), context);
                         element.borrow_mut().push_child(cdata.into());
                     }
                     parser::Contents::PI(v) => {
-                        let pi = XmlProcessingInstruction::new(
-                            v,
-                            Some(element.clone().into()),
-                            context.clone(),
-                        );
+                        let pi =
+                            XmlProcessingInstruction::new(v, Some(element.clone().into()), context);
                         element.borrow_mut().push_child(pi.into());
                     }
                     parser::Contents::Comment(v) => {
                         let comment =
-                            XmlComment::new(v.value, Some(element.clone().into()), context.clone());
+                            XmlComment::new(v.value, Some(element.clone().into()), context);
                         element.borrow_mut().push_child(comment.into());
                     }
                 }
 
                 if let Some(tail) = cell.tail {
                     if !tail.is_empty() {
-                        let text =
-                            XmlText::new(tail, Some(element.clone().into()), context.clone());
+                        let text = XmlText::new(tail, Some(element.clone().into()), context);
                         element.borrow_mut().push_child(text.into());
                     }
                 }
@@ -1947,7 +1992,7 @@ impl XmlElement {
         Ok(element)
     }
 
-    pub fn empty(name: &str, context: Context) -> error::Result<XmlNode<Self>> {
+    pub fn empty(name: &str, context: &Context) -> error::Result<XmlNode<Self>> {
         let xml = format!("<{} />", name);
         let (rest, tree) = xml_parser::element(xml.as_str())?;
         if rest.is_empty() {
@@ -1958,6 +2003,7 @@ impl XmlElement {
     }
 
     pub fn append_attribute(&mut self, attr: XmlNode<XmlAttribute>) {
+        attr.borrow().init_order_recursive();
         self.attributes.push(attr);
     }
 
@@ -1972,16 +2018,14 @@ impl XmlElement {
                     prefix: None,
                     namespace_name,
                     implicit: false,
-                    context: attr.borrow().context(),
-                    order: attr.borrow().order(),
+                    context: attr.borrow().context().clone(),
                 }));
             } else {
                 items.push(node(XmlNamespace {
                     prefix: Some(attr.borrow().local_name().to_string()),
                     namespace_name,
                     implicit: false,
-                    context: attr.borrow().context(),
-                    order: attr.borrow().order(),
+                    context: attr.borrow().context().clone(),
                 }));
             }
         }
@@ -1997,7 +2041,7 @@ impl XmlElement {
             .cloned()
         {
             self.attributes.retain(|v| v.borrow().local_name() != name);
-            v.borrow_mut().clear_order();
+            v.borrow().clear_order();
             Some(v)
         } else {
             None
@@ -2067,24 +2111,6 @@ impl XmlElement {
         Ok(None)
     }
 
-    fn insert(&mut self, value: XmlItem, index: usize) -> error::Result<XmlItem> {
-        // FIXME: parent / owner.
-        // FIXME: document order.
-        match value {
-            XmlItem::CData(_)
-            | XmlItem::CharReference(_)
-            | XmlItem::Comment(_)
-            | XmlItem::Element(_)
-            | XmlItem::PI(_)
-            | XmlItem::Text(_)
-            | XmlItem::Unexpanded(_) => {
-                self.children.insert(index, value.clone());
-                Ok(value)
-            }
-            _ => Err(error::Error::InvalidType),
-        }
-    }
-
     fn push_attribute(&mut self, attr: XmlNode<XmlAttribute>) {
         self.attributes.push(attr);
     }
@@ -2105,32 +2131,26 @@ pub struct XmlEntity {
     notation_name: Option<String>,
     parent: Option<XmlItem>,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlEntity {
-    fn context(&self) -> Context {
-        self.context.clone()
+    fn context(&self) -> &Context {
+        &self.context
+    }
+
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
+    }
+
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
-impl Sortable for XmlEntity {
-    fn order(&self) -> i64 {
-        self.order
-    }
-
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
-    }
-
-    fn clear_order(&mut self) {
-        self.order = 0;
-    }
-}
-
-impl From<(&str, &str, Context)> for XmlEntity {
-    fn from(value: (&str, &str, Context)) -> Self {
+impl From<(&str, &str, &Context)> for XmlEntity {
+    fn from(value: (&str, &str, &Context)) -> Self {
         let (name, value, context) = value;
+        let context = context.zero();
         XmlEntity {
             name: name.to_string(),
             values: Some(vec![XmlEntityValue::Text(value.to_string())]),
@@ -2138,8 +2158,7 @@ impl From<(&str, &str, Context)> for XmlEntity {
             public_identifier: None,
             notation_name: None,
             parent: None,
-            context: context.zero(),
-            order: 0,
+            context,
         }
     }
 }
@@ -2191,7 +2210,7 @@ impl XmlEntity {
     pub fn new(
         value: &parser::DeclarationGeneralEntity,
         parent: XmlItem,
-        context: Context,
+        context: &Context,
     ) -> XmlNode<Self> {
         let entity = node(XmlEntity {
             name: value.name.to_string(),
@@ -2201,14 +2220,13 @@ impl XmlEntity {
             notation_name: None,
             parent: Some(parent),
             context: context.next(),
-            order: 0,
         });
 
         let (values, system_identifier, public_identifier, notation_name) = match &value.def {
             parser::DeclarationEntityDef::EntityValue(v) => {
                 let values = v
                     .iter()
-                    .map(|v| XmlEntityValue::new(v, entity.clone().into(), context.clone()))
+                    .map(|v| XmlEntityValue::new(v, entity.clone().into(), context))
                     .collect();
                 (Some(values), None, None, None)
             }
@@ -2271,7 +2289,7 @@ impl fmt::Display for XmlEntityValue {
 }
 
 impl XmlEntityValue {
-    pub fn new(value: &parser::EntityValue<'_>, parent: XmlItem, context: Context) -> Self {
+    pub fn new(value: &parser::EntityValue<'_>, parent: XmlItem, context: &Context) -> Self {
         match value {
             parser::EntityValue::ParameterEntityReference(v) => {
                 XmlEntityValue::Parameter(v.to_string())
@@ -2303,90 +2321,6 @@ pub enum XmlItem {
     Text(XmlNode<XmlText>),
     Unexpanded(XmlNode<XmlUnexpandedEntityReference>),
     Unparsed(XmlNode<XmlUnparsedEntity>),
-}
-
-impl HasContext for XmlItem {
-    fn context(&self) -> Context {
-        match self {
-            XmlItem::Attribute(v) => v.borrow().context(),
-            XmlItem::CData(v) => v.borrow().context(),
-            XmlItem::CharReference(v) => v.borrow().context(),
-            XmlItem::Comment(v) => v.borrow().context(),
-            XmlItem::DeclarationAttList(v) => v.borrow().context(),
-            XmlItem::Document(v) => v.borrow().context(),
-            XmlItem::DocumentType(v) => v.borrow().context(),
-            XmlItem::Element(v) => v.borrow().context(),
-            XmlItem::Entity(v) => v.borrow().context(),
-            XmlItem::Namespace(v) => v.borrow().context(),
-            XmlItem::Notation(v) => v.borrow().context(),
-            XmlItem::PI(v) => v.borrow().context(),
-            XmlItem::Text(v) => v.borrow().context(),
-            XmlItem::Unexpanded(v) => v.borrow().context(),
-            XmlItem::Unparsed(v) => v.borrow().entity().borrow().context(),
-        }
-    }
-}
-
-impl Sortable for XmlItem {
-    fn order(&self) -> i64 {
-        match self {
-            XmlItem::Attribute(v) => v.borrow().order(),
-            XmlItem::CData(v) => v.borrow().order(),
-            XmlItem::CharReference(v) => v.borrow().order(),
-            XmlItem::Comment(v) => v.borrow().order(),
-            XmlItem::DeclarationAttList(v) => v.borrow().order(),
-            XmlItem::Document(v) => v.borrow().order(),
-            XmlItem::DocumentType(v) => v.borrow().order(),
-            XmlItem::Element(v) => v.borrow().order(),
-            XmlItem::Entity(v) => v.borrow().order(),
-            XmlItem::Namespace(v) => v.borrow().order(),
-            XmlItem::Notation(v) => v.borrow().order(),
-            XmlItem::PI(v) => v.borrow().order(),
-            XmlItem::Text(v) => v.borrow().order(),
-            XmlItem::Unexpanded(v) => v.borrow().order(),
-            XmlItem::Unparsed(_) => 0,
-        }
-    }
-
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        match self {
-            XmlItem::Attribute(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::CData(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::CharReference(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::Comment(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::DeclarationAttList(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::Document(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::DocumentType(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::Element(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::Entity(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::Namespace(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::Notation(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::PI(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::Text(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::Unexpanded(v) => v.borrow_mut().set_order(numbering),
-            XmlItem::Unparsed(_) => {}
-        }
-    }
-
-    fn clear_order(&mut self) {
-        match self {
-            XmlItem::Attribute(v) => v.borrow_mut().clear_order(),
-            XmlItem::CData(v) => v.borrow_mut().clear_order(),
-            XmlItem::CharReference(v) => v.borrow_mut().clear_order(),
-            XmlItem::Comment(v) => v.borrow_mut().clear_order(),
-            XmlItem::DeclarationAttList(v) => v.borrow_mut().clear_order(),
-            XmlItem::Document(v) => v.borrow_mut().clear_order(),
-            XmlItem::DocumentType(v) => v.borrow_mut().clear_order(),
-            XmlItem::Element(v) => v.borrow_mut().clear_order(),
-            XmlItem::Entity(v) => v.borrow_mut().clear_order(),
-            XmlItem::Namespace(v) => v.borrow_mut().clear_order(),
-            XmlItem::Notation(v) => v.borrow_mut().clear_order(),
-            XmlItem::PI(v) => v.borrow_mut().clear_order(),
-            XmlItem::Text(v) => v.borrow_mut().clear_order(),
-            XmlItem::Unexpanded(v) => v.borrow_mut().clear_order(),
-            XmlItem::Unparsed(_) => {}
-        }
-    }
 }
 
 impl From<XmlNode<XmlAttribute>> for XmlItem {
@@ -2484,14 +2418,16 @@ impl convert::TryFrom<XmlNode<XmlReference>> for XmlItem {
 
     fn try_from(value: XmlNode<XmlReference>) -> Result<Self, Self::Error> {
         let parent = value.borrow().parent.clone();
-        let context = value.borrow().context();
         match value.borrow().value() {
             XmlReferenceValue::Character(v, r) => {
-                Ok(XmlCharReference::new(v.as_str(), r, parent, context)?.into())
+                Ok(XmlCharReference::new(v.as_str(), r, parent, value.borrow().context())?.into())
             }
             XmlReferenceValue::Entity(v) => {
-                let entity = entity(context.clone(), v.as_str()).unwrap();
-                Ok(XmlUnexpandedEntityReference::new(entity, parent, context).into())
+                let entity = entity(value.borrow().context(), v.as_str()).unwrap();
+                Ok(
+                    XmlUnexpandedEntityReference::new(entity, parent, value.borrow().context())
+                        .into(),
+                )
             }
         }
     }
@@ -2639,6 +2575,106 @@ impl XmlItem {
             None
         }
     }
+
+    fn clear_order(&self) {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().clear_order(),
+            XmlItem::CData(v) => v.borrow().clear_order(),
+            XmlItem::CharReference(v) => v.borrow().clear_order(),
+            XmlItem::Comment(v) => v.borrow().clear_order(),
+            XmlItem::DeclarationAttList(v) => v.borrow().clear_order(),
+            XmlItem::Document(v) => v.borrow().clear_order(),
+            XmlItem::DocumentType(v) => v.borrow().clear_order(),
+            XmlItem::Element(v) => v.borrow().clear_order(),
+            XmlItem::Entity(v) => v.borrow().clear_order(),
+            XmlItem::Namespace(v) => v.borrow().clear_order(),
+            XmlItem::Notation(v) => v.borrow().clear_order(),
+            XmlItem::PI(v) => v.borrow().clear_order(),
+            XmlItem::Text(v) => v.borrow().clear_order(),
+            XmlItem::Unexpanded(v) => v.borrow().clear_order(),
+            XmlItem::Unparsed(v) => v.borrow().entity().borrow().clear_order(),
+        }
+    }
+
+    fn id(&self) -> usize {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().id(),
+            XmlItem::CData(v) => v.borrow().id(),
+            XmlItem::CharReference(v) => v.borrow().id(),
+            XmlItem::Comment(v) => v.borrow().id(),
+            XmlItem::DeclarationAttList(v) => v.borrow().id(),
+            XmlItem::Document(v) => v.borrow().id(),
+            XmlItem::DocumentType(v) => v.borrow().id(),
+            XmlItem::Element(v) => v.borrow().id(),
+            XmlItem::Entity(v) => v.borrow().id(),
+            XmlItem::Namespace(v) => v.borrow().id(),
+            XmlItem::Notation(v) => v.borrow().id(),
+            XmlItem::PI(v) => v.borrow().id(),
+            XmlItem::Text(v) => v.borrow().id(),
+            XmlItem::Unexpanded(v) => v.borrow().id(),
+            XmlItem::Unparsed(v) => v.borrow().entity().borrow().id(),
+        }
+    }
+
+    fn init_order_recursive(&self) {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().init_order_recursive(),
+            XmlItem::CData(v) => v.borrow().init_order_recursive(),
+            XmlItem::CharReference(v) => v.borrow().init_order_recursive(),
+            XmlItem::Comment(v) => v.borrow().init_order_recursive(),
+            XmlItem::DeclarationAttList(v) => v.borrow().init_order_recursive(),
+            XmlItem::Document(v) => v.borrow().init_order_recursive(),
+            XmlItem::DocumentType(v) => v.borrow().init_order_recursive(),
+            XmlItem::Element(v) => v.borrow().init_order_recursive(),
+            XmlItem::Entity(v) => v.borrow().init_order_recursive(),
+            XmlItem::Namespace(v) => v.borrow().init_order_recursive(),
+            XmlItem::Notation(v) => v.borrow().init_order_recursive(),
+            XmlItem::PI(v) => v.borrow().init_order_recursive(),
+            XmlItem::Text(v) => v.borrow().init_order_recursive(),
+            XmlItem::Unexpanded(v) => v.borrow().init_order_recursive(),
+            XmlItem::Unparsed(v) => v.borrow().entity().borrow().init_order_recursive(),
+        }
+    }
+
+    fn set_order_after(&self, id: usize) -> Option<usize> {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().set_order_after(id),
+            XmlItem::CData(v) => v.borrow().set_order_after(id),
+            XmlItem::CharReference(v) => v.borrow().set_order_after(id),
+            XmlItem::Comment(v) => v.borrow().set_order_after(id),
+            XmlItem::DeclarationAttList(v) => v.borrow().set_order_after(id),
+            XmlItem::Document(v) => v.borrow().set_order_after(id),
+            XmlItem::DocumentType(v) => v.borrow().set_order_after(id),
+            XmlItem::Element(v) => v.borrow().set_order_after(id),
+            XmlItem::Entity(v) => v.borrow().set_order_after(id),
+            XmlItem::Namespace(v) => v.borrow().set_order_after(id),
+            XmlItem::Notation(v) => v.borrow().set_order_after(id),
+            XmlItem::PI(v) => v.borrow().set_order_after(id),
+            XmlItem::Text(v) => v.borrow().set_order_after(id),
+            XmlItem::Unexpanded(v) => v.borrow().set_order_after(id),
+            XmlItem::Unparsed(v) => v.borrow().entity().borrow().set_order_after(id),
+        }
+    }
+
+    fn set_order_before(&self, id: usize) -> Option<usize> {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().set_order_before(id),
+            XmlItem::CData(v) => v.borrow().set_order_before(id),
+            XmlItem::CharReference(v) => v.borrow().set_order_before(id),
+            XmlItem::Comment(v) => v.borrow().set_order_before(id),
+            XmlItem::DeclarationAttList(v) => v.borrow().set_order_before(id),
+            XmlItem::Document(v) => v.borrow().set_order_before(id),
+            XmlItem::DocumentType(v) => v.borrow().set_order_before(id),
+            XmlItem::Element(v) => v.borrow().set_order_before(id),
+            XmlItem::Entity(v) => v.borrow().set_order_before(id),
+            XmlItem::Namespace(v) => v.borrow().set_order_before(id),
+            XmlItem::Notation(v) => v.borrow().set_order_before(id),
+            XmlItem::PI(v) => v.borrow().set_order_before(id),
+            XmlItem::Text(v) => v.borrow().set_order_before(id),
+            XmlItem::Unexpanded(v) => v.borrow().set_order_before(id),
+            XmlItem::Unparsed(v) => v.borrow().entity().borrow().set_order_before(id),
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -2649,26 +2685,19 @@ pub struct XmlNamespace {
     namespace_name: String,
     implicit: bool,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlNamespace {
-    fn context(&self) -> Context {
-        self.context.clone()
-    }
-}
-
-impl Sortable for XmlNamespace {
-    fn order(&self) -> i64 {
-        self.order
+    fn context(&self) -> &Context {
+        &self.context
     }
 
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
     }
 
-    fn clear_order(&mut self) {
-        self.order = 0;
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
@@ -2694,13 +2723,12 @@ impl fmt::Display for XmlNamespace {
 }
 
 impl XmlNamespace {
-    pub fn xml(context: Context) -> XmlNode<Self> {
+    pub fn xml(context: &Context) -> XmlNode<Self> {
         node(XmlNamespace {
             prefix: Some("xml".to_string()),
             namespace_name: "http://www.w3.org/XML/1998/namespace".to_string(),
             implicit: true,
             context: context.zero(),
-            order: -1,
         })
     }
 
@@ -2719,26 +2747,19 @@ pub struct XmlNotation {
     declaration_base_uri: String,
     parent: XmlItem,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlNotation {
-    fn context(&self) -> Context {
-        self.context.clone()
-    }
-}
-
-impl Sortable for XmlNotation {
-    fn order(&self) -> i64 {
-        self.order
+    fn context(&self) -> &Context {
+        &self.context
     }
 
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
     }
 
-    fn clear_order(&mut self) {
-        self.order = 0;
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
@@ -2793,7 +2814,7 @@ impl XmlNotation {
     pub fn new(
         value: &parser::DeclarationNotation,
         parent: XmlItem,
-        context: Context,
+        context: &Context,
     ) -> XmlNode<Self> {
         let name = value.name.to_string();
 
@@ -2814,7 +2835,6 @@ impl XmlNotation {
             declaration_base_uri,
             parent,
             context: context.next(),
-            order: 0,
         })
     }
 
@@ -2832,26 +2852,19 @@ pub struct XmlProcessingInstruction {
     base_uri: String,
     parent: Option<XmlItem>,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlProcessingInstruction {
-    fn context(&self) -> Context {
-        self.context.clone()
-    }
-}
-
-impl Sortable for XmlProcessingInstruction {
-    fn order(&self) -> i64 {
-        self.order
+    fn context(&self) -> &Context {
+        &self.context
     }
 
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
     }
 
-    fn clear_order(&mut self) {
-        self.order = 0;
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
@@ -2895,7 +2908,11 @@ impl fmt::Display for XmlProcessingInstruction {
 }
 
 impl XmlProcessingInstruction {
-    pub fn new(value: &parser::PI<'_>, parent: Option<XmlItem>, context: Context) -> XmlNode<Self> {
+    pub fn new(
+        value: &parser::PI<'_>,
+        parent: Option<XmlItem>,
+        context: &Context,
+    ) -> XmlNode<Self> {
         let target = value.target.to_string();
 
         let content = value.value.map(|v| v.to_string());
@@ -2908,11 +2925,10 @@ impl XmlProcessingInstruction {
             base_uri,
             parent,
             context: context.next(),
-            order: 0,
         })
     }
 
-    pub fn empty(target: &str, context: Context) -> error::Result<XmlNode<Self>> {
+    pub fn empty(target: &str, context: &Context) -> error::Result<XmlNode<Self>> {
         let xml = format!("<?{}?>", target);
         let (rest, tree) = xml_parser::pi(xml.as_str())?;
         if rest.is_empty() {
@@ -2941,26 +2957,19 @@ pub struct XmlReference {
     value: XmlReferenceValue,
     parent: Option<XmlItem>,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlReference {
-    fn context(&self) -> Context {
-        self.context.clone()
-    }
-}
-
-impl Sortable for XmlReference {
-    fn order(&self) -> i64 {
-        self.order
+    fn context(&self) -> &Context {
+        &self.context
     }
 
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
     }
 
-    fn clear_order(&mut self) {
-        self.order = 0;
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
@@ -2987,36 +2996,31 @@ impl XmlReference {
     pub fn new(
         value: &parser::Reference,
         parent: Option<XmlItem>,
-        context: Context,
+        context: &Context,
     ) -> XmlNode<Self> {
         node(XmlReference {
             value: XmlReferenceValue::new(value),
             parent,
             context: context.next(),
-            order: 0,
         })
     }
 
     pub fn new_from_char_ref(value: XmlNode<XmlCharReference>) -> XmlNode<Self> {
         let num = value.borrow().num().to_string();
         let radix = value.borrow().radix();
-        let order = value.borrow().order();
         node(XmlReference {
             value: XmlReferenceValue::Character(num, radix),
             parent: value.borrow().parent().ok().map(|v| v.into()),
-            context: value.borrow().context(),
-            order,
+            context: value.borrow().context().clone(),
         })
     }
 
     pub fn new_from_ref(value: XmlNode<XmlEntity>) -> XmlNode<Self> {
         let name = value.borrow().name().to_string();
-        let order = value.borrow().order();
         node(XmlReference {
             value: XmlReferenceValue::Entity(name),
             parent: value.borrow().parent(),
-            context: value.borrow().context(),
-            order,
+            context: value.borrow().context().clone(),
         })
     }
 
@@ -3024,16 +3028,14 @@ impl XmlReference {
         value: XmlNode<XmlReference>,
         parent: Option<XmlItem>,
     ) -> XmlNode<Self> {
-        let order = value.borrow().order();
         node(XmlReference {
             value: value.borrow().value(),
             parent,
-            context: value.borrow().context(),
-            order,
+            context: value.borrow().context().clone(),
         })
     }
 
-    pub fn new_from_value(value: &str, context: Context) -> error::Result<XmlNode<Self>> {
+    pub fn new_from_value(value: &str, context: &Context) -> error::Result<XmlNode<Self>> {
         let (rest, tree) = xml_parser::reference(value)?;
         if rest.is_empty() {
             Ok(XmlReference::new(&tree, None, context))
@@ -3086,26 +3088,19 @@ pub struct XmlText {
     text: String,
     parent: Option<XmlItem>,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlText {
-    fn context(&self) -> Context {
-        self.context.clone()
-    }
-}
-
-impl Sortable for XmlText {
-    fn order(&self) -> i64 {
-        self.order
+    fn context(&self) -> &Context {
+        &self.context
     }
 
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
     }
 
-    fn clear_order(&mut self) {
-        self.order = 0;
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
@@ -3140,17 +3135,17 @@ impl fmt::Display for XmlText {
 }
 
 impl XmlText {
-    pub fn new(value: &str, parent: Option<XmlItem>, context: Context) -> XmlNode<Self> {
+    pub fn new(value: &str, parent: Option<XmlItem>, context: &Context) -> XmlNode<Self> {
         let text = value.to_string();
+
         node(XmlText {
             text,
             parent,
             context: context.next(),
-            order: 0,
         })
     }
 
-    pub fn empty(context: Context) -> XmlNode<Self> {
+    pub fn empty(context: &Context) -> XmlNode<Self> {
         XmlText::new("", None, context)
     }
 
@@ -3215,26 +3210,19 @@ pub struct XmlUnexpandedEntityReference {
     declaration_base_uri: String,
     parent: Option<XmlItem>,
     context: Context,
-    order: i64,
 }
 
 impl HasContext for XmlUnexpandedEntityReference {
-    fn context(&self) -> Context {
-        self.context.clone()
-    }
-}
-
-impl Sortable for XmlUnexpandedEntityReference {
-    fn order(&self) -> i64 {
-        self.order
+    fn context(&self) -> &Context {
+        &self.context
     }
 
-    fn set_order(&mut self, numbering: &mut impl Numbering) {
-        self.order = numbering.next();
+    fn context_mut(&mut self) -> &mut Context {
+        &mut self.context
     }
 
-    fn clear_order(&mut self) {
-        self.order = 0;
+    fn init_order_recursive(&self) {
+        self.init_order();
     }
 }
 
@@ -3279,7 +3267,7 @@ impl XmlUnexpandedEntityReference {
     pub fn new(
         entity: XmlNode<XmlEntity>,
         parent: Option<XmlItem>,
-        context: Context,
+        context: &Context,
     ) -> XmlNode<Self> {
         let name = entity.borrow().name().to_string();
 
@@ -3297,7 +3285,6 @@ impl XmlUnexpandedEntityReference {
             declaration_base_uri,
             parent,
             context: context.next(),
-            order: 0,
         })
     }
 
@@ -3567,62 +3554,56 @@ where
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Default)]
-struct CountUp {
-    number: i64,
-}
-
-impl Numbering for CountUp {
-    fn next(&mut self) -> i64 {
-        self.number += 1;
-        self.number
-    }
-}
-
-// -----------------------------------------------------------------------------------------------
-
 #[derive(Clone, Debug)]
 pub struct Context {
-    id: usize,
+    info: Singleton<ContextInfo>,
     idm: Singleton<IdManager>,
     document: XmlNode<XmlDocument>,
-}
-
-impl From<XmlNode<XmlDocument>> for Context {
-    fn from(value: XmlNode<XmlDocument>) -> Self {
-        let idm = singleton(IdManager::default());
-        let id = idm.borrow_mut().next();
-        Context {
-            id,
-            idm,
-            document: value,
-        }
-    }
+    ordering: Singleton<DocumentOrder>,
 }
 
 impl PartialEq<Context> for Context {
     fn eq(&self, other: &Context) -> bool {
-        self.id == other.id
+        self.info.borrow().id == other.info.borrow().id
     }
 }
 
 impl Context {
+    fn new(value: XmlNode<XmlDocument>) -> Self {
+        let idm = singleton(IdManager::default());
+        let id = idm.borrow_mut().next();
+
+        let info = singleton(ContextInfo::from(id));
+        Context {
+            info,
+            idm,
+            document: value,
+            ordering: singleton(DocumentOrder::default()),
+        }
+    }
+
     fn next(&self) -> Context {
-        let mut ctx = self.clone();
-        ctx.id = self.idm.borrow_mut().next();
-        ctx
+        Context {
+            info: singleton(ContextInfo::from(self.idm.borrow_mut().next())),
+            idm: self.idm.clone(),
+            document: self.document.clone(),
+            ordering: self.ordering.clone(),
+        }
     }
 
     fn zero(&self) -> Context {
-        let mut ctx = self.clone();
-        ctx.id = 0;
-        ctx
+        Context {
+            info: singleton(ContextInfo::default()),
+            idm: self.idm.clone(),
+            document: self.document.clone(),
+            ordering: self.ordering.clone(),
+        }
     }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 struct IdManager {
     number: usize,
 }
@@ -3636,6 +3617,81 @@ impl IdManager {
 
 // -----------------------------------------------------------------------------------------------
 
+#[derive(Debug, Default)]
+struct ContextInfo {
+    id: usize,
+    order_cache: usize,
+    order_version: usize,
+}
+
+impl From<usize> for ContextInfo {
+    fn from(value: usize) -> Self {
+        ContextInfo {
+            id: value,
+            order_cache: 0,
+            order_version: 0,
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Debug, Default)]
+struct DocumentOrder {
+    order: Vec<Weak<RefCell<ContextInfo>>>,
+    version: usize,
+}
+
+impl DocumentOrder {
+    fn get(&self, id: usize) -> usize {
+        self.order
+            .iter()
+            .position(|v| v.upgrade().map(|u| u.borrow().id == id).unwrap_or_default())
+            .map(|v| v + 1)
+            .unwrap_or_default()
+    }
+
+    fn insert_after(&mut self, id: usize, info: &Singleton<ContextInfo>) -> Option<usize> {
+        let order = self.get(id);
+        if order > 0 {
+            self.order.insert(order, Rc::downgrade(info));
+            self.version += 1;
+            Some(self.version)
+        } else {
+            None
+        }
+    }
+
+    fn insert_before(&mut self, id: usize, info: &Singleton<ContextInfo>) -> Option<usize> {
+        let order = self.get(id);
+        if order > 0 {
+            self.order.insert(order - 1, Rc::downgrade(info));
+            self.version += 1;
+            Some(self.version)
+        } else {
+            None
+        }
+    }
+
+    fn push(&mut self, info: &Singleton<ContextInfo>) -> (usize, usize) {
+        self.order.push(Rc::downgrade(info));
+        (self.order.len(), self.version)
+    }
+
+    fn remove(&mut self, id: usize) -> Option<usize> {
+        let order = self.get(id);
+        if order > 0 {
+            self.order.remove(order - 1);
+            self.version += 1;
+            Some(self.version)
+        } else {
+            None
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
 fn attribute_name(name: &parser::AttributeName) -> (String, Option<String>) {
     match name {
         parser::AttributeName::DefaultNamespace => ("xmlns".to_string(), None),
@@ -3644,7 +3700,7 @@ fn attribute_name(name: &parser::AttributeName) -> (String, Option<String>) {
     }
 }
 
-fn attr_value_from_name(name: &str, context: Context) -> error::Result<String> {
+fn attr_value_from_name(name: &str, context: &Context) -> error::Result<String> {
     let entity = entity(context, name)?;
     let mut parsed = String::new();
     for value in entity.borrow().values().unwrap_or_default() {
@@ -3695,7 +3751,7 @@ fn delete_char_range(value: &str, offset: usize, count: usize) -> String {
     chars.iter().collect()
 }
 
-fn entity(context: Context, name: &str) -> error::Result<XmlNode<XmlEntity>> {
+fn entity(context: &Context, name: &str) -> error::Result<XmlNode<XmlEntity>> {
     if let Some(declaration) = context.document.borrow().document_declaration() {
         if let Some(v) = declaration
             .borrow()
@@ -3780,7 +3836,7 @@ fn normalize_ws(value: &str) -> String {
     v
 }
 
-fn notation(context: Context, name: &str) -> Value<Option<XmlNode<XmlNotation>>> {
+fn notation(context: &Context, name: &str) -> Value<Option<XmlNode<XmlNotation>>> {
     match context.document.borrow().notations() {
         Some(notations) => {
             let mut matches = notations
@@ -3900,7 +3956,7 @@ mod tests {
         // Identifier
         assert_eq!(1, doc.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(1, doc.borrow().order());
 
         // PartialEq
@@ -3945,7 +4001,7 @@ mod tests {
         // Identifier
         assert_eq!(1, doc.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(1, doc.borrow().order());
 
         // PartialEq
@@ -3993,7 +4049,7 @@ mod tests {
         // Identifier
         assert_eq!(1, doc.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(1, doc.borrow().order());
 
         // PartialEq
@@ -4017,7 +4073,7 @@ mod tests {
         // Identifier
         assert_eq!(1, doc.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(1, doc.borrow().order());
 
         // PartialEq
@@ -4068,59 +4124,56 @@ mod tests {
     }
 
     #[test]
-    fn test_document_delete_by_order() {
+    fn test_document_delete() {
         let (rest, tree) = xml_parser::document("<!--a--><?b?><!DOCTYPE c><c /><!--e-->").unwrap();
         assert_eq!("", rest);
 
         let doc = XmlDocument::new(&tree).unwrap();
 
-        doc.borrow_mut().delete_by_order(4).unwrap();
+        doc.borrow_mut().delete(4).unwrap();
         assert_eq!("<!--a--><?b?><c /><!--e-->", format!("{}", doc.borrow()));
 
-        assert_eq!(None, doc.borrow_mut().delete_by_order(4));
+        assert_eq!(None, doc.borrow_mut().delete(4));
     }
 
     #[test]
-    fn test_document_insert_before_order() {
+    fn test_document_insert_before() {
         let (rest, tree) = xml_parser::document("<!--a--><?b?><!DOCTYPE c><c /><!--e-->").unwrap();
         assert_eq!("", rest);
 
         let doc = XmlDocument::new(&tree).unwrap();
-        let ctx = Context::from(doc.clone());
 
-        let comment = XmlComment::new("f", None, ctx.clone());
-        doc.borrow_mut()
-            .insert_before_order(comment.into(), 5)
-            .unwrap();
+        let comment = XmlComment::new("f", None, doc.borrow().context());
+        doc.borrow_mut().insert_before(comment.into(), 5).unwrap();
         assert_eq!(
             "<!--a--><?b?><!DOCTYPE c><!--f--><c /><!--e-->",
             format!("{}", doc.borrow())
         );
 
-        let pi = XmlProcessingInstruction::empty("g", ctx.clone());
+        let pi = XmlProcessingInstruction::empty("g", doc.borrow().context());
         doc.borrow_mut()
-            .insert_before_order(pi.unwrap().into(), 6)
+            .insert_before(pi.unwrap().into(), 6)
             .unwrap();
         assert_eq!(
             "<!--a--><?b?><!DOCTYPE c><!--f--><c /><?g?><!--e-->",
             format!("{}", doc.borrow())
         );
 
-        let doc_type = XmlDocumentTypeDeclaration::empty("h", ctx.clone());
+        let doc_type = XmlDocumentTypeDeclaration::empty("h", doc.borrow().context());
         doc.borrow_mut()
-            .insert_before_order(doc_type.into(), 5)
+            .insert_before(doc_type.into(), 5)
             .err()
             .unwrap();
 
-        let element = XmlElement::empty("i", ctx.clone());
+        let element = XmlElement::empty("i", doc.borrow().context());
         doc.borrow_mut()
-            .insert_before_order(element.unwrap().into(), 5)
+            .insert_before(element.unwrap().into(), 5)
             .err()
             .unwrap();
 
-        let text = XmlText::new("f", None, ctx.clone());
+        let text = XmlText::new("f", None, doc.borrow().context());
         doc.borrow_mut()
-            .insert_before_order(text.into(), 5)
+            .insert_before(text.into(), 5)
             .err()
             .unwrap();
     }
@@ -4150,7 +4203,7 @@ mod tests {
         // Identifier
         assert_eq!(2, declaration.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(2, declaration.borrow().order());
 
         // PartialEq
@@ -4185,7 +4238,7 @@ mod tests {
         // Identifier
         assert_eq!(2, declaration.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(2, declaration.borrow().order());
 
         // PartialEq
@@ -4231,7 +4284,7 @@ mod tests {
         // Identifier
         assert_eq!(2, root.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(2, root.borrow().order());
 
         // PartialEq
@@ -4279,7 +4332,7 @@ mod tests {
         // Identifier
         assert_eq!(2, root.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(2, root.borrow().order());
 
         // Child
@@ -4315,7 +4368,7 @@ mod tests {
         // Identifier
         assert_eq!(7, child.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(7, child.borrow().order());
 
         // PartialEq
@@ -4367,7 +4420,7 @@ mod tests {
         // Identifier
         assert_eq!(2, root.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(2, root.borrow().order());
 
         // PartialEq
@@ -4401,7 +4454,7 @@ mod tests {
         // Identifier
         assert_eq!(2, root.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(2, root.borrow().order());
 
         // PartialEq
@@ -4460,7 +4513,7 @@ mod tests {
         // Identifier
         assert_eq!(2, root.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(2, root.borrow().order());
 
         // PartialEq
@@ -4497,7 +4550,7 @@ mod tests {
         // Identifier
         assert_eq!(2, root.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(2, root.borrow().order());
 
         // PartialEq
@@ -4533,7 +4586,7 @@ mod tests {
         // Identifier
         assert_eq!(5, e1.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, e1.borrow().order());
 
         // PartialEq
@@ -4581,7 +4634,7 @@ mod tests {
         // Identifier
         assert_eq!(5, e1.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, e1.borrow().order());
 
         // PartialEq
@@ -4635,7 +4688,7 @@ mod tests {
         // Identifier
         assert_eq!(5, e1.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, e1.borrow().order());
 
         // PartialEq
@@ -4671,7 +4724,7 @@ mod tests {
         // Identifier
         assert_eq!(5, e1.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, e1.borrow().order());
 
         // PartialEq
@@ -4720,7 +4773,7 @@ mod tests {
         // Identifier
         assert_eq!(5, e1.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, e1.borrow().order());
 
         // PartialEq
@@ -4774,7 +4827,7 @@ mod tests {
         // Identifier
         assert_eq!(5, e1.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, e1.borrow().order());
 
         // PartialEq
@@ -4822,7 +4875,7 @@ mod tests {
         // Identifier
         assert_eq!(3, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, attr.borrow().order());
 
         // PartialEq
@@ -4872,7 +4925,7 @@ mod tests {
         // Identifier
         assert_eq!(5, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(7, attr.borrow().order());
 
         // PartialEq
@@ -4895,7 +4948,7 @@ mod tests {
         // Identifier
         assert_eq!(3, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, attr.borrow().order());
 
         // PartialEq
@@ -4918,7 +4971,7 @@ mod tests {
         // Identifier
         assert_eq!(3, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, attr.borrow().order());
 
         // PartialEq
@@ -4943,7 +4996,7 @@ mod tests {
         // Identifier
         assert_eq!(5, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, attr.borrow().order());
 
         // PartialEq
@@ -4966,7 +5019,7 @@ mod tests {
         // Identifier
         assert_eq!(3, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, attr.borrow().order());
 
         // PartialEq
@@ -4989,7 +5042,7 @@ mod tests {
         // Identifier
         assert_eq!(3, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, attr.borrow().order());
 
         // PartialEq
@@ -5012,7 +5065,7 @@ mod tests {
         // Identifier
         assert_eq!(3, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, attr.borrow().order());
 
         // PartialEq
@@ -5035,7 +5088,7 @@ mod tests {
         // Identifier
         assert_eq!(3, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, attr.borrow().order());
 
         // PartialEq
@@ -5058,7 +5111,7 @@ mod tests {
         // Identifier
         assert_eq!(3, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, attr.borrow().order());
 
         // PartialEq
@@ -5092,8 +5145,8 @@ mod tests {
         // Identifier
         assert_eq!(0, attr.borrow().id());
 
-        // Sortable
-        assert_eq!(-1, attr.borrow().order());
+        // HasContext
+        assert_eq!(0, attr.borrow().order());
 
         // PartialEq
         assert_eq!(attr, attr);
@@ -5144,8 +5197,8 @@ mod tests {
         // Identifier
         assert_eq!(0, attr.borrow().id());
 
-        // Sortable
-        assert_eq!(-1, attr.borrow().order());
+        // HasContext
+        assert_eq!(0, attr.borrow().order());
 
         // PartialEq
         assert_eq!(attr, attr);
@@ -5182,7 +5235,7 @@ mod tests {
         // Identifier
         assert_eq!(5, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, attr.borrow().order());
 
         // PartialEq
@@ -5221,7 +5274,7 @@ mod tests {
         // Identifier
         assert_eq!(6, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(6, attr.borrow().order());
 
         // PartialEq
@@ -5260,7 +5313,7 @@ mod tests {
         // Identifier
         assert_eq!(6, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(6, attr.borrow().order());
 
         // PartialEq
@@ -5299,7 +5352,7 @@ mod tests {
         // Identifier
         assert_eq!(6, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(6, attr.borrow().order());
 
         // PartialEq
@@ -5338,7 +5391,7 @@ mod tests {
         // Identifier
         assert_eq!(6, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(6, attr.borrow().order());
 
         // PartialEq
@@ -5370,7 +5423,7 @@ mod tests {
         // Identifier
         assert_eq!(5, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, attr.borrow().order());
 
         // PartialEq
@@ -5408,7 +5461,7 @@ mod tests {
         // Identifier
         assert_eq!(5, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, attr.borrow().order());
 
         // PartialEq
@@ -5450,7 +5503,7 @@ mod tests {
         // Identifier
         assert_eq!(6, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(6, attr.borrow().order());
 
         // PartialEq
@@ -5491,7 +5544,7 @@ mod tests {
         // Identifier
         assert_eq!(5, attr.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, attr.borrow().order());
 
         // PartialEq
@@ -5527,7 +5580,7 @@ mod tests {
     }
 
     #[test]
-    fn test_atttibute_delete_by_order() {
+    fn test_atttibute_delete() {
         let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
         assert_eq!("", rest);
 
@@ -5535,14 +5588,14 @@ mod tests {
         let root = doc.borrow().document_element().unwrap();
         let attr = root.borrow().attributes().iter().next().unwrap();
 
-        attr.borrow_mut().delete_by_order(5).unwrap();
+        attr.borrow_mut().delete(5).unwrap();
         assert_eq!("12", attr.borrow().normalized_value().unwrap());
 
-        assert_eq!(None, attr.borrow_mut().delete_by_order(7));
+        assert_eq!(None, attr.borrow_mut().delete(5));
     }
 
     #[test]
-    fn test_atttibute_insert_before_order() {
+    fn test_atttibute_insert_before() {
         let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
         assert_eq!("", rest);
 
@@ -5551,19 +5604,17 @@ mod tests {
         let attr = root.borrow().attributes().iter().next().unwrap();
 
         let text = XmlText::new("3", None, doc.borrow().context());
-        attr.borrow_mut()
-            .insert_before_order(text.into(), 5)
-            .unwrap();
+        attr.borrow_mut().insert_before(text.into(), 5).unwrap();
         assert_eq!("13&2", attr.borrow().normalized_value().unwrap());
 
         let text = XmlText::new("3", None, doc.borrow().context());
         attr.borrow_mut()
-            .insert_before_order(text.into(), 7)
+            .insert_before(text.into(), 8)
             .err()
             .unwrap();
 
         attr.borrow_mut()
-            .insert_before_order(
+            .insert_before(
                 XmlCharReference::new("3042", 16, None, doc.borrow().context())
                     .unwrap()
                     .into(),
@@ -5573,7 +5624,7 @@ mod tests {
         assert_eq!("13あ&2", attr.borrow().normalized_value().unwrap());
 
         attr.borrow_mut()
-            .insert_before_order(XmlComment::new("a", None, doc.borrow().context()).into(), 5)
+            .insert_before(XmlComment::new("a", None, doc.borrow().context()).into(), 5)
             .err()
             .unwrap();
     }
@@ -5624,7 +5675,7 @@ mod tests {
         // Identifier
         assert_eq!(3, pi.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, pi.borrow().order());
 
         // PartialEq
@@ -5665,7 +5716,7 @@ mod tests {
         // Identifier
         assert_eq!(5, pi.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, pi.borrow().order());
 
         // PartialEq
@@ -5694,7 +5745,7 @@ mod tests {
         // Identifier
         assert_eq!(6, pi.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(6, pi.borrow().order());
 
         // PartialEq
@@ -5741,7 +5792,7 @@ mod tests {
         // Identifier
         assert_eq!(3, amp.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, amp.borrow().order());
 
         // PartialEq
@@ -5791,7 +5842,7 @@ mod tests {
         // Identifier
         assert_eq!(5, amp.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(5, amp.borrow().order());
 
         // PartialEq
@@ -5823,7 +5874,7 @@ mod tests {
         // Identifier
         assert_eq!(3, cdata.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, cdata.borrow().order());
 
         // PartialEq
@@ -6022,7 +6073,7 @@ mod tests {
         // Identifier
         assert_eq!(3, char_ref.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, char_ref.borrow().order());
 
         // PartialEq
@@ -6066,7 +6117,7 @@ mod tests {
         // Identifier
         assert_eq!(3, char_ref.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, char_ref.borrow().order());
 
         // PartialEq
@@ -6103,7 +6154,7 @@ mod tests {
         // Identifier
         assert_eq!(3, text.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, text.borrow().order());
 
         // PartialEq
@@ -6292,7 +6343,7 @@ mod tests {
         // Identifier
         assert_eq!(3, comment.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, comment.borrow().order());
 
         // PartialEq
@@ -6523,7 +6574,7 @@ mod tests {
         // Identifier
         assert_eq!(3, entity.borrow().entity().borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, entity.borrow().entity().borrow().order());
 
         // PartialEq
@@ -6562,7 +6613,7 @@ mod tests {
         // Identifier
         assert_eq!(3, entity.borrow().entity().borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, entity.borrow().entity().borrow().order());
 
         // PartialEq
@@ -6589,7 +6640,7 @@ mod tests {
         // Identifier
         assert_eq!(3, entity.borrow().entity().borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, entity.borrow().entity().borrow().order());
 
         // PartialEq
@@ -6621,7 +6672,7 @@ mod tests {
         // Identifier
         assert_eq!(3, notation.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, notation.borrow().order());
 
         // PartialEq
@@ -6654,7 +6705,7 @@ mod tests {
         // Identifier
         assert_eq!(3, notation.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, notation.borrow().order());
 
         // PartialEq
@@ -6686,7 +6737,7 @@ mod tests {
         // Identifier
         assert_eq!(3, ns.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, ns.borrow().order());
 
         // PartialEq
@@ -6718,7 +6769,7 @@ mod tests {
         // Identifier
         assert_eq!(3, ns.borrow().id());
 
-        // Sortable
+        // HasContext
         assert_eq!(3, ns.borrow().order());
 
         // PartialEq
