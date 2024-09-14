@@ -11,6 +11,7 @@ use xml_info::{
     Element as InfoElement, HasChildren as InfoHasChildren, HasContext as InfoHasContext,
     HasQName as InfoHasQName, Namespace as InfoNamespace, Notation as InfoNotation,
     ProcessingInstruction as InfoProcessingInstruction,
+    UnexpandedEntityReference as InfoUnexpandedEntityReference,
 };
 
 // TODO: re-implement DocumentFragment
@@ -596,7 +597,7 @@ impl XmlNode {
             XmlNode::DocumentType(v) => v.declaration.borrow().id(),
             XmlNode::Element(v) => v.element.borrow().id(),
             XmlNode::Entity(v) => v.entity.borrow().id(),
-            XmlNode::EntityReference(v) => v.reference.borrow().id(),
+            XmlNode::EntityReference(v) => v.inner().id(),
             XmlNode::Namespace(v) => v.namespace.borrow().id(),
             XmlNode::Notation(v) => v.notation.borrow().id(),
             XmlNode::PI(v) => v.pi.borrow().id(),
@@ -615,7 +616,7 @@ impl XmlNode {
             XmlNode::DocumentType(v) => v.declaration.borrow().order(),
             XmlNode::Element(v) => v.element.borrow().order(),
             XmlNode::Entity(_) => 0,
-            XmlNode::EntityReference(v) => v.reference.borrow().order(),
+            XmlNode::EntityReference(v) => v.inner().order(),
             XmlNode::Namespace(v) => v.namespace.borrow().order(),
             XmlNode::Notation(_) => 0,
             XmlNode::PI(_) => 0,
@@ -697,7 +698,10 @@ impl convert::TryFrom<XmlNode> for info::XmlItem {
             XmlNode::DocumentType(v) => v.declaration.into(),
             XmlNode::Element(v) => v.element.into(),
             XmlNode::Entity(v) => v.entity.into(),
-            XmlNode::EntityReference(v) => v.reference.try_into()?,
+            XmlNode::EntityReference(v) => match v.value {
+                XmlEntityReferenceValue::Char(v) => v.into(),
+                XmlEntityReferenceValue::Entity(v) => v.into(),
+            },
             XmlNode::Namespace(v) => v.namespace.into(),
             XmlNode::Notation(v) => v.notation.into(),
             XmlNode::PI(v) => v.pi.into(),
@@ -1063,10 +1067,16 @@ impl DocumentMut for XmlDocument {
 
     fn create_entity_reference(&self, name: &str) -> error::Result<XmlEntityReference> {
         let ref_name = format!("&{};", name);
-        let reference =
-            info::XmlReference::new_from_value(ref_name.as_str(), self.document.borrow().context())
-                .map_err(|_| error::DomException::InvalidCharacterErr)?;
-        Ok(XmlEntityReference { reference })
+        xml_parser::reference(ref_name.as_str())
+            .map_err(|_| error::DomException::InvalidCharacterErr)?;
+
+        let entity = self.document.borrow().context().entity(name)?;
+        let entity = xml_info::XmlUnexpandedEntityReference::new(
+            entity,
+            None,
+            self.document.borrow().context(),
+        );
+        Ok(XmlEntityReference::from(entity))
     }
 }
 
@@ -1629,7 +1639,10 @@ impl HasChild for XmlAttr {
 
         for v in self.attribute.borrow().values() {
             match v {
-                info::XmlAttributeValue::Reference(v) => {
+                info::XmlAttributeValue::Char(v) => {
+                    nodes.push(XmlEntityReference::from(v.clone()).as_node());
+                }
+                info::XmlAttributeValue::Entity(v) => {
                     nodes.push(XmlEntityReference::from(v.clone()).as_node());
                 }
                 info::XmlAttributeValue::Text(v) => {
@@ -2885,20 +2898,16 @@ impl fmt::Display for XmlEntity {
 
 #[derive(Clone, PartialEq)]
 pub struct XmlEntityReference {
-    reference: info::XmlNode<info::XmlReference>,
+    value: XmlEntityReferenceValue,
 }
 
 impl EntityReference for XmlEntityReference {}
 
 impl Node for XmlEntityReference {
     fn node_name(&self) -> String {
-        match self.reference.borrow().value() {
-            info::XmlReferenceValue::Character(ch, radix) => match radix {
-                10 => format!("#{}", ch),
-                16 => format!("#x{}", ch),
-                _ => unreachable!(),
-            },
-            info::XmlReferenceValue::Entity(e) => e.to_string(),
+        match &self.value {
+            XmlEntityReferenceValue::Char(v) => format!("{}", v.borrow()).to_string(),
+            XmlEntityReferenceValue::Entity(v) => v.borrow().name().to_string(),
         }
     }
 
@@ -2911,7 +2920,10 @@ impl Node for XmlEntityReference {
     }
 
     fn parent_node(&self) -> Option<XmlNode> {
-        self.reference.borrow().parent().ok().map(XmlNode::from)
+        match &self.value {
+            XmlEntityReferenceValue::Char(v) => v.borrow().parent_item().map(XmlNode::from),
+            XmlEntityReferenceValue::Entity(v) => v.borrow().parent_item().map(XmlNode::from),
+        }
     }
 
     fn child_nodes(&self) -> XmlNodeList {
@@ -2945,7 +2957,7 @@ impl Node for XmlEntityReference {
     }
 
     fn owner_document(&self) -> Option<XmlDocument> {
-        Some(XmlDocument::from(self.reference.borrow().owner()))
+        Some(self.inner().owner())
     }
 
     fn has_child(&self) -> bool {
@@ -2968,21 +2980,17 @@ impl HasChild for XmlEntityReference {
 
 impl From<info::XmlNode<info::XmlCharReference>> for XmlEntityReference {
     fn from(value: info::XmlNode<info::XmlCharReference>) -> Self {
-        let reference = info::XmlReference::new_from_char_ref(value);
-        XmlEntityReference { reference }
-    }
-}
-
-impl From<info::XmlNode<info::XmlReference>> for XmlEntityReference {
-    fn from(value: info::XmlNode<info::XmlReference>) -> Self {
-        XmlEntityReference { reference: value }
+        XmlEntityReference {
+            value: XmlEntityReferenceValue::Char(value),
+        }
     }
 }
 
 impl From<info::XmlNode<info::XmlUnexpandedEntityReference>> for XmlEntityReference {
     fn from(value: info::XmlNode<info::XmlUnexpandedEntityReference>) -> Self {
-        let reference = info::XmlReference::new_from_ref(value.borrow().entity());
-        XmlEntityReference { reference }
+        XmlEntityReference {
+            value: XmlEntityReferenceValue::Entity(value),
+        }
     }
 }
 
@@ -2994,13 +3002,54 @@ impl fmt::Debug for XmlEntityReference {
 
 impl fmt::Display for XmlEntityReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        self.reference.borrow().fmt(f)
+        match &self.value {
+            XmlEntityReferenceValue::Char(v) => v.borrow().fmt(f),
+            XmlEntityReferenceValue::Entity(v) => v.borrow().fmt(f),
+        }
     }
 }
 
 impl XmlEntityReference {
     pub fn value(&self) -> error::Result<String> {
-        Ok(self.reference.borrow().resolve()?)
+        match &self.value {
+            XmlEntityReferenceValue::Char(v) => Ok(v.borrow().character_code().to_string()),
+            XmlEntityReferenceValue::Entity(v) => Ok(v.borrow().value()?),
+        }
+    }
+
+    fn inner(&self) -> &XmlEntityReferenceValue {
+        &self.value
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, PartialEq)]
+pub enum XmlEntityReferenceValue {
+    Char(info::XmlNode<info::XmlCharReference>),
+    Entity(info::XmlNode<info::XmlUnexpandedEntityReference>),
+}
+
+impl XmlEntityReferenceValue {
+    pub fn id(&self) -> usize {
+        match self {
+            XmlEntityReferenceValue::Char(v) => v.borrow().id(),
+            XmlEntityReferenceValue::Entity(v) => v.borrow().id(),
+        }
+    }
+
+    pub fn order(&self) -> usize {
+        match self {
+            XmlEntityReferenceValue::Char(v) => v.borrow().order(),
+            XmlEntityReferenceValue::Entity(v) => v.borrow().order(),
+        }
+    }
+
+    pub fn owner(&self) -> XmlDocument {
+        match self {
+            XmlEntityReferenceValue::Char(v) => XmlDocument::from(v.borrow().owner()),
+            XmlEntityReferenceValue::Entity(v) => XmlDocument::from(v.borrow().owner()),
+        }
     }
 }
 
@@ -3870,8 +3919,8 @@ mod tests {
         assert_eq!("amp", eref.node_name());
         assert_eq!(None, eref.parent_node());
         assert_eq!(Some(doc.clone()), eref.owner_document());
-        assert_ne!(0, eref.reference.borrow().id());
-        assert_eq!(0, eref.reference.borrow().order());
+        assert_ne!(0, eref.inner().id());
+        assert_eq!(0, eref.inner().order());
     }
 
     #[test]
@@ -4506,8 +4555,8 @@ mod tests {
                     // FIXME:
                     //assert_eq!(Some(attr.as_node()), v.parent_node());
                     assert_eq!(Some(doc.clone()), v.owner_document());
-                    assert_ne!(0, v.reference.borrow().id());
-                    assert_ne!(0, v.reference.borrow().order());
+                    assert_ne!(0, v.inner().id());
+                    assert_ne!(0, v.inner().order());
                 }
                 XmlNode::Text(v) => {
                     // FIXME:

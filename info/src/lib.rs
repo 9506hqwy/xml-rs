@@ -11,7 +11,6 @@ use xml_parser::model as parser;
 // TODO: Base URI is always empty string.
 // TODO: White Space Handling.
 // TODO: Parameter Entity Reference.
-// TODO: Improve entity reference structure.
 
 // -----------------------------------------------------------------------------------------------
 
@@ -333,7 +332,8 @@ impl HasChildren for XmlAttribute {
 
     fn child_by_index(&self, index: usize) -> Option<XmlItem> {
         match self.values.get(index) {
-            Some(XmlAttributeValue::Reference(v)) => v.clone().try_into().ok(),
+            Some(XmlAttributeValue::Char(v)) => Some(v.clone().into()),
+            Some(XmlAttributeValue::Entity(v)) => Some(v.clone().into()),
             Some(XmlAttributeValue::Text(v)) => Some(v.clone().into()),
             None => None,
         }
@@ -342,7 +342,8 @@ impl HasChildren for XmlAttribute {
     fn delete_by_id(&mut self, id: usize) -> Option<XmlItem> {
         if let Some(index) = self.child_index(id) {
             match self.values.remove(index) {
-                XmlAttributeValue::Reference(v) => v.clone().try_into().ok(),
+                XmlAttributeValue::Char(v) => Some(v.clone().into()),
+                XmlAttributeValue::Entity(v) => Some(v.clone().into()),
                 XmlAttributeValue::Text(v) => Some(v.clone().into()),
             }
         } else {
@@ -421,8 +422,9 @@ impl Attribute for XmlAttribute {
 
         for value in self.values.as_slice() {
             match value {
-                XmlAttributeValue::Reference(v) => {
-                    let v = v.borrow().resolve()?;
+                XmlAttributeValue::Char(v) => normalized.push_str(v.borrow().character_code()),
+                XmlAttributeValue::Entity(v) => {
+                    let v = attr_value_from_name(v.borrow().name(), self.context())?;
                     normalized.push_str(v.as_str());
                 }
                 XmlAttributeValue::Text(v) => {
@@ -570,7 +572,7 @@ impl XmlAttribute {
         value: &parser::Attribute,
         parent: Option<XmlNode<XmlElement>>,
         context: &Context,
-    ) -> XmlNode<Self> {
+    ) -> error::Result<XmlNode<Self>> {
         let (local_name, prefix) = attribute_name(&value.name);
         let attribute = node(XmlAttribute {
             local_name,
@@ -582,12 +584,12 @@ impl XmlAttribute {
         });
 
         for value in value.value.as_slice() {
-            if let Some(v) = XmlAttributeValue::new(value, attribute.clone().into(), context) {
+            if let Some(v) = XmlAttributeValue::new(value, attribute.clone().into(), context)? {
                 attribute.borrow_mut().values.push(v);
             }
         }
 
-        attribute
+        Ok(attribute)
     }
 
     pub fn new_from_declaration(value: &XmlDeclarationAttDef, context: &Context) -> XmlNode<Self> {
@@ -602,9 +604,7 @@ impl XmlAttribute {
 
         if let XmlDeclarationAttDefault::Value(_, values) = &value.value {
             for value in values.as_slice() {
-                if let Some(v) = XmlAttributeValue::new_from_declaration(value) {
-                    attribute.borrow_mut().values.push(v);
-                }
+                attribute.borrow_mut().values.push(value.clone());
             }
         }
 
@@ -615,7 +615,7 @@ impl XmlAttribute {
         let xml = format!("{}=''", name);
         let (rest, tree) = xml_parser::attribute(xml.as_str())?;
         if rest.is_empty() {
-            Ok(XmlAttribute::new(&tree, None, context))
+            XmlAttribute::new(&tree, None, context)
         } else {
             Err(error::Error::InvalidData(name.to_string()))
         }
@@ -627,7 +627,7 @@ impl XmlAttribute {
         let xml = format!("{}='{}'", self.local_name(), value);
         let (rest, tree) = xml_parser::attribute(xml.as_str())?;
         if rest.is_empty() {
-            let attr = XmlAttribute::new(&tree, self.parent.clone(), self.context());
+            let attr = XmlAttribute::new(&tree, self.parent.clone(), self.context())?;
             self.values.clear();
 
             for v in attr.borrow().values() {
@@ -670,8 +670,9 @@ impl XmlAttribute {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum XmlAttributeValue {
+    Char(XmlNode<XmlCharReference>),
+    Entity(XmlNode<XmlUnexpandedEntityReference>),
     Text(XmlNode<XmlText>),
-    Reference(XmlNode<XmlReference>),
 }
 
 impl convert::TryFrom<XmlItem> for XmlAttributeValue {
@@ -679,13 +680,9 @@ impl convert::TryFrom<XmlItem> for XmlAttributeValue {
 
     fn try_from(value: XmlItem) -> Result<Self, Self::Error> {
         match value {
-            XmlItem::CharReference(v) => Ok(XmlAttributeValue::Reference(
-                XmlReference::new_from_char_ref(v),
-            )),
+            XmlItem::CharReference(v) => Ok(XmlAttributeValue::Char(v)),
             XmlItem::Text(v) => Ok(XmlAttributeValue::Text(v)),
-            XmlItem::Unexpanded(v) => Ok(XmlAttributeValue::Reference(XmlReference::new_from_ref(
-                v.borrow().entity(),
-            ))),
+            XmlItem::Unexpanded(v) => Ok(XmlAttributeValue::Entity(v)),
             _ => Err(error::Error::InvalidType),
         }
     }
@@ -694,47 +691,50 @@ impl convert::TryFrom<XmlItem> for XmlAttributeValue {
 impl fmt::Display for XmlAttributeValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
+            XmlAttributeValue::Char(v) => v.borrow().fmt(f),
+            XmlAttributeValue::Entity(v) => v.borrow().fmt(f),
             XmlAttributeValue::Text(v) => v.borrow().fmt(f),
-            XmlAttributeValue::Reference(v) => v.borrow().fmt(f),
         }
     }
 }
 
 impl XmlAttributeValue {
-    fn new(value: &parser::AttributeValue, parent: XmlItem, context: &Context) -> Option<Self> {
+    fn new(
+        value: &parser::AttributeValue,
+        parent: XmlItem,
+        context: &Context,
+    ) -> error::Result<Option<Self>> {
         match value {
-            parser::AttributeValue::Reference(v) => Some(XmlAttributeValue::Reference(
-                XmlReference::new(v, Some(parent), context),
-            )),
-            parser::AttributeValue::Text(v) if !v.is_empty() => Some(XmlAttributeValue::Text(
+            parser::AttributeValue::Reference(v) => match v {
+                parser::Reference::Character(v, n) => {
+                    let char_ref = XmlCharReference::new(v, *n, Some(parent), context)?;
+                    Ok(Some(XmlAttributeValue::Char(char_ref)))
+                }
+                parser::Reference::Entity(v) => {
+                    let entity = context.entity(v)?;
+                    let entity = XmlUnexpandedEntityReference::new(entity, Some(parent), context);
+                    Ok(Some(XmlAttributeValue::Entity(entity)))
+                }
+            },
+            parser::AttributeValue::Text(v) if !v.is_empty() => Ok(Some(XmlAttributeValue::Text(
                 XmlText::new(v, Some(parent), context),
-            )),
-            _ => None,
-        }
-    }
-
-    fn new_from_declaration(value: &XmlAttributeValue) -> Option<Self> {
-        match value {
-            XmlAttributeValue::Reference(v) => {
-                let parent = v.borrow().parent().ok();
-                Some(XmlAttributeValue::Reference(
-                    XmlReference::new_from_declaration(v.clone(), parent),
-                ))
-            }
-            XmlAttributeValue::Text(v) => Some(XmlAttributeValue::Text(v.clone())),
+            ))),
+            _ => Ok(None),
         }
     }
 
     fn id(&self) -> usize {
         match self {
-            XmlAttributeValue::Reference(v) => v.borrow().id(),
+            XmlAttributeValue::Char(v) => v.borrow().id(),
+            XmlAttributeValue::Entity(v) => v.borrow().id(),
             XmlAttributeValue::Text(ref v) => v.borrow().id(),
         }
     }
 
     fn init_order_recursive(&self) {
         match self {
-            XmlAttributeValue::Reference(v) => v.borrow().init_order_recursive(),
+            XmlAttributeValue::Char(v) => v.borrow().init_order_recursive(),
+            XmlAttributeValue::Entity(v) => v.borrow().init_order_recursive(),
             XmlAttributeValue::Text(ref v) => v.borrow().init_order_recursive(),
         }
     }
@@ -943,6 +943,10 @@ impl XmlCharReference {
         self.num.as_str()
     }
 
+    pub fn parent_item(&self) -> Option<XmlItem> {
+        self.parent.clone()
+    }
+
     pub fn radix(&self) -> u32 {
         self.radix
     }
@@ -1061,7 +1065,11 @@ impl HasQName for XmlDeclarationAttDef {
 }
 
 impl XmlDeclarationAttDef {
-    fn new(value: &parser::DeclarationAttDef<'_>, parent: XmlItem, context: &Context) -> Self {
+    fn new(
+        value: &parser::DeclarationAttDef<'_>,
+        parent: XmlItem,
+        context: &Context,
+    ) -> error::Result<Self> {
         let (local_name, prefix) = match &value.name {
             parser::DeclarationAttName::Attr(v) => qname(v),
             parser::DeclarationAttName::Namsspace(v) => attribute_name(v),
@@ -1069,14 +1077,14 @@ impl XmlDeclarationAttDef {
 
         let ty = XmlDeclarationAttType::from(&value.ty);
 
-        let value = XmlDeclarationAttDefault::new(&value.value, parent, context);
+        let value = XmlDeclarationAttDefault::new(&value.value, parent, context)?;
 
-        XmlDeclarationAttDef {
+        Ok(XmlDeclarationAttDef {
             local_name,
             prefix,
             ty,
             value,
-        }
+        })
     }
 }
 
@@ -1090,17 +1098,23 @@ pub enum XmlDeclarationAttDefault {
 }
 
 impl XmlDeclarationAttDefault {
-    fn new(value: &parser::DeclarationAttDefault<'_>, parent: XmlItem, context: &Context) -> Self {
+    fn new(
+        value: &parser::DeclarationAttDefault<'_>,
+        parent: XmlItem,
+        context: &Context,
+    ) -> error::Result<Self> {
         match value {
-            parser::DeclarationAttDefault::Required => XmlDeclarationAttDefault::Required,
-            parser::DeclarationAttDefault::Implied => XmlDeclarationAttDefault::Implied,
+            parser::DeclarationAttDefault::Required => Ok(XmlDeclarationAttDefault::Required),
+            parser::DeclarationAttDefault::Implied => Ok(XmlDeclarationAttDefault::Implied),
             parser::DeclarationAttDefault::Value(f, vs) => {
                 let fixed = f.map(|v| v.to_string());
-                let value = vs
-                    .iter()
-                    .filter_map(|v| XmlAttributeValue::new(v, parent.clone(), context))
-                    .collect();
-                XmlDeclarationAttDefault::Value(fixed, value)
+                let mut value = vec![];
+                for v in vs {
+                    if let Some(v) = XmlAttributeValue::new(v, parent.clone(), context)? {
+                        value.push(v);
+                    }
+                }
+                Ok(XmlDeclarationAttDefault::Value(fixed, value))
             }
         }
     }
@@ -1160,7 +1174,7 @@ impl XmlDeclarationAttList {
         value: &parser::DeclarationAtt<'_>,
         parent: XmlItem,
         context: &Context,
-    ) -> XmlNode<Self> {
+    ) -> error::Result<XmlNode<Self>> {
         let (local_name, prefix) = qname(&value.name);
         let node = node(XmlDeclarationAttList {
             local_name,
@@ -1169,14 +1183,13 @@ impl XmlDeclarationAttList {
             context: context.next(),
         });
 
-        let mut atts = value
-            .defs
-            .iter()
-            .map(|v| XmlDeclarationAttDef::new(v, parent.clone(), context))
-            .collect();
+        let mut atts = vec![];
+        for v in value.defs.as_slice() {
+            atts.push(XmlDeclarationAttDef::new(v, parent.clone(), context)?);
+        }
         node.borrow_mut().atts.append(&mut atts);
 
-        node
+        Ok(node)
     }
 }
 
@@ -1441,7 +1454,7 @@ impl XmlDocument {
 
         if let Some(d) = value.prolog.declaration_doc.as_ref() {
             let doc_type = XmlDocumentTypeDeclaration::new(d, &context);
-            document.borrow_mut().push_child(doc_type.into());
+            document.borrow_mut().push_child(doc_type?.into());
         }
 
         for t in value.prolog.tails.as_slice() {
@@ -1584,7 +1597,10 @@ impl fmt::Display for XmlDocumentTypeDeclaration {
 }
 
 impl XmlDocumentTypeDeclaration {
-    pub fn new(value: &parser::DeclarationDoc<'_>, context: &Context) -> XmlNode<Self> {
+    pub fn new(
+        value: &parser::DeclarationDoc<'_>,
+        context: &Context,
+    ) -> error::Result<XmlNode<Self>> {
         let (local_name, prefix) = qname(&value.name);
 
         let (system_identifier, public_identifier) = match value.external_id.as_ref() {
@@ -1610,7 +1626,7 @@ impl XmlDocumentTypeDeclaration {
                     parser::DeclarationMarkup::Attributes(v) => {
                         let attribute =
                             XmlDeclarationAttList::new(v, declaration.clone().into(), context);
-                        declaration.borrow_mut().push_child(attribute.into());
+                        declaration.borrow_mut().push_child(attribute?.into());
                     }
                     parser::DeclarationMarkup::Commnect(_) => {
                         // drop
@@ -1649,7 +1665,7 @@ impl XmlDocumentTypeDeclaration {
             }
         }
 
-        declaration
+        Ok(declaration)
     }
 
     pub fn empty(name: &str, context: &Context) -> XmlNode<Self> {
@@ -1926,7 +1942,7 @@ impl XmlElement {
         });
 
         for attribute in value.attributes.as_slice() {
-            let attr = XmlAttribute::new(attribute, Some(element.clone()), context);
+            let attr = XmlAttribute::new(attribute, Some(element.clone()), context)?;
             element.borrow_mut().push_attribute(attr);
         }
 
@@ -1955,7 +1971,7 @@ impl XmlElement {
                             element.borrow_mut().push_child(reference.into());
                         }
                         parser::Reference::Entity(v) => {
-                            let entity = entity(context, v)?;
+                            let entity = context.entity(v)?;
                             let entity = XmlUnexpandedEntityReference::new(
                                 entity,
                                 Some(element.clone().into()),
@@ -2224,10 +2240,7 @@ impl XmlEntity {
 
         let (values, system_identifier, public_identifier, notation_name) = match &value.def {
             parser::DeclarationEntityDef::EntityValue(v) => {
-                let values = v
-                    .iter()
-                    .map(|v| XmlEntityValue::new(v, entity.clone().into(), context))
-                    .collect();
+                let values = v.iter().map(|v| XmlEntityValue::new(v)).collect();
                 (Some(values), None, None, None)
             }
             parser::DeclarationEntityDef::ExternalId(v, n) => {
@@ -2273,30 +2286,37 @@ impl XmlEntity {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum XmlEntityValue {
-    Text(String),
+    Character(String, u32),
+    Entity(String),
     Parameter(String),
-    Reference(XmlNode<XmlReference>),
+    Text(String),
 }
 
 impl fmt::Display for XmlEntityValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
-            XmlEntityValue::Text(v) => write!(f, "{}", v),
+            XmlEntityValue::Character(v, radix) => match radix {
+                10 => write!(f, "&#{};", v),
+                16 => write!(f, "&#x{};", v),
+                _ => unreachable!(),
+            },
+            XmlEntityValue::Entity(v) => write!(f, "&{};", v),
             XmlEntityValue::Parameter(v) => write!(f, "%{};", v),
-            XmlEntityValue::Reference(v) => v.borrow().fmt(f),
+            XmlEntityValue::Text(v) => write!(f, "{}", v),
         }
     }
 }
 
 impl XmlEntityValue {
-    pub fn new(value: &parser::EntityValue<'_>, parent: XmlItem, context: &Context) -> Self {
+    pub fn new(value: &parser::EntityValue<'_>) -> Self {
         match value {
             parser::EntityValue::ParameterEntityReference(v) => {
                 XmlEntityValue::Parameter(v.to_string())
             }
-            parser::EntityValue::Reference(v) => {
-                XmlEntityValue::Reference(XmlReference::new(v, Some(parent), context))
-            }
+            parser::EntityValue::Reference(v) => match v {
+                parser::Reference::Character(v, n) => XmlEntityValue::Character(v.to_string(), *n),
+                parser::Reference::Entity(v) => XmlEntityValue::Entity(v.to_string()),
+            },
             parser::EntityValue::Text(v) => XmlEntityValue::Text(v.to_string()),
         }
     }
@@ -2410,26 +2430,6 @@ impl From<XmlNode<XmlUnexpandedEntityReference>> for XmlItem {
 impl From<XmlNode<XmlUnparsedEntity>> for XmlItem {
     fn from(value: XmlNode<XmlUnparsedEntity>) -> Self {
         XmlItem::Unparsed(value)
-    }
-}
-
-impl convert::TryFrom<XmlNode<XmlReference>> for XmlItem {
-    type Error = error::Error;
-
-    fn try_from(value: XmlNode<XmlReference>) -> Result<Self, Self::Error> {
-        let parent = value.borrow().parent.clone();
-        match value.borrow().value() {
-            XmlReferenceValue::Character(v, r) => {
-                Ok(XmlCharReference::new(v.as_str(), r, parent, value.borrow().context())?.into())
-            }
-            XmlReferenceValue::Entity(v) => {
-                let entity = entity(value.borrow().context(), v.as_str()).unwrap();
-                Ok(
-                    XmlUnexpandedEntityReference::new(entity, parent, value.borrow().context())
-                        .into(),
-                )
-            }
-        }
     }
 }
 
@@ -2950,139 +2950,6 @@ impl XmlProcessingInstruction {
     }
 }
 
-// -----------------------------------------------------------------------------------------------
-
-#[derive(Clone, Debug)]
-pub struct XmlReference {
-    value: XmlReferenceValue,
-    parent: Option<XmlItem>,
-    context: Context,
-}
-
-impl HasContext for XmlReference {
-    fn context(&self) -> &Context {
-        &self.context
-    }
-
-    fn context_mut(&mut self) -> &mut Context {
-        &mut self.context
-    }
-
-    fn init_order_recursive(&self) {
-        self.init_order();
-    }
-}
-
-impl PartialEq<XmlReference> for XmlReference {
-    fn eq(&self, other: &XmlReference) -> bool {
-        self.value == other.value
-    }
-}
-
-impl fmt::Display for XmlReference {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match &self.value {
-            XmlReferenceValue::Character(v, radix) => match radix {
-                10 => write!(f, "&#{};", v),
-                16 => write!(f, "&#x{};", v),
-                _ => unreachable!(),
-            },
-            XmlReferenceValue::Entity(v) => write!(f, "&{};", v),
-        }
-    }
-}
-
-impl XmlReference {
-    pub fn new(
-        value: &parser::Reference,
-        parent: Option<XmlItem>,
-        context: &Context,
-    ) -> XmlNode<Self> {
-        node(XmlReference {
-            value: XmlReferenceValue::new(value),
-            parent,
-            context: context.next(),
-        })
-    }
-
-    pub fn new_from_char_ref(value: XmlNode<XmlCharReference>) -> XmlNode<Self> {
-        let num = value.borrow().num().to_string();
-        let radix = value.borrow().radix();
-        node(XmlReference {
-            value: XmlReferenceValue::Character(num, radix),
-            parent: value.borrow().parent().ok().map(|v| v.into()),
-            context: value.borrow().context().clone(),
-        })
-    }
-
-    pub fn new_from_ref(value: XmlNode<XmlEntity>) -> XmlNode<Self> {
-        let name = value.borrow().name().to_string();
-        node(XmlReference {
-            value: XmlReferenceValue::Entity(name),
-            parent: value.borrow().parent(),
-            context: value.borrow().context().clone(),
-        })
-    }
-
-    pub fn new_from_declaration(
-        value: XmlNode<XmlReference>,
-        parent: Option<XmlItem>,
-    ) -> XmlNode<Self> {
-        node(XmlReference {
-            value: value.borrow().value(),
-            parent,
-            context: value.borrow().context().clone(),
-        })
-    }
-
-    pub fn new_from_value(value: &str, context: &Context) -> error::Result<XmlNode<Self>> {
-        let (rest, tree) = xml_parser::reference(value)?;
-        if rest.is_empty() {
-            Ok(XmlReference::new(&tree, None, context))
-        } else {
-            Err(error::Error::InvalidData(value.to_string()))
-        }
-    }
-
-    pub fn parent(&self) -> error::Result<XmlItem> {
-        self.parent.clone().ok_or(error::Error::IsolatedNode)
-    }
-
-    pub fn resolve(&self) -> error::Result<String> {
-        match &self.value {
-            XmlReferenceValue::Character(v, r) => match r {
-                10 => char_from_char10(v).map(|v| v.to_string()),
-                16 => char_from_char16(v).map(|v| v.to_string()),
-                _ => unreachable!(),
-            },
-            XmlReferenceValue::Entity(v) => attr_value_from_name(v, self.context()),
-        }
-    }
-
-    pub fn value(&self) -> XmlReferenceValue {
-        self.value.clone()
-    }
-}
-
-// -----------------------------------------------------------------------------------------------
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum XmlReferenceValue {
-    Character(String, u32),
-    Entity(String),
-}
-
-impl XmlReferenceValue {
-    pub fn new(value: &parser::Reference) -> Self {
-        match value {
-            parser::Reference::Character(v, r) => XmlReferenceValue::Character(v.to_string(), *r),
-            parser::Reference::Entity(v) => XmlReferenceValue::Entity(v.to_string()),
-        }
-    }
-}
-
-// -----------------------------------------------------------------------------------------------
-
 #[derive(Clone, Debug)]
 pub struct XmlText {
     text: String,
@@ -3290,6 +3157,14 @@ impl XmlUnexpandedEntityReference {
 
     pub fn entity(&self) -> XmlNode<XmlEntity> {
         self.entity.clone()
+    }
+
+    pub fn parent_item(&self) -> Option<XmlItem> {
+        self.parent.clone()
+    }
+
+    pub fn value(&self) -> error::Result<String> {
+        attr_value_from_name(self.name(), self.context())
     }
 }
 
@@ -3582,6 +3457,29 @@ impl Context {
         }
     }
 
+    pub fn entity(&self, name: &str) -> error::Result<XmlNode<XmlEntity>> {
+        if let Some(declaration) = self.document.borrow().document_declaration() {
+            if let Some(v) = declaration
+                .borrow()
+                .entities()
+                .iter()
+                .find(|v| v.borrow().name() == name)
+                .cloned()
+            {
+                return Ok(v);
+            }
+        }
+
+        match name {
+            "lt" => Ok(node(XmlEntity::from(("lt", "<", self)))),
+            "gt" => Ok(node(XmlEntity::from(("gt", ">", self)))),
+            "amp" => Ok(node(XmlEntity::from(("amp", "&", self)))),
+            "apos" => Ok(node(XmlEntity::from(("apos", "'", self)))),
+            "quot" => Ok(node(XmlEntity::from(("quot", "\"", self)))),
+            _ => Err(error::Error::NotFoundReference(name.to_string())),
+        }
+    }
+
     fn next(&self) -> Context {
         Context {
             info: singleton(ContextInfo::from(self.idm.borrow_mut().next())),
@@ -3701,16 +3599,21 @@ fn attribute_name(name: &parser::AttributeName) -> (String, Option<String>) {
 }
 
 fn attr_value_from_name(name: &str, context: &Context) -> error::Result<String> {
-    let entity = entity(context, name)?;
+    let entity = context.entity(name)?;
     let mut parsed = String::new();
     for value in entity.borrow().values().unwrap_or_default() {
         match &value {
+            XmlEntityValue::Character(v, r) => match r {
+                10 => parsed.push(char_from_char10(v)?),
+                16 => parsed.push(char_from_char16(v)?),
+                _ => unreachable!(),
+            },
+            XmlEntityValue::Entity(v) => {
+                let v = attr_value_from_name(v, context)?;
+                parsed.push_str(v.as_str());
+            }
             XmlEntityValue::Parameter(_) => {
                 unimplemented!("Not support parameter entity reference.")
-            }
-            XmlEntityValue::Reference(v) => {
-                let v = v.borrow().resolve()?;
-                parsed.push_str(v.as_str());
             }
             XmlEntityValue::Text(v) => parsed.push_str(normalize_ws(v).as_str()),
         }
@@ -3749,29 +3652,6 @@ fn delete_char_range(value: &str, offset: usize, count: usize) -> String {
     chars.drain(s..e);
 
     chars.iter().collect()
-}
-
-fn entity(context: &Context, name: &str) -> error::Result<XmlNode<XmlEntity>> {
-    if let Some(declaration) = context.document.borrow().document_declaration() {
-        if let Some(v) = declaration
-            .borrow()
-            .entities()
-            .iter()
-            .find(|v| v.borrow().name() == name)
-            .cloned()
-        {
-            return Ok(v);
-        }
-    }
-
-    match name {
-        "lt" => Ok(node(XmlEntity::from(("lt", "<", context)))),
-        "gt" => Ok(node(XmlEntity::from(("gt", ">", context)))),
-        "amp" => Ok(node(XmlEntity::from(("amp", "&", context)))),
-        "apos" => Ok(node(XmlEntity::from(("apos", "'", context)))),
-        "quot" => Ok(node(XmlEntity::from(("quot", "\"", context)))),
-        _ => Err(error::Error::NotFoundReference(name.to_string())),
-    }
 }
 
 fn equal_qname(a: xml_nom::model::QName, b: xml_nom::model::QName) -> bool {
