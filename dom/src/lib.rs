@@ -5298,22 +5298,20 @@ mod tests {
                 .unwrap();
         let root = doc.document_element().unwrap();
         let elem1 = root.get_elements_by_tag_name("elem1").item(0).unwrap();
-        let elem2 = root
-            .get_elements_by_tag_name("elem1")
+        let mut elem2 = root
+            .get_elements_by_tag_name("elem2")
             .item(0)
             .unwrap()
             .as_element()
             .unwrap();
 
         // NodeMut
-        /* FIXME:
         let err = elem2.insert_before(elem1, None).err().unwrap();
         assert_eq!("<elem2>data1</elem2>", format!("{}", elem2));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
         );
-        */
     }
 
     #[test]
@@ -5425,8 +5423,8 @@ mod tests {
                 .unwrap();
         let root = doc.document_element().unwrap();
         let elem1 = root.get_elements_by_tag_name("elem1").item(0).unwrap();
-        let elem2 = root
-            .get_elements_by_tag_name("elem1")
+        let mut elem2 = root
+            .get_elements_by_tag_name("elem2")
             .item(0)
             .unwrap()
             .as_element()
@@ -5434,14 +5432,12 @@ mod tests {
         let t = elem2.child_nodes().item(0).unwrap();
 
         // NodeMut
-        /* FIXME:
         let err = elem2.replace_child(elem1, &t).err().unwrap();
         assert_eq!("<elem2>data1</elem2>", format!("{}", elem2));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
         );
-        */
     }
 
     #[test]
@@ -5583,22 +5579,20 @@ mod tests {
                 .unwrap();
         let root = doc.document_element().unwrap();
         let elem1 = root.get_elements_by_tag_name("elem1").item(0).unwrap();
-        let elem2 = root
-            .get_elements_by_tag_name("elem1")
+        let mut elem2 = root
+            .get_elements_by_tag_name("elem2")
             .item(0)
             .unwrap()
             .as_element()
             .unwrap();
 
         // NodeMut
-        /* FIXME:
         let err = elem2.append_child(elem1).err().unwrap();
         assert_eq!("<elem2>data1</elem2>", format!("{}", elem2));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
         );
-        */
     }
 
     #[test]

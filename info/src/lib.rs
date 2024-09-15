@@ -152,6 +152,19 @@ pub trait HasParent: HasContext {
     fn parent_id(&self) -> Option<usize>;
 
     fn set_parent_id(&mut self, parent_id: Option<usize>);
+
+    fn ancestor(&self, id: usize) -> bool {
+        let mut parent_id = self.parent_id();
+        while let Some(node) = parent_id.and_then(|v| self.context().node(v)) {
+            if node.id() == id {
+                return true;
+            }
+
+            parent_id = node.parent_id();
+        }
+
+        false
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -417,6 +430,10 @@ impl HasChildren for XmlAttribute {
         value: Rc<XmlItem>,
         id: Option<usize>,
     ) -> error::Result<Rc<XmlItem>> {
+        if self.ancestor(value.id()) {
+            return Err(error::Error::InvalidHierarchy);
+        }
+
         value.set_parent_id(Some(self.id()));
         let v = XmlAttributeValue::try_from(value.clone())?;
         if let Some(id) = id {
@@ -1883,6 +1900,10 @@ impl HasChildren for XmlElement {
         value: Rc<XmlItem>,
         id: Option<usize>,
     ) -> error::Result<Rc<XmlItem>> {
+        if self.ancestor(value.id()) {
+            return Err(error::Error::InvalidHierarchy);
+        }
+
         match &*value {
             XmlItem::CData(_)
             | XmlItem::CharReference(_)
@@ -2783,6 +2804,26 @@ impl XmlItem {
             XmlItem::Text(v) => v.borrow().init_order_recursive(),
             XmlItem::Unexpanded(v) => v.borrow().init_order_recursive(),
             XmlItem::Unparsed(v) => v.borrow().entity().borrow().init_order_recursive(),
+        }
+    }
+
+    fn parent_id(&self) -> Option<usize> {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().parent_id(),
+            XmlItem::CData(v) => v.borrow().parent_id(),
+            XmlItem::CharReference(v) => v.borrow().parent_id(),
+            XmlItem::Comment(v) => v.borrow().parent_id(),
+            XmlItem::DeclarationAttList(_) => None,
+            XmlItem::Document(_) => None,
+            XmlItem::DocumentType(_) => None,
+            XmlItem::Element(v) => v.borrow().parent_id(),
+            XmlItem::Entity(v) => v.borrow().parent_id(),
+            XmlItem::Namespace(_) => None,
+            XmlItem::Notation(v) => v.borrow().parent_id(),
+            XmlItem::PI(v) => v.borrow().parent_id(),
+            XmlItem::Text(v) => v.borrow().parent_id(),
+            XmlItem::Unexpanded(v) => v.borrow().parent_id(),
+            XmlItem::Unparsed(v) => v.borrow().entity().borrow().parent_id(),
         }
     }
 
