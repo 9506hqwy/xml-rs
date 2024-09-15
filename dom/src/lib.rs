@@ -4,6 +4,7 @@ use std::any::Any;
 use std::convert;
 use std::fmt;
 use std::iter::Iterator;
+use std::rc::Rc;
 use xml_info as info;
 use xml_info::{
     Attribute as InfoAttribute, Character as InfoCharacter, Comment as InfoComment,
@@ -663,50 +664,50 @@ impl XmlNode {
     }
 }
 
-impl From<info::XmlItem> for XmlNode {
-    fn from(value: info::XmlItem) -> Self {
-        match value {
-            info::XmlItem::Attribute(v) => XmlAttr::from(v).as_node(),
-            info::XmlItem::CData(v) => XmlCDataSection::from(v).as_node(),
-            info::XmlItem::CharReference(v) => XmlEntityReference::from(v).as_node(),
-            info::XmlItem::Comment(v) => XmlComment::from(v).as_node(),
+impl From<Rc<info::XmlItem>> for XmlNode {
+    fn from(value: Rc<info::XmlItem>) -> Self {
+        match &*value {
+            info::XmlItem::Attribute(v) => XmlAttr::from(v.clone()).as_node(),
+            info::XmlItem::CData(v) => XmlCDataSection::from(v.clone()).as_node(),
+            info::XmlItem::CharReference(v) => XmlEntityReference::from(v.clone()).as_node(),
+            info::XmlItem::Comment(v) => XmlComment::from(v.clone()).as_node(),
             info::XmlItem::DeclarationAttList(_) => unimplemented!("declaration attribute"),
-            info::XmlItem::Document(v) => XmlDocument::from(v).as_node(),
-            info::XmlItem::DocumentType(v) => XmlDocumentType::from(v).as_node(),
-            info::XmlItem::Element(v) => XmlElement::from(v).as_node(),
-            info::XmlItem::Namespace(v) => XmlNamespace::from(v).as_node(),
-            info::XmlItem::Notation(v) => XmlNotation::from(v).as_node(),
-            info::XmlItem::PI(v) => XmlProcessingInstruction::from(v).as_node(),
-            info::XmlItem::Text(v) => XmlText::from(v).as_node(),
-            info::XmlItem::Unexpanded(v) => XmlEntityReference::from(v).as_node(),
-            info::XmlItem::Unparsed(v) => XmlEntity::from(v).as_node(),
-            info::XmlItem::Entity(v) => XmlEntity::from(v).as_node(),
+            info::XmlItem::Document(v) => XmlDocument::from(v.clone()).as_node(),
+            info::XmlItem::DocumentType(v) => XmlDocumentType::from(v.clone()).as_node(),
+            info::XmlItem::Element(v) => XmlElement::from(v.clone()).as_node(),
+            info::XmlItem::Namespace(v) => XmlNamespace::from(v.clone()).as_node(),
+            info::XmlItem::Notation(v) => XmlNotation::from(v.clone()).as_node(),
+            info::XmlItem::PI(v) => XmlProcessingInstruction::from(v.clone()).as_node(),
+            info::XmlItem::Text(v) => XmlText::from(v.clone()).as_node(),
+            info::XmlItem::Unexpanded(v) => XmlEntityReference::from(v.clone()).as_node(),
+            info::XmlItem::Unparsed(v) => XmlEntity::from(v.clone()).as_node(),
+            info::XmlItem::Entity(v) => XmlEntity::from(v.clone()).as_node(),
         }
     }
 }
 
-impl convert::TryFrom<XmlNode> for info::XmlItem {
+impl convert::TryFrom<XmlNode> for Rc<info::XmlItem> {
     type Error = error::Error;
 
     fn try_from(value: XmlNode) -> Result<Self, Self::Error> {
         let v = match value {
-            XmlNode::Attribute(v) => v.attribute.into(),
-            XmlNode::CData(v) => v.data.into(),
-            XmlNode::Comment(v) => v.data.into(),
-            XmlNode::Document(v) => v.document.into(),
-            XmlNode::DocumentFragment(v) => v.document.into(),
-            XmlNode::DocumentType(v) => v.declaration.into(),
-            XmlNode::Element(v) => v.element.into(),
-            XmlNode::Entity(v) => v.entity.into(),
+            XmlNode::Attribute(v) => Rc::new(v.attribute.into()),
+            XmlNode::CData(v) => Rc::new(v.data.into()),
+            XmlNode::Comment(v) => Rc::new(v.data.into()),
+            XmlNode::Document(v) => Rc::new(v.document.into()),
+            XmlNode::DocumentFragment(v) => Rc::new(v.document.into()),
+            XmlNode::DocumentType(v) => Rc::new(v.declaration.into()),
+            XmlNode::Element(v) => Rc::new(v.element.into()),
+            XmlNode::Entity(v) => Rc::new(v.entity.into()),
             XmlNode::EntityReference(v) => match v.value {
-                XmlEntityReferenceValue::Char(v) => v.into(),
-                XmlEntityReferenceValue::Entity(v) => v.into(),
+                XmlEntityReferenceValue::Char(v) => Rc::new(v.into()),
+                XmlEntityReferenceValue::Entity(v) => Rc::new(v.into()),
             },
-            XmlNode::Namespace(v) => v.namespace.into(),
-            XmlNode::Notation(v) => v.notation.into(),
-            XmlNode::PI(v) => v.pi.into(),
+            XmlNode::Namespace(v) => Rc::new(v.namespace.into()),
+            XmlNode::Notation(v) => Rc::new(v.notation.into()),
+            XmlNode::PI(v) => Rc::new(v.pi.into()),
             XmlNode::ResolvedText(_) => unimplemented!("multi text node."),
-            XmlNode::Text(v) => v.data.into(),
+            XmlNode::Text(v) => Rc::new(v.data.into()),
         };
         Ok(v)
     }
@@ -1014,6 +1015,7 @@ impl DocumentMut for XmlDocument {
     fn create_element(&self, tag_name: &str) -> error::Result<XmlElement> {
         let element = info::XmlElement::empty(tag_name, self.document.borrow().context())
             .map_err(|_| error::DomException::InvalidCharacterErr)?;
+        let element = element.as_element().unwrap();
         Ok(XmlElement { element })
     }
 
@@ -1027,6 +1029,7 @@ impl DocumentMut for XmlDocument {
 
     fn create_text_node(&self, data: &str) -> XmlText {
         let text = info::XmlText::empty(self.document.borrow().context());
+        let text = text.as_text().unwrap();
         // TODO: escape
         text.borrow_mut().insert(0, data).unwrap();
         XmlText { data: text }
@@ -1034,6 +1037,7 @@ impl DocumentMut for XmlDocument {
 
     fn create_comment(&self, data: &str) -> XmlComment {
         let comment = info::XmlComment::empty(self.document.borrow().context());
+        let comment = comment.as_comment().unwrap();
         // TODO: escape?
         comment.borrow_mut().insert(0, data).unwrap();
         XmlComment { data: comment }
@@ -1041,6 +1045,7 @@ impl DocumentMut for XmlDocument {
 
     fn create_cdata_section(&self, data: &str) -> XmlCDataSection {
         let cdata = info::XmlCData::empty(self.document.borrow().context());
+        let cdata = cdata.as_cdata().unwrap();
         // TODO: escape?
         cdata.borrow_mut().insert(0, data).unwrap();
         XmlCDataSection { data: cdata }
@@ -1053,6 +1058,7 @@ impl DocumentMut for XmlDocument {
     ) -> error::Result<XmlProcessingInstruction> {
         let pi = info::XmlProcessingInstruction::empty(target, self.document.borrow().context())
             .map_err(|_| error::DomException::InvalidCharacterErr)?;
+        let pi = pi.as_pi().unwrap();
         pi.borrow_mut()
             .set_content(data)
             .map_err(|_| error::DomException::InvalidCharacterErr)?;
@@ -1062,6 +1068,7 @@ impl DocumentMut for XmlDocument {
     fn create_attribute(&self, name: &str) -> error::Result<XmlAttr> {
         let attribute = info::XmlAttribute::empty(name, self.document.borrow().context())
             .map_err(|_| error::DomException::InvalidCharacterErr)?;
+        let attribute = attribute.as_attribute().unwrap();
         Ok(XmlAttr { attribute })
     }
 
@@ -1071,11 +1078,12 @@ impl DocumentMut for XmlDocument {
             .map_err(|_| error::DomException::InvalidCharacterErr)?;
 
         let entity = self.document.borrow().context().entity(name)?;
-        let entity = xml_info::XmlUnexpandedEntityReference::new(
+        let entity = xml_info::XmlUnexpandedEntityReference::node(
             entity,
             None,
             self.document.borrow().context(),
         );
+        let entity = entity.as_unexpanded().unwrap();
         Ok(XmlEntityReference::from(entity))
     }
 }
@@ -1640,13 +1648,13 @@ impl HasChild for XmlAttr {
         for v in self.attribute.borrow().values() {
             match v {
                 info::XmlAttributeValue::Char(v) => {
-                    nodes.push(XmlEntityReference::from(v.clone()).as_node());
+                    nodes.push(XmlNode::from(v.clone()));
                 }
                 info::XmlAttributeValue::Entity(v) => {
-                    nodes.push(XmlEntityReference::from(v.clone()).as_node());
+                    nodes.push(XmlNode::from(v.clone()));
                 }
                 info::XmlAttributeValue::Text(v) => {
-                    nodes.push(XmlText::from(v.clone()).as_node());
+                    nodes.push(XmlNode::from(v.clone()));
                 }
             }
         }
@@ -1737,11 +1745,12 @@ impl ElementMut for XmlElement {
         let attr = self
             .element
             .borrow_mut()
-            .remove_attribute(new_attr.name().as_str());
+            .remove_attribute(new_attr.name().as_str())
+            .and_then(|v| v.as_attribute());
 
         self.element
             .borrow_mut()
-            .append_attribute(new_attr.attribute);
+            .append_attribute(Rc::new(new_attr.attribute.into()));
 
         Ok(attr.map(XmlAttr::from))
     }
@@ -2037,44 +2046,49 @@ impl TextMut for XmlText {
 
         let parent = self.data.borrow().parent_item();
         match parent {
-            Some(info::XmlItem::Attribute(v)) => {
-                let data2 = self.data.borrow_mut().split_at(offset);
+            Some(parent) => match &*parent {
+                info::XmlItem::Attribute(v) => {
+                    let data2 = self.data.borrow_mut().split_at(offset);
+                    let data2_node: Rc<info::XmlItem> = Rc::new(data2.clone().into());
 
-                let inserted = v
-                    .borrow_mut()
-                    .insert_after(data2.clone().into(), self.data.borrow().id());
+                    let inserted = v
+                        .borrow_mut()
+                        .insert_after(data2_node.clone(), self.data.borrow().id());
 
-                match inserted {
-                    Ok(_) => {}
-                    Err(info::error::Error::OufOfIndex(_)) => {
-                        v.borrow_mut().append(data2.clone().into())?;
+                    match inserted {
+                        Ok(_) => {}
+                        Err(info::error::Error::OufOfIndex(_)) => {
+                            v.borrow_mut().append(data2_node)?;
+                        }
+                        Err(e) => {
+                            return Err(error::Error::from(e));
+                        }
                     }
-                    Err(e) => {
-                        return Err(error::Error::from(e));
-                    }
+
+                    Ok(XmlResolvedText::from(XmlText::from(data2)))
                 }
+                info::XmlItem::Element(v) => {
+                    let data2 = self.data.borrow_mut().split_at(offset);
+                    let data2_node: Rc<info::XmlItem> = Rc::new(data2.clone().into());
 
-                Ok(XmlResolvedText::from(XmlText::from(data2)))
-            }
-            Some(info::XmlItem::Element(v)) => {
-                let data2 = self.data.borrow_mut().split_at(offset);
+                    let inserted = v
+                        .borrow_mut()
+                        .insert_after(data2_node.clone(), self.data.borrow().id());
 
-                let inserted = v
-                    .borrow_mut()
-                    .insert_after(data2.clone().into(), self.data.borrow().id());
-
-                match inserted {
-                    Ok(_) => {}
-                    Err(info::error::Error::OufOfIndex(_)) => {
-                        v.borrow_mut().append(data2.clone().into())?;
+                    match inserted {
+                        Ok(_) => {}
+                        Err(info::error::Error::OufOfIndex(_)) => {
+                            v.borrow_mut().append(data2_node)?;
+                        }
+                        Err(e) => {
+                            return Err(error::Error::from(e));
+                        }
                     }
-                    Err(e) => {
-                        return Err(error::Error::from(e));
-                    }
+
+                    Ok(XmlResolvedText::from(XmlText::from(data2)))
                 }
-
-                Ok(XmlResolvedText::from(XmlText::from(data2)))
-            }
+                _ => Err(error::DomException::HierarchyRequestErr)?,
+            },
             _ => Err(error::DomException::HierarchyRequestErr)?,
         }
     }
@@ -2384,15 +2398,16 @@ impl TextMut for XmlCDataSection {
         let v = self.data.borrow().parent()?;
 
         let data2 = self.data.borrow_mut().split_at(offset);
+        let data2_node: Rc<info::XmlItem> = Rc::new(data2.clone().into());
 
         let inserted = v
             .borrow_mut()
-            .insert_after(data2.clone().into(), self.data.borrow().id());
+            .insert_after(data2_node.clone(), self.data.borrow().id());
 
         match inserted {
             Ok(_) => {}
             Err(info::error::Error::OufOfIndex(_)) => {
-                v.borrow_mut().append(data2.clone().into())?;
+                v.borrow_mut().append(data2_node)?;
             }
             Err(e) => {
                 return Err(error::Error::from(e));
@@ -4520,7 +4535,9 @@ mod tests {
             .get_attribute_node("a")
             .unwrap();
         let text = XmlNode::Text(XmlText {
-            data: info::XmlText::new("b", None, doc.document.borrow().context()),
+            data: info::XmlText::node("b", None, doc.document.borrow().context())
+                .as_text()
+                .unwrap(),
         });
 
         // Node
@@ -4823,7 +4840,9 @@ mod tests {
             .get_attribute_node("a")
             .unwrap();
         let text = XmlNode::Text(XmlText {
-            data: info::XmlText::new("b", None, doc.document.borrow().context()),
+            data: info::XmlText::node("b", None, doc.document.borrow().context())
+                .as_text()
+                .unwrap(),
         });
 
         // AsNode
@@ -4903,7 +4922,9 @@ mod tests {
             .get_attribute_node("a")
             .unwrap();
         let text = XmlNode::Text(XmlText {
-            data: info::XmlText::new("b", None, doc.document.borrow().context()),
+            data: info::XmlText::node("b", None, doc.document.borrow().context())
+                .as_text()
+                .unwrap(),
         });
 
         // HasChild
@@ -5174,11 +5195,13 @@ mod tests {
         let attra = elem1.get_attribute_node("a").unwrap();
         let attrc = elem2.get_attribute_node("c").unwrap();
         let data1 = XmlResolvedText::from(XmlText {
-            data: info::XmlText::new(
+            data: info::XmlText::node(
                 "data1",
-                Some(elem1.clone().element.into()),
+                Some(Rc::new(elem1.clone().element.into())),
                 doc.document.borrow().context(),
-            ),
+            )
+            .as_text()
+            .unwrap(),
         })
         .as_node();
 
@@ -5650,11 +5673,13 @@ mod tests {
             .unwrap();
         let attra = elem1.get_attribute_node("a").unwrap();
         let data1 = XmlResolvedText::from(XmlText {
-            data: info::XmlText::new(
+            data: info::XmlText::node(
                 "data1",
-                Some(elem1.clone().element.into()),
+                Some(Rc::new(elem1.clone().element.into())),
                 doc.document.borrow().context(),
-            ),
+            )
+            .as_text()
+            .unwrap(),
         })
         .as_node();
 
@@ -5717,7 +5742,9 @@ mod tests {
             .as_element()
             .unwrap();
         let data1 = XmlNode::ResolvedText(XmlResolvedText::from(XmlText {
-            data: info::XmlText::new("data1", None, doc.document.borrow().context()),
+            data: info::XmlText::node("data1", None, doc.document.borrow().context())
+                .as_text()
+                .unwrap(),
         }));
 
         // HasChild
