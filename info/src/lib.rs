@@ -148,6 +148,14 @@ pub trait HasContext {
 
 // -----------------------------------------------------------------------------------------------
 
+pub trait HasParent: HasContext {
+    fn parent_id(&self) -> Option<usize>;
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>);
+}
+
+// -----------------------------------------------------------------------------------------------
+
 pub trait HasQName {
     fn local_name(&self) -> &str;
 
@@ -183,20 +191,38 @@ pub trait Attribute: HasQName {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Character {
+pub trait Character: HasParent {
     fn character_code(&self) -> &str;
 
     fn element_content_whitespace(&self) -> Value<Option<bool>>;
 
-    fn parent(&self) -> error::Result<XmlNode<XmlElement>>;
+    fn parent(&self) -> error::Result<XmlNode<XmlElement>> {
+        self.parent_item()
+            .and_then(|v| v.as_element())
+            .ok_or(error::Error::IsolatedNode)
+    }
+
+    fn parent_item(&self) -> Option<Rc<XmlItem>> {
+        if let Some(id) = self.parent_id() {
+            self.context().node(id)
+        } else {
+            None
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Comment {
+pub trait Comment: HasParent {
     fn comment(&self) -> &str;
 
-    fn parent(&self) -> error::Result<Rc<XmlItem>>;
+    fn parent(&self) -> error::Result<Rc<XmlItem>> {
+        if let Some(id) = self.parent_id() {
+            self.context().node(id).ok_or(error::Error::IsolatedNode)
+        } else {
+            Err(error::Error::IsolatedNode)
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -223,19 +249,21 @@ pub trait Document {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait DocumentTypeDeclaration {
+pub trait DocumentTypeDeclaration: HasContext {
     fn system_identifier(&self) -> Option<&str>;
 
     fn public_identifier(&self) -> Option<&str>;
 
     fn children(&self) -> OrderedList<XmlNode<XmlProcessingInstruction>>;
 
-    fn parent(&self) -> XmlNode<XmlDocument>;
+    fn parent(&self) -> XmlNode<XmlDocument> {
+        self.context().document()
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait Element: HasQName {
+pub trait Element: HasParent + HasQName {
     fn namespace_name(&self) -> error::Result<Option<NamespaceUri>>;
 
     fn children(&self) -> OrderedList<Rc<XmlItem>>;
@@ -248,7 +276,13 @@ pub trait Element: HasQName {
 
     fn base_uri(&self) -> &str;
 
-    fn parent(&self) -> error::Result<Rc<XmlItem>>;
+    fn parent(&self) -> error::Result<Rc<XmlItem>> {
+        if let Some(id) = self.parent_id() {
+            self.context().node(id).ok_or(error::Error::IsolatedNode)
+        } else {
+            Err(error::Error::IsolatedNode)
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -273,7 +307,7 @@ pub trait Notation {
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait ProcessingInstruction {
+pub trait ProcessingInstruction: HasParent {
     fn target(&self) -> &str;
 
     fn content(&self) -> &str;
@@ -282,12 +316,18 @@ pub trait ProcessingInstruction {
 
     fn notation(&self) -> Value<Option<XmlNode<XmlNotation>>>;
 
-    fn parent(&self) -> error::Result<Rc<XmlItem>>;
+    fn parent(&self) -> error::Result<Rc<XmlItem>> {
+        if let Some(id) = self.parent_id() {
+            self.context().node(id).ok_or(error::Error::IsolatedNode)
+        } else {
+            Err(error::Error::IsolatedNode)
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
 
-pub trait UnexpandedEntityReference {
+pub trait UnexpandedEntityReference: HasParent {
     fn name(&self) -> &str;
 
     fn system_identifier(&self) -> Value<Option<&str>>;
@@ -296,7 +336,16 @@ pub trait UnexpandedEntityReference {
 
     fn declaration_base_uri(&self) -> &str;
 
-    fn parent(&self) -> error::Result<XmlNode<XmlElement>>;
+    fn parent(&self) -> error::Result<XmlNode<XmlElement>> {
+        if let Some(id) = self.parent_id() {
+            self.context()
+                .node(id)
+                .and_then(|v| v.as_element())
+                .ok_or(error::Error::IsolatedNode)
+        } else {
+            Err(error::Error::IsolatedNode)
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -323,7 +372,7 @@ pub struct XmlAttribute {
     prefix: Option<String>,
     values: Vec<XmlAttributeValue>,
     from_dtd: bool,
-    parent: Option<XmlNode<XmlElement>>,
+    parent_id: Option<usize>,
     context: Context,
 }
 
@@ -343,7 +392,9 @@ impl HasChildren for XmlAttribute {
 
     fn delete_by_id(&mut self, id: usize) -> Option<Rc<XmlItem>> {
         if let Some(index) = self.child_index(id) {
-            match self.values.remove(index) {
+            let value = self.values.remove(index);
+            value.set_parent_id(None);
+            match value {
                 XmlAttributeValue::Char(v) => Some(v.clone()),
                 XmlAttributeValue::Entity(v) => Some(v.clone()),
                 XmlAttributeValue::Text(v) => Some(v.clone()),
@@ -366,7 +417,7 @@ impl HasChildren for XmlAttribute {
         value: Rc<XmlItem>,
         id: Option<usize>,
     ) -> error::Result<Rc<XmlItem>> {
-        // FIXME: parent / owner.
+        value.set_parent_id(Some(self.id()));
         let v = XmlAttributeValue::try_from(value.clone())?;
         if let Some(id) = id {
             let index = self.child_index(id).unwrap();
@@ -396,6 +447,16 @@ impl HasContext for XmlAttribute {
     }
 }
 
+impl HasParent for XmlAttribute {
+    fn parent_id(&self) -> Option<usize> {
+        self.parent_id
+    }
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>) {
+        self.parent_id = parent_id;
+    }
+}
+
 impl HasQName for XmlAttribute {
     fn local_name(&self) -> &str {
         self.local_name.as_str()
@@ -413,7 +474,7 @@ impl Attribute for XmlAttribute {
         }
 
         if let Some(prefix) = self.prefix.as_deref() {
-            self.parent
+            self.element()
                 .as_ref()
                 .ok_or(error::Error::IsolatedNode)?
                 .borrow()
@@ -551,7 +612,7 @@ impl Attribute for XmlAttribute {
     }
 
     fn owner_element(&self) -> error::Result<XmlNode<XmlElement>> {
-        self.parent.clone().ok_or(error::Error::IsolatedNode)
+        self.element().clone().ok_or(error::Error::IsolatedNode)
     }
 }
 
@@ -583,7 +644,7 @@ impl fmt::Display for XmlAttribute {
 impl XmlAttribute {
     pub fn node(
         value: &parser::Attribute,
-        parent: Option<XmlNode<XmlElement>>,
+        parent_id: Option<usize>,
         context: &Context,
     ) -> error::Result<Rc<XmlItem>> {
         let (local_name, prefix) = attribute_name(&value.name);
@@ -592,17 +653,18 @@ impl XmlAttribute {
             prefix,
             values: vec![],
             from_dtd: false,
-            parent,
+            parent_id,
             context: context.next(),
         });
-        let node: Rc<XmlItem> = Rc::new(attribute.clone().into());
+        let attribute_id = attribute.borrow().id();
 
         for value in value.value.as_slice() {
-            if let Some(v) = XmlAttributeValue::new(value, node.clone(), context)? {
+            if let Some(v) = XmlAttributeValue::new(value, attribute_id, context)? {
                 attribute.borrow_mut().values.push(v);
             }
         }
 
+        let node: Rc<XmlItem> = Rc::new(attribute.clone().into());
         attribute.borrow().context.add_item(&node);
         Ok(node)
     }
@@ -613,7 +675,7 @@ impl XmlAttribute {
             prefix: value.prefix().map(|v| v.to_string()),
             values: vec![],
             from_dtd: true,
-            parent: None,
+            parent_id: None,
             context: context.zero(),
         });
 
@@ -642,13 +704,14 @@ impl XmlAttribute {
         let xml = format!("{}='{}'", self.local_name(), value);
         let (rest, tree) = xml_parser::attribute(xml.as_str())?;
         if rest.is_empty() {
-            let attr = XmlAttribute::node(&tree, self.parent.clone(), self.context())?;
+            let attr = XmlAttribute::node(&tree, self.parent_id(), self.context())?;
             // TODO: remove id from id_map.
             let attr = attr.as_attribute().unwrap();
             self.values.clear();
 
             for v in attr.borrow().values() {
                 v.init_order_recursive();
+                v.set_parent_id(Some(self.id()));
             }
 
             self.values.extend_from_slice(attr.borrow().values());
@@ -663,7 +726,7 @@ impl XmlAttribute {
     }
 
     fn declaration_def(&self) -> Option<XmlDeclarationAttDef> {
-        self.parent
+        self.element()
             .as_ref()?
             .borrow()
             .declaration_att_list()?
@@ -676,6 +739,14 @@ impl XmlAttribute {
 
     fn declaration_type(&self) -> Option<XmlDeclarationAttType> {
         Some(self.declaration_def()?.ty)
+    }
+
+    fn element(&self) -> Option<XmlNode<XmlElement>> {
+        if let Some(id) = self.parent_id() {
+            self.context().node(id).and_then(|v| v.as_element())
+        } else {
+            None
+        }
     }
 
     fn namespace(&self) -> bool {
@@ -718,23 +789,24 @@ impl fmt::Display for XmlAttributeValue {
 impl XmlAttributeValue {
     fn new(
         value: &parser::AttributeValue,
-        parent: Rc<XmlItem>,
+        parent_id: usize,
         context: &Context,
     ) -> error::Result<Option<Self>> {
         match value {
             parser::AttributeValue::Reference(v) => match v {
                 parser::Reference::Character(v, n) => {
-                    let char_ref = XmlCharReference::node(v, *n, Some(parent), context)?;
+                    let char_ref = XmlCharReference::node(v, *n, Some(parent_id), context)?;
                     Ok(Some(XmlAttributeValue::Char(char_ref)))
                 }
                 parser::Reference::Entity(v) => {
                     let entity = context.entity(v)?;
-                    let entity = XmlUnexpandedEntityReference::node(entity, Some(parent), context);
+                    let entity =
+                        XmlUnexpandedEntityReference::node(entity, Some(parent_id), context);
                     Ok(Some(XmlAttributeValue::Entity(entity)))
                 }
             },
             parser::AttributeValue::Text(v) if !v.is_empty() => Ok(Some(XmlAttributeValue::Text(
-                XmlText::node(v, Some(parent), context),
+                XmlText::node(v, Some(parent_id), context),
             ))),
             _ => Ok(None),
         }
@@ -755,6 +827,14 @@ impl XmlAttributeValue {
             XmlAttributeValue::Text(ref v) => v.init_order_recursive(),
         }
     }
+
+    fn set_parent_id(&self, parent_id: Option<usize>) {
+        match self {
+            XmlAttributeValue::Char(v) => v.set_parent_id(parent_id),
+            XmlAttributeValue::Entity(v) => v.set_parent_id(parent_id),
+            XmlAttributeValue::Text(ref v) => v.set_parent_id(parent_id),
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -762,7 +842,7 @@ impl XmlAttributeValue {
 #[derive(Clone, Debug)]
 pub struct XmlCData {
     data: String,
-    parent: Option<XmlNode<XmlElement>>,
+    parent_id: Option<usize>,
     context: Context,
 }
 
@@ -780,6 +860,16 @@ impl HasContext for XmlCData {
     }
 }
 
+impl HasParent for XmlCData {
+    fn parent_id(&self) -> Option<usize> {
+        self.parent_id
+    }
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>) {
+        self.parent_id = parent_id;
+    }
+}
+
 impl Character for XmlCData {
     fn character_code(&self) -> &str {
         self.data.as_str()
@@ -788,10 +878,6 @@ impl Character for XmlCData {
     fn element_content_whitespace(&self) -> Value<Option<bool>> {
         // TODO: White Space Handling
         Value::V(None)
-    }
-
-    fn parent(&self) -> error::Result<XmlNode<XmlElement>> {
-        self.parent.clone().ok_or(error::Error::IsolatedNode)
     }
 }
 
@@ -808,20 +894,16 @@ impl fmt::Display for XmlCData {
 }
 
 impl XmlCData {
-    pub fn node(
-        value: &str,
-        parent: Option<XmlNode<XmlElement>>,
-        context: &Context,
-    ) -> Rc<XmlItem> {
+    pub fn node(value: &str, parent_id: Option<usize>, context: &Context) -> Rc<XmlItem> {
         let data = value.to_string();
 
         let cdata = node(XmlCData {
             data,
-            parent,
+            parent_id,
             context: context.next(),
         });
-        let node = Rc::new(cdata.clone().into());
 
+        let node = Rc::new(cdata.clone().into());
         cdata.borrow().context.add_item(&node);
         node
     }
@@ -865,7 +947,7 @@ impl XmlCData {
         self.data = chars.iter().collect();
         let data2 = chars2.iter().collect::<String>();
 
-        let node = XmlCData::node(data2.as_str(), self.parent.clone(), self.context());
+        let node = XmlCData::node(data2.as_str(), self.parent_id(), self.context());
         // TODO: insert to parent
         node.as_cdata().unwrap()
     }
@@ -886,7 +968,7 @@ pub struct XmlCharReference {
     text: String,
     num: String,
     radix: u32,
-    parent: Option<Rc<XmlItem>>,
+    parent_id: Option<usize>,
     context: Context,
 }
 
@@ -904,6 +986,16 @@ impl HasContext for XmlCharReference {
     }
 }
 
+impl HasParent for XmlCharReference {
+    fn parent_id(&self) -> Option<usize> {
+        self.parent_id
+    }
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>) {
+        self.parent_id = parent_id;
+    }
+}
+
 impl Character for XmlCharReference {
     fn character_code(&self) -> &str {
         self.text.as_str()
@@ -912,13 +1004,6 @@ impl Character for XmlCharReference {
     fn element_content_whitespace(&self) -> Value<Option<bool>> {
         // TODO: White Space Handling
         Value::V(None)
-    }
-
-    fn parent(&self) -> error::Result<XmlNode<XmlElement>> {
-        self.parent
-            .clone()
-            .and_then(|v| v.as_element())
-            .ok_or(error::Error::IsolatedNode)
     }
 }
 
@@ -942,7 +1027,7 @@ impl XmlCharReference {
     pub fn node(
         num: &str,
         radix: u32,
-        parent: Option<Rc<XmlItem>>,
+        parent_id: Option<usize>,
         context: &Context,
     ) -> error::Result<Rc<XmlItem>> {
         let num = num.to_string();
@@ -956,21 +1041,17 @@ impl XmlCharReference {
             text,
             num,
             radix,
-            parent,
+            parent_id,
             context: context.next(),
         });
-        let node = Rc::new(char_ref.clone().into());
 
+        let node = Rc::new(char_ref.clone().into());
         char_ref.borrow().context.add_item(&node);
         Ok(node)
     }
 
     pub fn num(&self) -> &str {
         self.num.as_str()
-    }
-
-    pub fn parent_item(&self) -> Option<Rc<XmlItem>> {
-        self.parent.clone()
     }
 
     pub fn radix(&self) -> u32 {
@@ -983,7 +1064,7 @@ impl XmlCharReference {
 #[derive(Clone, Debug)]
 pub struct XmlComment {
     comment: String,
-    parent: Option<Rc<XmlItem>>,
+    parent_id: Option<usize>,
     context: Context,
 }
 
@@ -1001,13 +1082,19 @@ impl HasContext for XmlComment {
     }
 }
 
+impl HasParent for XmlComment {
+    fn parent_id(&self) -> Option<usize> {
+        self.parent_id
+    }
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>) {
+        self.parent_id = parent_id;
+    }
+}
+
 impl Comment for XmlComment {
     fn comment(&self) -> &str {
         self.comment.as_str()
-    }
-
-    fn parent(&self) -> error::Result<Rc<XmlItem>> {
-        self.parent.clone().ok_or(error::Error::IsolatedNode)
     }
 }
 
@@ -1024,16 +1111,16 @@ impl fmt::Display for XmlComment {
 }
 
 impl XmlComment {
-    pub fn node(comment: &str, parent: Option<Rc<XmlItem>>, context: &Context) -> Rc<XmlItem> {
+    pub fn node(comment: &str, parent_id: Option<usize>, context: &Context) -> Rc<XmlItem> {
         let comment = comment.to_string();
 
         let comment = node(XmlComment {
             comment,
-            parent,
+            parent_id,
             context: context.next(),
         });
-        let node = Rc::new(comment.clone().into());
 
+        let node = Rc::new(comment.clone().into());
         comment.borrow().context.add_item(&node);
         node
     }
@@ -1097,7 +1184,7 @@ impl HasQName for XmlDeclarationAttDef {
 impl XmlDeclarationAttDef {
     fn new(
         value: &parser::DeclarationAttDef<'_>,
-        parent: Rc<XmlItem>,
+        parent_id: usize,
         context: &Context,
     ) -> error::Result<Self> {
         let (local_name, prefix) = match &value.name {
@@ -1107,7 +1194,7 @@ impl XmlDeclarationAttDef {
 
         let ty = XmlDeclarationAttType::from(&value.ty);
 
-        let value = XmlDeclarationAttDefault::new(&value.value, parent, context)?;
+        let value = XmlDeclarationAttDefault::new(&value.value, parent_id, context)?;
 
         Ok(XmlDeclarationAttDef {
             local_name,
@@ -1130,7 +1217,7 @@ pub enum XmlDeclarationAttDefault {
 impl XmlDeclarationAttDefault {
     fn new(
         value: &parser::DeclarationAttDefault<'_>,
-        parent: Rc<XmlItem>,
+        parent_id: usize,
         context: &Context,
     ) -> error::Result<Self> {
         match value {
@@ -1140,7 +1227,7 @@ impl XmlDeclarationAttDefault {
                 let fixed = f.map(|v| v.to_string());
                 let mut value = vec![];
                 for v in vs {
-                    if let Some(v) = XmlAttributeValue::new(v, parent.clone(), context)? {
+                    if let Some(v) = XmlAttributeValue::new(v, parent_id, context)? {
                         value.push(v);
                     }
                 }
@@ -1202,7 +1289,7 @@ impl fmt::Display for XmlDeclarationAttList {
 impl XmlDeclarationAttList {
     pub fn node(
         value: &parser::DeclarationAtt<'_>,
-        parent: Rc<XmlItem>,
+        parent_id: usize,
         context: &Context,
     ) -> error::Result<Rc<XmlItem>> {
         let (local_name, prefix) = qname(&value.name);
@@ -1212,14 +1299,14 @@ impl XmlDeclarationAttList {
             atts: vec![],
             context: context.next(),
         });
-        let node: Rc<XmlItem> = Rc::new(att_list.clone().into());
 
         let mut atts = vec![];
         for v in value.defs.as_slice() {
-            atts.push(XmlDeclarationAttDef::new(v, parent.clone(), context)?);
+            atts.push(XmlDeclarationAttDef::new(v, parent_id, context)?);
         }
         att_list.borrow_mut().atts.append(&mut atts);
 
+        let node: Rc<XmlItem> = Rc::new(att_list.clone().into());
         att_list.borrow().context.add_item(&node);
         Ok(node)
     }
@@ -1286,7 +1373,9 @@ impl HasChildren for XmlDocument {
 
     fn delete_by_id(&mut self, id: usize) -> Option<Rc<XmlItem>> {
         if let Some(index) = self.child_index(id) {
-            Some(self.children.remove(index))
+            let value = self.children.remove(index);
+            value.set_parent_id(None);
+            Some(value)
         } else {
             None
         }
@@ -1305,9 +1394,8 @@ impl HasChildren for XmlDocument {
         value: Rc<XmlItem>,
         id: Option<usize>,
     ) -> error::Result<Rc<XmlItem>> {
-        // FIXME: parent / owner.
-
         fn add_or_insert(doc: &mut XmlDocument, value: Rc<XmlItem>, id: Option<usize>) {
+            value.set_parent_id(Some(doc.id()));
             if let Some(id) = id {
                 let index = doc.child_index(id).unwrap();
                 doc.children.insert(index, value);
@@ -1465,20 +1553,20 @@ impl XmlDocument {
             all_declarations_processed: true,
             context: None,
         });
-        let document_node: Rc<XmlItem> = Rc::new(document.clone().into());
 
         let context = Context::new(document.clone());
         document.borrow_mut().context = Some(context.clone());
 
-        fn add_misc(context: &Context, doc_node: Rc<XmlItem>, misc: &parser::Misc<'_>) {
+        fn add_misc(context: &Context, misc: &parser::Misc<'_>) {
             let doc = context.document().clone();
+            let doc_id = Some(context.document().borrow().id());
             match misc {
                 parser::Misc::Comment(c) => {
-                    let c = XmlComment::node(c.value, Some(doc_node), context);
+                    let c = XmlComment::node(c.value, doc_id, context);
                     doc.borrow_mut().push_child(c);
                 }
                 parser::Misc::PI(p) => {
-                    let p = XmlProcessingInstruction::node(p, Some(doc_node), context);
+                    let p = XmlProcessingInstruction::node(p, doc_id, context);
                     doc.borrow_mut().push_child(p);
                 }
                 parser::Misc::Whitespace(_) => {}
@@ -1486,7 +1574,7 @@ impl XmlDocument {
         }
 
         for h in value.prolog.heads.as_slice() {
-            add_misc(&context, document_node.clone(), h);
+            add_misc(&context, h);
         }
 
         if let Some(d) = value.prolog.declaration_doc.as_ref() {
@@ -1495,14 +1583,14 @@ impl XmlDocument {
         }
 
         for t in value.prolog.tails.as_slice() {
-            add_misc(&context, document_node.clone(), t);
+            add_misc(&context, t);
         }
 
-        let element = XmlElement::node(&value.element, Some(document_node.clone()), &context)?;
+        let element = XmlElement::node(&value.element, Some(document.borrow().id()), &context)?;
         document.borrow_mut().push_child(element);
 
         for h in value.miscs.as_slice() {
-            add_misc(&context, document_node.clone(), h);
+            add_misc(&context, h);
         }
 
         document.borrow().init_order_recursive();
@@ -1656,13 +1744,13 @@ impl XmlDocumentTypeDeclaration {
             children: vec![],
             context: context.next(),
         });
-        let node: Rc<XmlItem> = Rc::new(declaration.clone().into());
+        let declaration_id = declaration.borrow().id();
 
         for subset in &value.internal_subset {
             match subset {
                 parser::InternalSubset::Markup(v) => match v {
                     parser::DeclarationMarkup::Attributes(v) => {
-                        let attribute = XmlDeclarationAttList::node(v, node.clone(), context);
+                        let attribute = XmlDeclarationAttList::node(v, declaration_id, context);
                         declaration.borrow_mut().push_child(attribute?);
                     }
                     parser::DeclarationMarkup::Commnect(_) => {
@@ -1673,7 +1761,7 @@ impl XmlDocumentTypeDeclaration {
                     }
                     parser::DeclarationMarkup::Entity(v) => match v {
                         parser::DeclarationEntity::GeneralEntity(v) => {
-                            let entity = XmlEntity::node(v, node.clone(), context);
+                            let entity = XmlEntity::node(v, declaration_id, context);
                             declaration.borrow_mut().push_child(entity);
                         }
                         parser::DeclarationEntity::ParameterEntity(_) => {
@@ -1681,11 +1769,11 @@ impl XmlDocumentTypeDeclaration {
                         }
                     },
                     parser::DeclarationMarkup::Notation(v) => {
-                        let notation = XmlNotation::node(v, node.clone(), context);
+                        let notation = XmlNotation::node(v, declaration_id, context);
                         declaration.borrow_mut().push_child(notation);
                     }
                     parser::DeclarationMarkup::PI(v) => {
-                        let pi = XmlProcessingInstruction::node(v, Some(node.clone()), context);
+                        let pi = XmlProcessingInstruction::node(v, Some(declaration_id), context);
                         declaration.borrow_mut().push_child(pi);
                     }
                 },
@@ -1698,6 +1786,7 @@ impl XmlDocumentTypeDeclaration {
             }
         }
 
+        let node: Rc<XmlItem> = Rc::new(declaration.clone().into());
         declaration.borrow().context.add_item(&node);
         Ok(node)
     }
@@ -1758,7 +1847,7 @@ pub struct XmlElement {
     children: Vec<Rc<XmlItem>>,
     attributes: Vec<Rc<XmlItem>>,
     base_uri: String,
-    parent: Option<Rc<XmlItem>>,
+    parent_id: Option<usize>,
     context: Context,
 }
 
@@ -1773,7 +1862,9 @@ impl HasChildren for XmlElement {
 
     fn delete_by_id(&mut self, id: usize) -> Option<Rc<XmlItem>> {
         if let Some(index) = self.child_index(id) {
-            Some(self.children.remove(index))
+            let value = self.children.remove(index);
+            value.set_parent_id(None);
+            Some(value)
         } else {
             None
         }
@@ -1792,7 +1883,6 @@ impl HasChildren for XmlElement {
         value: Rc<XmlItem>,
         id: Option<usize>,
     ) -> error::Result<Rc<XmlItem>> {
-        // FIXME: parent / owner.
         match &*value {
             XmlItem::CData(_)
             | XmlItem::CharReference(_)
@@ -1801,6 +1891,7 @@ impl HasChildren for XmlElement {
             | XmlItem::PI(_)
             | XmlItem::Text(_)
             | XmlItem::Unexpanded(_) => {
+                value.set_parent_id(Some(self.id()));
                 if let Some(id) = id {
                     let index = self.child_index(id).unwrap();
                     self.children.insert(index, value.clone());
@@ -1837,6 +1928,16 @@ impl HasContext for XmlElement {
         for child in self.children.as_slice() {
             child.init_order_recursive();
         }
+    }
+}
+
+impl HasParent for XmlElement {
+    fn parent_id(&self) -> Option<usize> {
+        self.parent_id
+    }
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>) {
+        self.parent_id = parent_id;
     }
 }
 
@@ -1891,7 +1992,7 @@ impl Element for XmlElement {
     fn in_scope_namespace(&self) -> error::Result<UnorderedSet<XmlNode<XmlNamespace>>> {
         let mut items = self.namespaces()?;
 
-        if let Some(parent) = self.parent.as_ref() {
+        if let Some(parent) = self.parent().ok().as_ref() {
             if let Some(parent) = parent.as_element() {
                 for ns in parent.borrow().in_scope_namespace()?.iter() {
                     if !items
@@ -1919,10 +2020,6 @@ impl Element for XmlElement {
 
     fn base_uri(&self) -> &str {
         self.base_uri.as_str()
-    }
-
-    fn parent(&self) -> error::Result<Rc<XmlItem>> {
-        self.parent.clone().ok_or(error::Error::IsolatedNode)
     }
 }
 
@@ -1968,7 +2065,7 @@ impl fmt::Display for XmlElement {
 impl XmlElement {
     pub fn node(
         value: &parser::Element<'_>,
-        parent: Option<Rc<XmlItem>>,
+        parent_id: Option<usize>,
         context: &Context,
     ) -> error::Result<Rc<XmlItem>> {
         let (local_name, prefix) = qname(&value.name);
@@ -1979,20 +2076,20 @@ impl XmlElement {
             children: vec![],
             attributes: vec![],
             base_uri: String::new(),
-            parent,
+            parent_id,
             context: context.next(),
         });
-        let node: Rc<XmlItem> = Rc::new(element.clone().into());
+        let element_id = Some(element.borrow().id());
 
         for attribute in value.attributes.as_slice() {
-            let attr = XmlAttribute::node(attribute, Some(element.clone()), context)?;
+            let attr = XmlAttribute::node(attribute, element_id, context)?;
             element.borrow_mut().push_attribute(attr);
         }
 
         if let Some(content) = &value.content {
             if let Some(head) = content.head {
                 if !head.is_empty() {
-                    let text = XmlText::node(head, Some(node.clone()), context);
+                    let text = XmlText::node(head, element_id, context);
                     element.borrow_mut().push_child(text);
                 }
             }
@@ -2000,48 +2097,46 @@ impl XmlElement {
             for cell in content.children.as_slice() {
                 match &cell.child {
                     parser::Contents::Element(v) => {
-                        let child = XmlElement::node(v, Some(node.clone()), context)?;
+                        let child = XmlElement::node(v, element_id, context)?;
                         element.borrow_mut().push_child(child);
                     }
                     parser::Contents::Reference(v) => match v {
                         parser::Reference::Character(ch, radix) => {
                             let reference =
-                                XmlCharReference::node(ch, *radix, Some(node.clone()), context)?;
+                                XmlCharReference::node(ch, *radix, element_id, context)?;
                             element.borrow_mut().push_child(reference);
                         }
                         parser::Reference::Entity(v) => {
                             let entity = context.entity(v)?;
-                            let entity = XmlUnexpandedEntityReference::node(
-                                entity,
-                                Some(node.clone()),
-                                context,
-                            );
+                            let entity =
+                                XmlUnexpandedEntityReference::node(entity, element_id, context);
                             element.borrow_mut().push_child(entity);
                         }
                     },
                     parser::Contents::CData(v) => {
-                        let cdata = XmlCData::node(v.value, Some(element.clone()), context);
+                        let cdata = XmlCData::node(v.value, element_id, context);
                         element.borrow_mut().push_child(cdata);
                     }
                     parser::Contents::PI(v) => {
-                        let pi = XmlProcessingInstruction::node(v, Some(node.clone()), context);
+                        let pi = XmlProcessingInstruction::node(v, element_id, context);
                         element.borrow_mut().push_child(pi);
                     }
                     parser::Contents::Comment(v) => {
-                        let comment = XmlComment::node(v.value, Some(node.clone()), context);
+                        let comment = XmlComment::node(v.value, element_id, context);
                         element.borrow_mut().push_child(comment);
                     }
                 }
 
                 if let Some(tail) = cell.tail {
                     if !tail.is_empty() {
-                        let text = XmlText::node(tail, Some(node.clone()), context);
+                        let text = XmlText::node(tail, element_id, context);
                         element.borrow_mut().push_child(text);
                     }
                 }
             }
         }
 
+        let node: Rc<XmlItem> = Rc::new(element.clone().into());
         element.borrow().context.add_item(&node);
         Ok(node)
     }
@@ -2184,7 +2279,7 @@ pub struct XmlEntity {
     system_identifier: Option<String>,
     public_identifier: Option<String>,
     notation_name: Option<String>,
-    parent: Option<Rc<XmlItem>>,
+    parent_id: Option<usize>,
     context: Context,
 }
 
@@ -2202,6 +2297,16 @@ impl HasContext for XmlEntity {
     }
 }
 
+impl HasParent for XmlEntity {
+    fn parent_id(&self) -> Option<usize> {
+        self.parent_id
+    }
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>) {
+        self.parent_id = parent_id;
+    }
+}
+
 impl From<(&str, &str, &Context)> for XmlEntity {
     fn from(value: (&str, &str, &Context)) -> Self {
         let (name, value, context) = value;
@@ -2212,7 +2317,7 @@ impl From<(&str, &str, &Context)> for XmlEntity {
             system_identifier: None,
             public_identifier: None,
             notation_name: None,
-            parent: None,
+            parent_id: None,
             context,
         }
     }
@@ -2264,7 +2369,7 @@ impl fmt::Display for XmlEntity {
 impl XmlEntity {
     pub fn node(
         value: &parser::DeclarationGeneralEntity,
-        parent: Rc<XmlItem>,
+        parent_id: usize,
         context: &Context,
     ) -> Rc<XmlItem> {
         let entity = node(XmlEntity {
@@ -2273,10 +2378,9 @@ impl XmlEntity {
             system_identifier: None,
             public_identifier: None,
             notation_name: None,
-            parent: Some(parent),
+            parent_id: Some(parent_id),
             context: context.next(),
         });
-        let node = Rc::new(entity.clone().into());
 
         let (values, system_identifier, public_identifier, notation_name) = match &value.def {
             parser::DeclarationEntityDef::EntityValue(v) => {
@@ -2294,6 +2398,7 @@ impl XmlEntity {
         entity.borrow_mut().public_identifier = public_identifier;
         entity.borrow_mut().notation_name = notation_name;
 
+        let node = Rc::new(entity.clone().into());
         entity.borrow().context.add_item(&node);
         node
     }
@@ -2319,7 +2424,11 @@ impl XmlEntity {
     }
 
     pub fn parent(&self) -> Option<Rc<XmlItem>> {
-        self.parent.clone()
+        if let Some(id) = self.parent_id() {
+            self.context().node(id)
+        } else {
+            None
+        }
     }
 }
 
@@ -2677,6 +2786,26 @@ impl XmlItem {
         }
     }
 
+    fn set_parent_id(&self, parent_id: Option<usize>) {
+        match self {
+            XmlItem::Attribute(v) => v.borrow_mut().set_parent_id(parent_id),
+            XmlItem::CData(v) => v.borrow_mut().set_parent_id(parent_id),
+            XmlItem::CharReference(v) => v.borrow_mut().set_parent_id(parent_id),
+            XmlItem::Comment(v) => v.borrow_mut().set_parent_id(parent_id),
+            XmlItem::DeclarationAttList(_) => {}
+            XmlItem::Document(_) => {}
+            XmlItem::DocumentType(_) => {}
+            XmlItem::Element(v) => v.borrow_mut().set_parent_id(parent_id),
+            XmlItem::Entity(v) => v.borrow_mut().set_parent_id(parent_id),
+            XmlItem::Namespace(_) => {}
+            XmlItem::Notation(v) => v.borrow_mut().set_parent_id(parent_id),
+            XmlItem::PI(v) => v.borrow_mut().set_parent_id(parent_id),
+            XmlItem::Text(v) => v.borrow_mut().set_parent_id(parent_id),
+            XmlItem::Unexpanded(v) => v.borrow_mut().set_parent_id(parent_id),
+            XmlItem::Unparsed(v) => v.borrow().entity().borrow_mut().set_parent_id(parent_id),
+        }
+    }
+
     fn set_order_after(&self, id: usize) -> Option<usize> {
         match self {
             XmlItem::Attribute(v) => v.borrow().set_order_after(id),
@@ -2786,7 +2915,7 @@ pub struct XmlNotation {
     system_identifier: Option<String>,
     public_identifier: Option<String>,
     declaration_base_uri: String,
-    parent: Rc<XmlItem>,
+    parent_id: usize,
     context: Context,
 }
 
@@ -2801,6 +2930,16 @@ impl HasContext for XmlNotation {
 
     fn init_order_recursive(&self) {
         self.init_order();
+    }
+}
+
+impl HasParent for XmlNotation {
+    fn parent_id(&self) -> Option<usize> {
+        Some(self.parent_id)
+    }
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>) {
+        self.parent_id = parent_id.unwrap_or_default();
     }
 }
 
@@ -2854,7 +2993,7 @@ impl fmt::Display for XmlNotation {
 impl XmlNotation {
     pub fn node(
         value: &parser::DeclarationNotation,
-        parent: Rc<XmlItem>,
+        parent_id: usize,
         context: &Context,
     ) -> Rc<XmlItem> {
         let name = value.name.to_string();
@@ -2874,17 +3013,17 @@ impl XmlNotation {
             system_identifier,
             public_identifier,
             declaration_base_uri,
-            parent,
+            parent_id,
             context: context.next(),
         });
-        let node = Rc::new(notation.clone().into());
 
+        let node = Rc::new(notation.clone().into());
         notation.borrow().context.add_item(&node);
         node
     }
 
     pub fn parent(&self) -> Rc<XmlItem> {
-        self.parent.clone()
+        self.context().node(self.parent_id).unwrap()
     }
 }
 
@@ -2895,7 +3034,7 @@ pub struct XmlProcessingInstruction {
     target: String,
     content: Option<String>,
     base_uri: String,
-    parent: Option<Rc<XmlItem>>,
+    parent_id: Option<usize>,
     context: Context,
 }
 
@@ -2910,6 +3049,16 @@ impl HasContext for XmlProcessingInstruction {
 
     fn init_order_recursive(&self) {
         self.init_order();
+    }
+}
+
+impl HasParent for XmlProcessingInstruction {
+    fn parent_id(&self) -> Option<usize> {
+        self.parent_id
+    }
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>) {
+        self.parent_id = parent_id;
     }
 }
 
@@ -2928,10 +3077,6 @@ impl ProcessingInstruction for XmlProcessingInstruction {
 
     fn notation(&self) -> Value<Option<XmlNode<XmlNotation>>> {
         notation(self.context(), self.target())
-    }
-
-    fn parent(&self) -> error::Result<Rc<XmlItem>> {
-        self.parent.clone().ok_or(error::Error::IsolatedNode)
     }
 }
 
@@ -2955,7 +3100,7 @@ impl fmt::Display for XmlProcessingInstruction {
 impl XmlProcessingInstruction {
     pub fn node(
         value: &parser::PI<'_>,
-        parent: Option<Rc<XmlItem>>,
+        parent_id: Option<usize>,
         context: &Context,
     ) -> Rc<XmlItem> {
         let target = value.target.to_string();
@@ -2968,11 +3113,11 @@ impl XmlProcessingInstruction {
             target,
             content,
             base_uri,
-            parent,
+            parent_id,
             context: context.next(),
         });
-        let node = Rc::new(pi.clone().into());
 
+        let node = Rc::new(pi.clone().into());
         pi.borrow().context.add_item(&node);
         node
     }
@@ -3002,7 +3147,7 @@ impl XmlProcessingInstruction {
 #[derive(Clone, Debug)]
 pub struct XmlText {
     text: String,
-    parent: Option<Rc<XmlItem>>,
+    parent_id: Option<usize>,
     context: Context,
 }
 
@@ -3020,6 +3165,16 @@ impl HasContext for XmlText {
     }
 }
 
+impl HasParent for XmlText {
+    fn parent_id(&self) -> Option<usize> {
+        self.parent_id
+    }
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>) {
+        self.parent_id = parent_id;
+    }
+}
+
 impl Character for XmlText {
     fn character_code(&self) -> &str {
         self.text.as_str()
@@ -3028,13 +3183,6 @@ impl Character for XmlText {
     fn element_content_whitespace(&self) -> Value<Option<bool>> {
         // TODO: White Space Handling
         Value::V(None)
-    }
-
-    fn parent(&self) -> error::Result<XmlNode<XmlElement>> {
-        self.parent
-            .clone()
-            .and_then(|v| v.as_element())
-            .ok_or(error::Error::IsolatedNode)
     }
 }
 
@@ -3051,16 +3199,16 @@ impl fmt::Display for XmlText {
 }
 
 impl XmlText {
-    pub fn node(value: &str, parent: Option<Rc<XmlItem>>, context: &Context) -> Rc<XmlItem> {
+    pub fn node(value: &str, parent_id: Option<usize>, context: &Context) -> Rc<XmlItem> {
         let text = value.to_string();
 
         let text = node(XmlText {
             text,
-            parent,
+            parent_id,
             context: context.next(),
         });
-        let node = Rc::new(text.clone().into());
 
+        let node = Rc::new(text.clone().into());
         text.borrow().context.add_item(&node);
         node
     }
@@ -3091,10 +3239,6 @@ impl XmlText {
         self.text.chars().count()
     }
 
-    pub fn parent_item(&self) -> Option<Rc<XmlItem>> {
-        self.parent.clone()
-    }
-
     pub fn split_at(&mut self, offset: usize) -> XmlNode<Self> {
         let mut chars = self.text.chars().collect::<Vec<char>>();
         let at = if offset < chars.len() {
@@ -3107,7 +3251,7 @@ impl XmlText {
         self.text = chars.iter().collect();
         let text2 = chars2.iter().collect::<String>();
 
-        let node = XmlText::node(text2.as_str(), self.parent.clone(), self.context());
+        let node = XmlText::node(text2.as_str(), self.parent_id(), self.context());
         // TODO: insert to parent.
         node.as_text().unwrap()
     }
@@ -3130,7 +3274,7 @@ pub struct XmlUnexpandedEntityReference {
     system_identifier: Option<String>,
     public_identifier: Option<String>,
     declaration_base_uri: String,
-    parent: Option<Rc<XmlItem>>,
+    parent_id: Option<usize>,
     context: Context,
 }
 
@@ -3145,6 +3289,16 @@ impl HasContext for XmlUnexpandedEntityReference {
 
     fn init_order_recursive(&self) {
         self.init_order();
+    }
+}
+
+impl HasParent for XmlUnexpandedEntityReference {
+    fn parent_id(&self) -> Option<usize> {
+        self.parent_id
+    }
+
+    fn set_parent_id(&mut self, parent_id: Option<usize>) {
+        self.parent_id = parent_id;
     }
 }
 
@@ -3164,13 +3318,6 @@ impl UnexpandedEntityReference for XmlUnexpandedEntityReference {
     fn declaration_base_uri(&self) -> &str {
         self.declaration_base_uri.as_str()
     }
-
-    fn parent(&self) -> error::Result<XmlNode<XmlElement>> {
-        self.parent
-            .clone()
-            .and_then(|v| v.as_element())
-            .ok_or(error::Error::IsolatedNode)
-    }
 }
 
 impl PartialEq<XmlUnexpandedEntityReference> for XmlUnexpandedEntityReference {
@@ -3188,7 +3335,7 @@ impl fmt::Display for XmlUnexpandedEntityReference {
 impl XmlUnexpandedEntityReference {
     pub fn node(
         entity: XmlNode<XmlEntity>,
-        parent: Option<Rc<XmlItem>>,
+        parent_id: Option<usize>,
         context: &Context,
     ) -> Rc<XmlItem> {
         let name = entity.borrow().name().to_string();
@@ -3205,11 +3352,11 @@ impl XmlUnexpandedEntityReference {
             system_identifier,
             public_identifier,
             declaration_base_uri,
-            parent,
+            parent_id,
             context: context.next(),
         });
-        let node = Rc::new(entity.clone().into());
 
+        let node = Rc::new(entity.clone().into());
         entity.borrow().context.add_item(&node);
         node
     }
@@ -3219,7 +3366,11 @@ impl XmlUnexpandedEntityReference {
     }
 
     pub fn parent_item(&self) -> Option<Rc<XmlItem>> {
-        self.parent.clone()
+        if let Some(id) = self.parent_id() {
+            self.context().node(id)
+        } else {
+            None
+        }
     }
 
     pub fn value(&self) -> error::Result<String> {
@@ -3569,6 +3720,10 @@ impl Context {
             ordering: self.ordering.clone(),
             id_map: self.id_map.clone(),
         }
+    }
+
+    fn node(&self, id: usize) -> Option<Rc<XmlItem>> {
+        self.id_map.borrow().get(&id).and_then(|v| v.upgrade())
     }
 
     fn zero(&self) -> Context {
