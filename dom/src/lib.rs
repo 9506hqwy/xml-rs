@@ -1,6 +1,5 @@
 pub mod error;
 
-use std::any::Any;
 use std::convert;
 use std::fmt;
 use std::iter::Iterator;
@@ -1343,13 +1342,14 @@ impl Iterator for XmlNodeIter {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
 pub struct XmlNamedNodeMap<T>
 where
     T: Node + Clone,
 {
-    nodes: Vec<(String, T)>,
-    parent: XmlNode,
+    node: XmlNode,
+    get: Box<dyn Fn(&XmlNode) -> Vec<(String, T)>>,
+    add: Box<dyn FnMut(&mut XmlNode, T) -> error::Result<Option<T>>>,
+    remove: Box<dyn FnMut(&mut XmlNode, &str) -> error::Result<T>>,
 }
 
 impl<T> NamedNodeMap<T> for XmlNamedNodeMap<T>
@@ -1357,101 +1357,71 @@ where
     T: Node + Clone,
 {
     fn get_named_item(&self, name: &str) -> Option<T> {
-        let node = self.nodes.iter().find(|v| v.0 == name).map(|v| &v.1);
+        let nodes = (self.get)(&self.node);
+        let node = nodes.iter().find(|v| v.0 == name).map(|v| &v.1);
         node.cloned()
     }
 
     fn item(&self, index: usize) -> Option<T> {
-        let node = self.nodes.get(index).map(|v| &v.1);
+        let nodes = (self.get)(&self.node);
+        let node = nodes.get(index).map(|v| &v.1);
         node.cloned()
     }
 
     fn length(&self) -> usize {
-        self.nodes.len()
+        let nodes = (self.get)(&self.node);
+        nodes.len()
     }
 }
 
 impl<T> NamedNodeMapMut<T> for XmlNamedNodeMap<T>
 where
-    T: Node + Clone + Any,
+    T: Node + Clone,
 {
     fn set_named_item(&mut self, arg: T) -> error::Result<Option<T>> {
         let name = arg.node_name();
-        match self.remove_named_item(name.as_str()) {
-            Ok(v) => {
-                self.nodes.push((name, arg.clone()));
-                self.add_item_to_parent(arg)?;
-                Ok(Some(v))
-            }
-            _ => {
-                self.nodes.push((name, arg.clone()));
-                self.add_item_to_parent(arg)?;
-                Ok(None)
-            }
+        if let Ok(v) = self.remove_named_item(name.as_str()) {
+            (self.add)(&mut self.node, arg)?; // FIXME: revert on failed.
+            Ok(Some(v))
+        } else {
+            (self.add)(&mut self.node, arg)?;
+            Ok(None)
         }
     }
 
     fn remove_named_item(&mut self, name: &str) -> error::Result<T> {
-        if let Some(v) = self.nodes.iter().find(|v| v.0 == name).cloned() {
-            self.nodes.retain(|v| v.0 != name);
-            self.remove_item_from_parent(v.1.clone())?;
-            Ok(v.1)
-        } else {
-            Err(error::DomException::NotFoundErr)?
-        }
+        (self.remove)(&mut self.node, name)
+    }
+}
+
+impl<T> PartialEq<XmlNamedNodeMap<T>> for XmlNamedNodeMap<T>
+where
+    T: Node + Clone + PartialEq,
+{
+    fn eq(&self, other: &XmlNamedNodeMap<T>) -> bool {
+        let s = (self.get)(&self.node);
+        let o = (other.get)(&other.node);
+        s.eq(&o)
+    }
+}
+
+impl<T> fmt::Debug for XmlNamedNodeMap<T>
+where
+    T: Node + Clone + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        let s = (self.get)(&self.node);
+        s.fmt(f)
     }
 }
 
 impl<T> XmlNamedNodeMap<T>
 where
-    T: Node + Clone + Any,
+    T: Node + Clone,
 {
-    pub fn empty(parent: XmlNode) -> Self {
-        XmlNamedNodeMap {
-            nodes: vec![],
-            parent,
-        }
-    }
-
     pub fn iter(&self) -> XmlNamedNodeIter<T> {
-        XmlNamedNodeIter {
-            nodes: self.clone(),
-            index: 0,
-        }
-    }
-
-    fn add_item_to_parent(&mut self, arg: T) -> error::Result<()> {
-        let obj = &arg as &dyn Any;
-
-        match &mut self.parent {
-            XmlNode::Element(e) => {
-                if let Some(v) = obj.downcast_ref::<XmlAttr>() {
-                    e.set_attribute_node(v.clone())?;
-                    Ok(())
-                } else {
-                    unreachable!()
-                }
-            }
-            XmlNode::DocumentType(_) => Err(error::DomException::NoModificationAllowedErr)?,
-            _ => unreachable!(),
-        }
-    }
-
-    fn remove_item_from_parent(&mut self, arg: T) -> error::Result<()> {
-        let obj = &arg as &dyn Any;
-
-        match &mut self.parent {
-            XmlNode::Element(e) => {
-                if let Some(v) = obj.downcast_ref::<XmlAttr>() {
-                    e.remove_attribute_node(v.clone())?;
-                    Ok(())
-                } else {
-                    unreachable!()
-                }
-            }
-            XmlNode::DocumentType(_) => Err(error::DomException::NoModificationAllowedErr)?,
-            _ => unreachable!(),
-        }
+        let nodes = (self.get)(&self.node);
+        XmlNamedNodeIter { nodes, index: 0 }
     }
 }
 
@@ -1461,7 +1431,7 @@ pub struct XmlNamedNodeIter<T>
 where
     T: Node + Clone,
 {
-    nodes: XmlNamedNodeMap<T>,
+    nodes: Vec<(String, T)>,
     index: usize,
 }
 
@@ -1472,9 +1442,9 @@ where
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let item = self.nodes.item(self.index);
+        let item = self.nodes.get(self.index);
         self.index += 1;
-        item
+        item.cloned().map(|v| v.1)
     }
 }
 
@@ -1804,18 +1774,38 @@ impl Node for XmlElement {
     }
 
     fn attributes(&self) -> Option<XmlNamedNodeMap<XmlAttr>> {
-        let nodes = self
-            .element
-            .borrow()
-            .attributes()
-            .iter()
-            .map(XmlAttr::from)
-            .map(|v| (v.name(), v))
-            .collect();
+        fn get(node: &XmlNode) -> Vec<(String, XmlAttr)> {
+            node.as_element()
+                .unwrap()
+                .element
+                .borrow()
+                .attributes()
+                .iter()
+                .map(XmlAttr::from)
+                .map(|v| (v.name(), v))
+                .collect()
+        }
+
+        fn add(node: &mut XmlNode, attr: XmlAttr) -> error::Result<Option<XmlAttr>> {
+            let mut element = node.as_element().unwrap();
+            element.set_attribute_node(attr)
+        }
+
+        fn remove(node: &mut XmlNode, name: &str) -> error::Result<XmlAttr> {
+            let mut element = node.as_element().unwrap();
+            if let Some(attr) = element.get_attribute_node(name) {
+                element.remove_attribute(name)?;
+                Ok(attr)
+            } else {
+                Err(error::DomException::NotFoundErr)?
+            }
+        }
 
         Some(XmlNamedNodeMap {
-            nodes,
-            parent: self.as_node(),
+            node: self.as_node(),
+            get: Box::new(get),
+            add: Box::new(add),
+            remove: Box::new(remove),
         })
     }
 
@@ -2569,36 +2559,62 @@ impl DocumentType for XmlDocumentType {
     }
 
     fn entities(&self) -> XmlNamedNodeMap<XmlEntity> {
-        let nodes = self
-            .declaration
-            .borrow()
-            .entities()
-            .iter()
-            .cloned()
-            .map(XmlEntity::from)
-            .map(|v| (v.node_name(), v))
-            .collect();
+        fn get(node: &XmlNode) -> Vec<(String, XmlEntity)> {
+            node.as_doctype()
+                .unwrap()
+                .declaration
+                .borrow()
+                .entities()
+                .iter()
+                .cloned()
+                .map(XmlEntity::from)
+                .map(|v| (v.node_name(), v))
+                .collect()
+        }
+
+        fn add(_: &mut XmlNode, _: XmlEntity) -> error::Result<Option<XmlEntity>> {
+            Err(error::DomException::NoModificationAllowedErr)?
+        }
+
+        fn remove(_: &mut XmlNode, _: &str) -> error::Result<XmlEntity> {
+            Err(error::DomException::NoModificationAllowedErr)?
+        }
 
         XmlNamedNodeMap {
-            nodes,
-            parent: self.as_node(),
+            node: self.as_node(),
+            get: Box::new(get),
+            add: Box::new(add),
+            remove: Box::new(remove),
         }
     }
 
     fn notations(&self) -> XmlNamedNodeMap<XmlNotation> {
-        let nodes = self
-            .declaration
-            .borrow()
-            .notations()
-            .iter()
-            .cloned()
-            .map(XmlNotation::from)
-            .map(|v| (v.node_name(), v))
-            .collect();
+        fn get(node: &XmlNode) -> Vec<(String, XmlNotation)> {
+            node.as_doctype()
+                .unwrap()
+                .declaration
+                .borrow()
+                .notations()
+                .iter()
+                .cloned()
+                .map(XmlNotation::from)
+                .map(|v| (v.node_name(), v))
+                .collect()
+        }
+
+        fn add(_: &mut XmlNode, _: XmlNotation) -> error::Result<Option<XmlNotation>> {
+            Err(error::DomException::NoModificationAllowedErr)?
+        }
+
+        fn remove(_: &mut XmlNode, _: &str) -> error::Result<XmlNotation> {
+            Err(error::DomException::NoModificationAllowedErr)?
+        }
 
         XmlNamedNodeMap {
-            nodes,
-            parent: self.as_node(),
+            node: self.as_node(),
+            get: Box::new(get),
+            add: Box::new(add),
+            remove: Box::new(remove),
         }
     }
 }
@@ -4348,8 +4364,7 @@ mod tests {
         assert_eq!(2, attrs.length());
 
         root.set_attribute("c", "3").unwrap();
-        // FIXME:
-        //assert_eq!(3, attrs.length());
+        assert_eq!(3, attrs.length());
     }
 
     #[test]
@@ -4377,8 +4392,7 @@ mod tests {
         assert_eq!(None, d);
 
         let d = root.get_attribute_node("d").unwrap();
-        // FIXME:
-        //assert_eq!(d, attrs.get_named_item("d").unwrap());
+        assert_eq!(d, attrs.get_named_item("d").unwrap());
         assert_eq!(d, root.get_attribute_node("d").unwrap());
     }
 
@@ -4442,8 +4456,7 @@ mod tests {
         assert_eq!(0, a.attribute.borrow().order());
 
         root.remove_attribute("b").unwrap();
-        // FIXME:
-        //assert_eq!(None, attrs.get_named_item("b"));
+        assert_eq!(None, attrs.get_named_item("b"));
         assert_eq!(None, root.get_attribute_node("b"));
     }
 
@@ -4457,17 +4470,6 @@ mod tests {
         let err = attrs.remove_named_item("c").err().unwrap();
         assert_eq!("<root a=\"1\" b=\"2\" />", format!("{}", doc));
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
-    }
-
-    #[test]
-    fn test_named_noed_map_impl() {
-        let (_, doc) = XmlDocument::from_raw("<root />").unwrap();
-
-        // XmlNamedNodeMap
-        let map = XmlNamedNodeMap::<XmlAttr>::empty(doc.as_node());
-        assert_eq!(0, map.length());
-        let iter = map.iter();
-        assert_eq!(0, iter.count());
     }
 
     #[test]
