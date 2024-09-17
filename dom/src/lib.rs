@@ -2094,7 +2094,11 @@ impl CharacterData for XmlText {
     }
 
     fn substring_data(&self, offset: usize, count: usize) -> error::Result<String> {
-        Ok(self.data.borrow().substring(offset..(offset + count)))
+        if self.length() < offset {
+            Err(error::DomException::IndexSizeErr)?
+        } else {
+            Ok(self.data.borrow().substring(offset..(offset + count)))
+        }
     }
 }
 
@@ -2239,7 +2243,11 @@ impl CharacterData for XmlComment {
     }
 
     fn substring_data(&self, offset: usize, count: usize) -> error::Result<String> {
-        Ok(self.data.borrow().substring(offset..(offset + count)))
+        if self.length() < offset {
+            Err(error::DomException::IndexSizeErr)?
+        } else {
+            Ok(self.data.borrow().substring(offset..(offset + count)))
+        }
     }
 }
 
@@ -2413,7 +2421,11 @@ impl CharacterData for XmlCDataSection {
     }
 
     fn substring_data(&self, offset: usize, count: usize) -> error::Result<String> {
-        Ok(self.data.borrow().substring(offset..(offset + count)))
+        if self.length() < offset {
+            Err(error::DomException::IndexSizeErr)?
+        } else {
+            Ok(self.data.borrow().substring(offset..(offset + count)))
+        }
     }
 }
 
@@ -3391,13 +3403,12 @@ impl CharacterData for XmlResolvedText {
     }
 
     fn substring_data(&self, offset: usize, count: usize) -> error::Result<String> {
-        Ok(self
-            .data()
-            .unwrap_or_default()
-            .chars()
-            .skip(offset)
-            .take(count)
-            .collect())
+        let data = self.data().unwrap_or_default();
+        if data.chars().count() < offset {
+            Err(error::DomException::IndexSizeErr)?
+        } else {
+            Ok(data.chars().skip(offset).take(count).collect())
+        }
     }
 }
 
@@ -5903,9 +5914,8 @@ mod tests {
         let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterData
-        // FIXME:
-        //let err = text.substring_data(5, 1).err().unwrap();
-        //assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+        let err = text.substring_data(5, 1).err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
     }
 
     #[test]
@@ -6210,9 +6220,8 @@ mod tests {
         let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterData
-        // FIXME:
-        //let err = comment.substring_data(10, 1).err().unwrap();
-        //assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+        let err = comment.substring_data(10, 1).err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
     }
 
     #[test]
@@ -6561,9 +6570,8 @@ mod tests {
             .unwrap();
 
         // CharacterData
-        // FIXME:
-        //let err = cdata.substring_data(5, 1).err().unwrap();
-        //assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+        let err = cdata.substring_data(5, 1).err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
     }
 
     #[test]
@@ -6650,7 +6658,7 @@ mod tests {
     fn test_cdata_character_data_mut_delete_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = root
+        let mut cdata = root
             .child_nodes()
             .item(0)
             .unwrap()
@@ -6658,9 +6666,8 @@ mod tests {
             .unwrap();
 
         // CharacterDataMut
-        // FIXME:
-        //let err = cdata.delete_data(1, 2).err().unwrap();
-        //assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+        let err = cdata.delete_data(5, 1).err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
     }
 
     #[test]
@@ -6683,7 +6690,7 @@ mod tests {
     fn test_cdata_character_data_mut_replace_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = root
+        let mut cdata = root
             .child_nodes()
             .item(0)
             .unwrap()
@@ -6691,9 +6698,8 @@ mod tests {
             .unwrap();
 
         // CharacterDataMut
-        // FIXME*
-        //let err = cdata.replace_data(1, 3, "いう").err().unwrap();
-        //assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
+        let err = cdata.replace_data(5, 1, "いう").err().unwrap();
+        assert_eq!(error::Error::Dom(error::DomException::IndexSizeErr), err);
     }
 
     #[test]
