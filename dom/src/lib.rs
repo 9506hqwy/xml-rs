@@ -4346,7 +4346,7 @@ mod tests {
     }
 
     #[test]
-    fn test_named_noed_map_named_node_map() {
+    fn test_named_node_map_named_node_map() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
         let mut root = doc.root_element().unwrap();
         let attrs = root.attributes().unwrap();
@@ -4368,7 +4368,7 @@ mod tests {
     }
 
     #[test]
-    fn test_named_noed_map_named_node_map_mut_set_named_item_ok() {
+    fn test_named_node_map_named_node_map_mut_set_named_item_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
         let mut root = doc.root_element().unwrap();
         let mut attrs = root.attributes().unwrap();
@@ -4397,7 +4397,7 @@ mod tests {
     }
 
     #[test]
-    fn test_named_noed_map_named_node_map_mut_set_named_item_err3() {
+    fn test_named_node_map_named_node_map_mut_set_named_item_err3() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
         let root = doc.root_element().unwrap();
         let mut attrs = root.attributes().unwrap();
@@ -4416,7 +4416,7 @@ mod tests {
     }
 
     #[test]
-    fn test_named_noed_map_named_node_map_mut_set_named_item_err9() {
+    fn test_named_node_map_named_node_map_mut_set_named_item_err9() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'><e c='3' /></root>").unwrap();
         let root = doc.root_element().unwrap();
         let mut attrs = root.attributes().unwrap();
@@ -4442,7 +4442,7 @@ mod tests {
     }
 
     #[test]
-    fn test_named_noed_map_named_node_map_mut_remove_named_item_ok() {
+    fn test_named_node_map_named_node_map_mut_remove_named_item_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
         let mut root = doc.root_element().unwrap();
         let mut attrs = root.attributes().unwrap();
@@ -4461,7 +4461,7 @@ mod tests {
     }
 
     #[test]
-    fn test_named_noed_map_named_node_map_mut_remove_named_item_err7() {
+    fn test_named_node_map_named_node_map_mut_remove_named_item_err7() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
         let root = doc.root_element().unwrap();
         let mut attrs = root.attributes().unwrap();
@@ -4473,7 +4473,7 @@ mod tests {
     }
 
     #[test]
-    fn test_named_noed_map_iter() {
+    fn test_named_node_map_iter() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
         let attrs = doc.root_element().unwrap().attributes().unwrap();
 
