@@ -15,7 +15,6 @@ use xml_info::{
 };
 
 // TODO: re-implement DocumentFragment
-// TODO: re-implement ResolvedText
 
 pub type ExpandedName = (String, Option<String>, Option<String>);
 
@@ -234,8 +233,8 @@ pub trait ElementMut: Element + NodeMut {
 
 pub trait Text: CharacterData {}
 
-pub trait TextMut: CharacterDataMut {
-    fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText>;
+pub trait TextMut: CharacterDataMut + Sized {
+    fn split_text(&mut self, offset: usize) -> error::Result<Self>;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -311,7 +310,7 @@ pub enum XmlNode {
     DocumentFragment(XmlDocumentFragment),
     Notation(XmlNotation),
     Namespace(XmlNamespace),
-    ResolvedText(XmlResolvedText),
+    ExpandedText(XmlExpandedText),
 }
 
 impl Node for XmlNode {
@@ -330,7 +329,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.node_name(),
             XmlNode::Notation(v) => v.node_name(),
             XmlNode::Namespace(v) => v.node_name(),
-            XmlNode::ResolvedText(v) => v.node_name(),
+            XmlNode::ExpandedText(v) => v.node_name(),
         }
     }
 
@@ -349,7 +348,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.node_value(),
             XmlNode::Notation(v) => v.node_value(),
             XmlNode::Namespace(v) => v.node_value(),
-            XmlNode::ResolvedText(v) => v.node_value(),
+            XmlNode::ExpandedText(v) => v.node_value(),
         }
     }
 
@@ -368,7 +367,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.node_type(),
             XmlNode::Notation(v) => v.node_type(),
             XmlNode::Namespace(v) => v.node_type(),
-            XmlNode::ResolvedText(v) => v.node_type(),
+            XmlNode::ExpandedText(v) => v.node_type(),
         }
     }
 
@@ -387,7 +386,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.parent_node(),
             XmlNode::Notation(v) => v.parent_node(),
             XmlNode::Namespace(v) => v.parent_node(),
-            XmlNode::ResolvedText(v) => v.parent_node(),
+            XmlNode::ExpandedText(v) => v.parent_node(),
         }
     }
 
@@ -406,7 +405,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.child_nodes(),
             XmlNode::Notation(v) => v.child_nodes(),
             XmlNode::Namespace(v) => v.child_nodes(),
-            XmlNode::ResolvedText(v) => v.child_nodes(),
+            XmlNode::ExpandedText(v) => v.child_nodes(),
         }
     }
 
@@ -425,7 +424,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.first_child(),
             XmlNode::Notation(v) => v.first_child(),
             XmlNode::Namespace(v) => v.first_child(),
-            XmlNode::ResolvedText(v) => v.first_child(),
+            XmlNode::ExpandedText(v) => v.first_child(),
         }
     }
 
@@ -444,7 +443,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.last_child(),
             XmlNode::Notation(v) => v.last_child(),
             XmlNode::Namespace(v) => v.last_child(),
-            XmlNode::ResolvedText(v) => v.last_child(),
+            XmlNode::ExpandedText(v) => v.last_child(),
         }
     }
 
@@ -463,7 +462,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.previous_sibling(),
             XmlNode::Notation(v) => v.previous_sibling(),
             XmlNode::Namespace(v) => v.previous_sibling(),
-            XmlNode::ResolvedText(v) => v.previous_sibling(),
+            XmlNode::ExpandedText(v) => v.previous_sibling(),
         }
     }
 
@@ -482,7 +481,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.next_sibling(),
             XmlNode::Notation(v) => v.next_sibling(),
             XmlNode::Namespace(v) => v.next_sibling(),
-            XmlNode::ResolvedText(v) => v.next_sibling(),
+            XmlNode::ExpandedText(v) => v.next_sibling(),
         }
     }
 
@@ -501,7 +500,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.attributes(),
             XmlNode::Notation(v) => v.attributes(),
             XmlNode::Namespace(v) => v.attributes(),
-            XmlNode::ResolvedText(v) => v.attributes(),
+            XmlNode::ExpandedText(v) => v.attributes(),
         }
     }
 
@@ -520,7 +519,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.owner_document(),
             XmlNode::Notation(v) => v.owner_document(),
             XmlNode::Namespace(v) => v.owner_document(),
-            XmlNode::ResolvedText(v) => v.owner_document(),
+            XmlNode::ExpandedText(v) => v.owner_document(),
         }
     }
 
@@ -539,7 +538,7 @@ impl Node for XmlNode {
             XmlNode::DocumentFragment(v) => v.has_child(),
             XmlNode::Notation(v) => v.has_child(),
             XmlNode::Namespace(v) => v.has_child(),
-            XmlNode::ResolvedText(v) => v.has_child(),
+            XmlNode::ExpandedText(v) => v.has_child(),
         }
     }
 }
@@ -560,7 +559,7 @@ impl AsExpandedName for XmlNode {
             XmlNode::DocumentFragment(_) => Ok(None),
             XmlNode::Notation(_) => Ok(None),
             XmlNode::Namespace(v) => v.as_expanded_name(),
-            XmlNode::ResolvedText(_) => Ok(None),
+            XmlNode::ExpandedText(_) => Ok(None),
         }
     }
 }
@@ -581,7 +580,7 @@ impl AsStringValue for XmlNode {
             XmlNode::DocumentFragment(v) => v.as_string_value(),
             XmlNode::Notation(_) => Ok("".to_string()),
             XmlNode::Namespace(v) => v.as_string_value(),
-            XmlNode::ResolvedText(v) => v.as_string_value(),
+            XmlNode::ExpandedText(v) => v.as_string_value(),
         }
     }
 }
@@ -601,7 +600,7 @@ impl XmlNode {
             XmlNode::Namespace(v) => v.namespace.borrow().id(),
             XmlNode::Notation(v) => v.notation.borrow().id(),
             XmlNode::PI(v) => v.pi.borrow().id(),
-            XmlNode::ResolvedText(v) => v.data[0].id(),
+            XmlNode::ExpandedText(v) => v.data[0].id(),
             XmlNode::Text(v) => v.data.borrow().id(),
         }
     }
@@ -620,7 +619,7 @@ impl XmlNode {
             XmlNode::Namespace(v) => v.namespace.borrow().order(),
             XmlNode::Notation(_) => 0,
             XmlNode::PI(_) => 0,
-            XmlNode::ResolvedText(v) => v.data[0].order(),
+            XmlNode::ExpandedText(v) => v.data[0].order(),
             XmlNode::Text(v) => v.data.borrow().order(),
         }
     }
@@ -705,7 +704,7 @@ impl convert::TryFrom<XmlNode> for Rc<info::XmlItem> {
             XmlNode::Namespace(v) => Rc::new(v.namespace.into()),
             XmlNode::Notation(v) => Rc::new(v.notation.into()),
             XmlNode::PI(v) => Rc::new(v.pi.into()),
-            XmlNode::ResolvedText(_) => unimplemented!("multi text node."),
+            XmlNode::ExpandedText(_) => unimplemented!("multi text node."),
             XmlNode::Text(v) => Rc::new(v.data.into()),
         };
         Ok(v)
@@ -728,7 +727,7 @@ impl fmt::Display for XmlNode {
             XmlNode::DocumentFragment(v) => v.fmt(f),
             XmlNode::Notation(v) => v.fmt(f),
             XmlNode::Namespace(v) => v.fmt(f),
-            XmlNode::ResolvedText(v) => v.fmt(f),
+            XmlNode::ExpandedText(v) => v.fmt(f),
         }
     }
 }
@@ -790,8 +789,8 @@ impl XmlNode {
         }
     }
 
-    pub fn as_resolved_text(&self) -> Option<XmlResolvedText> {
-        if let XmlNode::ResolvedText(v) = self {
+    pub fn as_expanded_text(&self) -> Option<XmlExpandedText> {
+        if let XmlNode::ExpandedText(v) = self {
             Some(v.clone())
         } else {
             None
@@ -813,7 +812,7 @@ impl XmlNode {
             XmlNode::DocumentFragment(v) => v.children(),
             XmlNode::Notation(_) => Vec::new(),
             XmlNode::Namespace(_) => Vec::new(),
-            XmlNode::ResolvedText(_) => Vec::new(),
+            XmlNode::ExpandedText(_) => Vec::new(),
         }
     }
 }
@@ -1235,6 +1234,17 @@ impl XmlDocument {
     pub fn from_raw(value: &str) -> error::Result<(&str, Self)> {
         let (rest, tree) = xml_parser::document(value)?;
         let document = info::XmlDocument::new(&tree)?;
+        let dom = XmlDocument::from(document);
+        Ok((rest, dom))
+    }
+
+    pub fn from_raw_with_context(value: &str, context: Context) -> error::Result<(&str, Self)> {
+        let (rest, tree) = xml_parser::document(value)?;
+        let document = info::XmlDocument::new(&tree)?;
+        document
+            .borrow_mut()
+            .context_mut()
+            .set_text_expanded(context.text_expanded);
         let dom = XmlDocument::from(document);
         Ok((rest, dom))
     }
@@ -1912,7 +1922,7 @@ impl AsStringValue for XmlElement {
                 XmlNode::Namespace(_) => {}
                 XmlNode::Notation(_) => {}
                 XmlNode::PI(_) => {}
-                XmlNode::ResolvedText(v) => s.push_str(&v.as_string_value()?),
+                XmlNode::ExpandedText(v) => s.push_str(&v.as_string_value()?),
                 XmlNode::Text(v) => s.push_str(&v.as_string_value()?),
             }
         }
@@ -1922,31 +1932,39 @@ impl AsStringValue for XmlElement {
 
 impl HasChild for XmlElement {
     fn children(&self) -> Vec<XmlNode> {
+        let text_expanded = self
+            .owner_document()
+            .unwrap()
+            .document
+            .borrow()
+            .context()
+            .text_expanded();
+
         let mut children = vec![];
 
-        let mut text: Option<XmlResolvedText> = None;
+        let mut text: Option<XmlExpandedText> = None;
         for child in self.element.borrow().children().iter() {
             let child = XmlNode::from(child);
             match child {
-                XmlNode::CData(v) => {
+                XmlNode::CData(v) if text_expanded => {
                     if let Some(t) = text.as_mut() {
                         t.push_cdata(v);
                     } else {
-                        text = Some(XmlResolvedText::from(v));
+                        text = Some(XmlExpandedText::from(v));
                     }
                 }
-                XmlNode::EntityReference(v) => {
+                XmlNode::EntityReference(v) if text_expanded => {
                     if let Some(t) = text.as_mut() {
                         t.push_reference(v);
                     } else {
-                        text = Some(XmlResolvedText::from(v));
+                        text = Some(XmlExpandedText::from(v));
                     }
                 }
-                XmlNode::Text(v) => {
+                XmlNode::Text(v) if text_expanded => {
                     if let Some(t) = text.as_mut() {
                         t.push_text(v);
                     } else {
-                        text = Some(XmlResolvedText::from(v));
+                        text = Some(XmlExpandedText::from(v));
                     }
                 }
                 _ => {
@@ -2029,7 +2047,7 @@ pub struct XmlText {
 impl Text for XmlText {}
 
 impl TextMut for XmlText {
-    fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
+    fn split_text(&mut self, offset: usize) -> error::Result<XmlText> {
         if self.length() < offset {
             return Err(error::DomException::IndexSizeErr)?;
         }
@@ -2055,7 +2073,7 @@ impl TextMut for XmlText {
                         }
                     }
 
-                    Ok(XmlResolvedText::from(XmlText::from(data2)))
+                    Ok(XmlText::from(data2))
                 }
                 info::XmlItem::Element(v) => {
                     let data2 = self.data.borrow_mut().split_at(offset);
@@ -2075,7 +2093,7 @@ impl TextMut for XmlText {
                         }
                     }
 
-                    Ok(XmlResolvedText::from(XmlText::from(data2)))
+                    Ok(XmlText::from(data2))
                 }
                 _ => Err(error::DomException::HierarchyRequestErr)?,
             },
@@ -2383,7 +2401,7 @@ impl CDataSection for XmlCDataSection {}
 impl Text for XmlCDataSection {}
 
 impl TextMut for XmlCDataSection {
-    fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
+    fn split_text(&mut self, offset: usize) -> error::Result<XmlCDataSection> {
         if self.length() < offset {
             return Err(error::DomException::IndexSizeErr)?;
         }
@@ -2407,7 +2425,7 @@ impl TextMut for XmlCDataSection {
             }
         }
 
-        Ok(XmlResolvedText::from(XmlCDataSection::from(data2)))
+        Ok(XmlCDataSection::from(data2))
     }
 }
 
@@ -3339,52 +3357,13 @@ impl XmlNamespace {
 // -----------------------------------------------------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct XmlResolvedText {
+pub struct XmlExpandedText {
     data: Vec<XmlNode>,
 }
 
-impl Text for XmlResolvedText {}
+impl Text for XmlExpandedText {}
 
-impl TextMut for XmlResolvedText {
-    fn split_text(&mut self, offset: usize) -> error::Result<XmlResolvedText> {
-        if self.length() < offset {
-            Err(error::DomException::IndexSizeErr)?
-        } else {
-            let mut data2 = XmlResolvedText { data: vec![] };
-            let mut length = 0;
-            for (i, d) in self.data.iter_mut().enumerate() {
-                match d {
-                    XmlNode::CData(v) => {
-                        length += v.length();
-                        if offset <= length {
-                            data2 = v.split_text(offset - (length - v.length()))?;
-                            data2.data.append(&mut self.data.split_off(i + 1));
-                            break;
-                        }
-                    }
-                    XmlNode::EntityReference(v) => {
-                        length += v.value()?.chars().count();
-                        if offset <= length {
-                            return Err(error::DomException::NoDataAllowedErr)?;
-                        }
-                    }
-                    XmlNode::Text(v) => {
-                        length += v.length();
-                        if offset <= length {
-                            data2 = v.split_text(offset - (length - v.length()))?;
-                            data2.data.append(&mut self.data.split_off(i + 1));
-                            break;
-                        }
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            Ok(data2)
-        }
-    }
-}
-
-impl CharacterData for XmlResolvedText {
+impl CharacterData for XmlExpandedText {
     fn data(&self) -> error::Result<String> {
         let mut s = String::new();
         for d in self.data.as_slice() {
@@ -3412,77 +3391,7 @@ impl CharacterData for XmlResolvedText {
     }
 }
 
-impl CharacterDataMut for XmlResolvedText {
-    fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
-        if self.length() < offset {
-            Err(error::DomException::IndexSizeErr)?
-        } else {
-            let mut length = 0;
-            for d in self.data.as_mut_slice() {
-                match d {
-                    XmlNode::CData(v) => {
-                        length += v.length();
-                        if offset <= length {
-                            v.insert_data(offset - (length - v.length()), arg)?;
-                            break;
-                        }
-                    }
-                    XmlNode::EntityReference(v) => {
-                        length += v.value()?.chars().count();
-                        if offset <= length {
-                            return Err(error::DomException::NoDataAllowedErr)?;
-                        }
-                    }
-                    XmlNode::Text(v) => {
-                        length += v.length();
-                        if offset <= length {
-                            v.insert_data(offset - (length - v.length()), arg)?;
-                            break;
-                        }
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            Ok(())
-        }
-    }
-
-    fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
-        if self.length() < (offset + count) {
-            Err(error::DomException::IndexSizeErr)?
-        } else {
-            let mut length = 0;
-            for d in self.data.as_mut_slice() {
-                match d {
-                    XmlNode::CData(v) => {
-                        length += v.length();
-                        if offset < length {
-                            v.delete_data(offset - (length - v.length()), count)?;
-                            break;
-                        }
-                    }
-                    XmlNode::EntityReference(v) => {
-                        length += v.value()?.chars().count();
-                        if offset < length {
-                            return Err(error::DomException::NoDataAllowedErr)?;
-                        }
-                    }
-                    XmlNode::Text(v) => {
-                        length += v.length();
-                        if offset < length {
-                            v.delete_data(offset - (length - v.length()), count)?;
-                            break;
-                        }
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            Ok(())
-        }
-    }
-}
-
-impl Node for XmlResolvedText {
+impl Node for XmlExpandedText {
     fn node_name(&self) -> String {
         "#text".to_string()
     }
@@ -3538,57 +3447,43 @@ impl Node for XmlResolvedText {
     }
 }
 
-impl NodeMut for XmlResolvedText {
-    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
-        self.set_data(value)
-    }
-
-    fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
-        Err(error::DomException::HierarchyRequestErr)?
-    }
-
-    fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
-        Err(error::DomException::HierarchyRequestErr)?
-    }
-}
-
-impl AsNode for XmlResolvedText {
+impl AsNode for XmlExpandedText {
     fn as_node(&self) -> XmlNode {
-        XmlNode::ResolvedText(self.clone())
+        XmlNode::ExpandedText(self.clone())
     }
 }
 
-impl AsStringValue for XmlResolvedText {
+impl AsStringValue for XmlExpandedText {
     fn as_string_value(&self) -> error::Result<String> {
         self.data()
     }
 }
 
-impl From<XmlCDataSection> for XmlResolvedText {
+impl From<XmlCDataSection> for XmlExpandedText {
     fn from(value: XmlCDataSection) -> Self {
-        XmlResolvedText {
+        XmlExpandedText {
             data: vec![value.as_node()],
         }
     }
 }
 
-impl From<XmlEntityReference> for XmlResolvedText {
+impl From<XmlEntityReference> for XmlExpandedText {
     fn from(value: XmlEntityReference) -> Self {
-        XmlResolvedText {
+        XmlExpandedText {
             data: vec![value.as_node()],
         }
     }
 }
 
-impl From<XmlText> for XmlResolvedText {
+impl From<XmlText> for XmlExpandedText {
     fn from(value: XmlText) -> Self {
-        XmlResolvedText {
+        XmlExpandedText {
             data: vec![value.as_node()],
         }
     }
 }
 
-impl fmt::Display for XmlResolvedText {
+impl fmt::Display for XmlExpandedText {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         for d in self.data.as_slice() {
             d.fmt(f)?;
@@ -3598,7 +3493,7 @@ impl fmt::Display for XmlResolvedText {
     }
 }
 
-impl XmlResolvedText {
+impl XmlExpandedText {
     fn push_cdata(&mut self, value: XmlCDataSection) {
         self.data.push(value.as_node());
     }
@@ -3609,6 +3504,25 @@ impl XmlResolvedText {
 
     fn push_text(&mut self, value: XmlText) {
         self.data.push(value.as_node());
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Context {
+    text_expanded: bool,
+}
+
+impl Context {
+    pub fn from_text_expanded(value: bool) -> Self {
+        Context {
+            text_expanded: value,
+        }
+    }
+
+    pub fn text_expanded(&self) -> bool {
+        self.text_expanded
     }
 }
 
@@ -5186,7 +5100,7 @@ mod tests {
             .unwrap();
         let attra = elem1.get_attribute_node("a").unwrap();
         let attrc = elem2.get_attribute_node("c").unwrap();
-        let data1 = XmlResolvedText::from(XmlText {
+        let data1 = XmlText {
             data: info::XmlText::node(
                 "data1",
                 Some(elem1.element.borrow().id()),
@@ -5194,7 +5108,7 @@ mod tests {
             )
             .as_text()
             .unwrap(),
-        })
+        }
         .as_node();
 
         // Node (elem1)
@@ -5398,11 +5312,8 @@ mod tests {
         let f = elem1.child_nodes().item(0).unwrap();
         assert_eq!(Some(elem1.as_node()), f.parent_node());
         assert_eq!(Some(doc.clone()), f.owner_document());
-        assert_ne!(0, f.as_resolved_text().unwrap().data.first().unwrap().id());
-        assert_ne!(
-            0,
-            f.as_resolved_text().unwrap().data.first().unwrap().order()
-        );
+        assert_ne!(0, f.as_text().unwrap().data.borrow().id());
+        assert_ne!(0, f.as_text().unwrap().data.borrow().order());
     }
 
     #[test]
@@ -5652,7 +5563,7 @@ mod tests {
             .as_element()
             .unwrap();
         let attra = elem1.get_attribute_node("a").unwrap();
-        let data1 = XmlResolvedText::from(XmlText {
+        let data1 = XmlText {
             data: info::XmlText::node(
                 "data1",
                 Some(elem1.element.borrow().id()),
@@ -5660,7 +5571,7 @@ mod tests {
             )
             .as_text()
             .unwrap(),
-        })
+        }
         .as_node();
 
         // AsNode (elem1)
@@ -5721,11 +5632,12 @@ mod tests {
             .unwrap()
             .as_element()
             .unwrap();
-        let data1 = XmlNode::ResolvedText(XmlResolvedText::from(XmlText {
+        let data1 = XmlText {
             data: info::XmlText::node("data1", None, doc.document.borrow().context())
                 .as_text()
                 .unwrap(),
-        }));
+        }
+        .as_node();
 
         // HasChild
         assert_eq!(vec![data1], elem1.children());
@@ -5784,42 +5696,15 @@ mod tests {
         assert_eq!(Some("xt"), text2.node_value().unwrap().as_deref());
         assert_eq!(Some(attr.as_node()), text2.parent_node());
         assert_eq!(Some(doc.clone()), text2.owner_document());
-        assert_ne!(
-            0,
-            text2
-                .data
-                .first()
-                .unwrap()
-                .as_text()
-                .unwrap()
-                .data
-                .borrow()
-                .id()
-        );
-        assert_ne!(
-            0,
-            text2
-                .data
-                .first()
-                .unwrap()
-                .as_text()
-                .unwrap()
-                .data
-                .borrow()
-                .order()
-        );
+        assert_ne!(0, text2.data.borrow().id());
+        assert_ne!(0, text2.data.borrow().order());
     }
 
     #[test]
     fn test_text_split_text_ok_element() {
         let (_, doc) = XmlDocument::from_raw("<root>text</root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut text = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut text = root.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // TextMut
         let text2 = text.split_text(2).unwrap();
@@ -5828,30 +5713,8 @@ mod tests {
         assert_eq!(Some("xt"), text2.node_value().unwrap().as_deref());
         assert_eq!(Some(root.as_node()), text2.parent_node());
         assert_eq!(Some(doc.clone()), text2.owner_document());
-        assert_ne!(
-            0,
-            text2
-                .data
-                .first()
-                .unwrap()
-                .as_text()
-                .unwrap()
-                .data
-                .borrow()
-                .id()
-        );
-        assert_ne!(
-            0,
-            text2
-                .data
-                .first()
-                .unwrap()
-                .as_text()
-                .unwrap()
-                .data
-                .borrow()
-                .order()
-        );
+        assert_ne!(0, text2.data.borrow().id());
+        assert_ne!(0, text2.data.borrow().order());
 
         // FIXME:
         //assert_eq!(Some(text.as_node()), text2.previous_sibling());
@@ -6466,12 +6329,7 @@ mod tests {
     fn test_cdata_text_mut_split_text_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // TextMut
         let cdata2 = cdata.split_text(1).unwrap();
@@ -6480,30 +6338,8 @@ mod tests {
         assert_eq!(Some("data"), cdata2.node_value().unwrap().as_deref());
         assert_eq!(Some(root.as_node()), cdata2.parent_node());
         assert_eq!(Some(doc.clone()), cdata2.owner_document());
-        assert_ne!(
-            0,
-            cdata2
-                .data
-                .first()
-                .unwrap()
-                .as_cdata()
-                .unwrap()
-                .data
-                .borrow()
-                .id()
-        );
-        assert_ne!(
-            0,
-            cdata2
-                .data
-                .first()
-                .unwrap()
-                .as_cdata()
-                .unwrap()
-                .data
-                .borrow()
-                .order()
-        );
+        assert_ne!(0, cdata2.data.borrow().id());
+        assert_ne!(0, cdata2.data.borrow().order());
 
         // FIXME:
         //assert_eq!(Some(cdata.as_node()), cdata2.previous_sibling());
@@ -6514,12 +6350,7 @@ mod tests {
     fn test_cdata_text_mut_split_text_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // TextMut
         let err = cdata.split_text(6).err().unwrap();
@@ -6531,12 +6362,7 @@ mod tests {
     fn test_cdata_character_data() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterData
         assert_eq!("&<>\"", cdata.data().unwrap());
@@ -6547,12 +6373,7 @@ mod tests {
     fn test_cdata_character_data_substring_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterData
         assert_eq!("<>", cdata.substring_data(1, 2).unwrap());
@@ -6562,12 +6383,7 @@ mod tests {
     fn test_cdata_character_data_substring_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterData
         let err = cdata.substring_data(5, 1).err().unwrap();
@@ -6578,12 +6394,7 @@ mod tests {
     fn test_cdata_character_data_mut_set_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         cdata.set_data("あいう").unwrap();
@@ -6594,12 +6405,7 @@ mod tests {
     fn test_cdata_character_data_mut_append_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         cdata.append_data("えお").unwrap();
@@ -6610,12 +6416,7 @@ mod tests {
     fn test_cdata_character_data_mut_insert_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         cdata.insert_data(1, "abc").unwrap();
@@ -6626,12 +6427,7 @@ mod tests {
     fn test_cdata_character_data_mut_insert_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         let err = cdata.insert_data(5, "abc").err().unwrap();
@@ -6642,12 +6438,7 @@ mod tests {
     fn test_cdata_character_data_mut_delete_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         cdata.delete_data(1, 2).unwrap();
@@ -6658,12 +6449,7 @@ mod tests {
     fn test_cdata_character_data_mut_delete_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         let err = cdata.delete_data(5, 1).err().unwrap();
@@ -6674,12 +6460,7 @@ mod tests {
     fn test_cdata_character_data_mut_replace_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         cdata.replace_data(1, 3, "いう").unwrap();
@@ -6690,12 +6471,7 @@ mod tests {
     fn test_cdata_character_data_mut_replace_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         let err = cdata.replace_data(5, 1, "いう").err().unwrap();
@@ -6706,19 +6482,14 @@ mod tests {
     fn test_cdata_node() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // TODO: CDATA Section Test
 
         // Node
-        assert_eq!("#text", cdata.node_name());
+        assert_eq!("#cdata-section", cdata.node_name());
         assert_eq!(Some("&<>\"".to_string()), cdata.node_value().unwrap());
-        assert_eq!(NodeType::Text, cdata.node_type());
+        assert_eq!(NodeType::CData, cdata.node_type());
         assert_eq!(Some(root.as_node()), cdata.parent_node());
         assert_eq!(0, cdata.child_nodes().length());
         assert_eq!(None, cdata.first_child());
@@ -6735,12 +6506,7 @@ mod tests {
     fn test_cdata_node_mut_set_node_value_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // Nodemut
         cdata.set_node_value("abc").unwrap();
@@ -6751,12 +6517,7 @@ mod tests {
     fn test_cdata_node_mut_insert_before_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6771,12 +6532,7 @@ mod tests {
     fn test_cdata_node_mut_replace_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6791,12 +6547,7 @@ mod tests {
     fn test_cdata_node_mut_remove_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6811,12 +6562,7 @@ mod tests {
     fn test_cdata_node_mut_append_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6831,18 +6577,13 @@ mod tests {
     fn test_cdata_as_node() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // AsNode
         let node = cdata.as_node();
-        assert_eq!("#text", node.node_name());
+        assert_eq!("#cdata-section", node.node_name());
         assert_eq!(Some("&<>\"".to_string()), node.node_value().unwrap());
-        assert_eq!(NodeType::Text, node.node_type());
+        assert_eq!(NodeType::CData, node.node_type());
         assert_eq!(Some(root.as_node()), node.parent_node());
         assert_eq!(0, node.child_nodes().length());
         assert_eq!(None, node.first_child());
@@ -6858,12 +6599,7 @@ mod tests {
     fn test_cdata_as_string_value() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // AsStringValue
         assert_eq!("&<>\"", cdata.as_string_value().unwrap());
@@ -6873,30 +6609,17 @@ mod tests {
     fn test_cdata_debug() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // fmt::Debug
-        assert_eq!(
-            "XmlResolvedText { data: [CData(XmlCDataSection { &<>\" })] }",
-            format!("{:?}", cdata)
-        );
+        assert_eq!("XmlCDataSection { &<>\" }", format!("{:?}", cdata));
     }
 
     #[test]
     fn test_cdata_display() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let cdata = root
-            .child_nodes()
-            .item(0)
-            .unwrap()
-            .as_resolved_text()
-            .unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // fmt::Display
         assert_eq!("<![CDATA[&<>\"]]>", format!("{}", cdata));
@@ -7552,14 +7275,20 @@ mod tests {
 
     #[test]
     fn test_resolved_text_character_data() {
-        let (_, doc) =
-            XmlDocument::from_raw("<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>").unwrap();
+        let context = Context {
+            text_expanded: true,
+        };
+        let (_, doc) = XmlDocument::from_raw_with_context(
+            "<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>",
+            context,
+        )
+        .unwrap();
         let root = doc.document_element().unwrap();
         let text = root
             .child_nodes()
             .item(0)
             .unwrap()
-            .as_resolved_text()
+            .as_expanded_text()
             .unwrap();
 
         // CharacterData
@@ -7571,7 +7300,7 @@ mod tests {
             .child_nodes()
             .item(2)
             .unwrap()
-            .as_resolved_text()
+            .as_expanded_text()
             .unwrap();
 
         // CharacterData
@@ -7581,14 +7310,20 @@ mod tests {
 
     #[test]
     fn test_resolved_text_node() {
-        let (_, doc) =
-            XmlDocument::from_raw("<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>").unwrap();
+        let context = Context {
+            text_expanded: true,
+        };
+        let (_, doc) = XmlDocument::from_raw_with_context(
+            "<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>",
+            context,
+        )
+        .unwrap();
         let root = doc.document_element().unwrap();
         let text = root
             .child_nodes()
             .item(0)
             .unwrap()
-            .as_resolved_text()
+            .as_expanded_text()
             .unwrap();
         let a = root.child_nodes().item(1).unwrap().as_element().unwrap();
 
@@ -7610,7 +7345,7 @@ mod tests {
             .child_nodes()
             .item(2)
             .unwrap()
-            .as_resolved_text()
+            .as_expanded_text()
             .unwrap();
 
         // Node
@@ -7630,14 +7365,20 @@ mod tests {
 
     #[test]
     fn test_resolved_text_as_node() {
-        let (_, doc) =
-            XmlDocument::from_raw("<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>").unwrap();
+        let context = Context {
+            text_expanded: true,
+        };
+        let (_, doc) = XmlDocument::from_raw_with_context(
+            "<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>",
+            context,
+        )
+        .unwrap();
         let root = doc.document_element().unwrap();
         let text = root
             .child_nodes()
             .item(0)
             .unwrap()
-            .as_resolved_text()
+            .as_expanded_text()
             .unwrap();
         let a = root.child_nodes().item(1).unwrap().as_element().unwrap();
 
@@ -7660,7 +7401,7 @@ mod tests {
             .child_nodes()
             .item(2)
             .unwrap()
-            .as_resolved_text()
+            .as_expanded_text()
             .unwrap();
 
         // AsNode
@@ -7681,14 +7422,20 @@ mod tests {
 
     #[test]
     fn test_resolved_text_as_string_value() {
-        let (_, doc) =
-            XmlDocument::from_raw("<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>").unwrap();
+        let context = Context {
+            text_expanded: true,
+        };
+        let (_, doc) = XmlDocument::from_raw_with_context(
+            "<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>",
+            context,
+        )
+        .unwrap();
         let root = doc.document_element().unwrap();
         let text = root
             .child_nodes()
             .item(0)
             .unwrap()
-            .as_resolved_text()
+            .as_expanded_text()
             .unwrap();
 
         // AsStringValue
@@ -7698,7 +7445,7 @@ mod tests {
             .child_nodes()
             .item(2)
             .unwrap()
-            .as_resolved_text()
+            .as_expanded_text()
             .unwrap();
 
         // AsStringValue
@@ -7707,14 +7454,20 @@ mod tests {
 
     #[test]
     fn test_resolved_text_display() {
-        let (_, doc) =
-            XmlDocument::from_raw("<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>").unwrap();
+        let context = Context {
+            text_expanded: true,
+        };
+        let (_, doc) = XmlDocument::from_raw_with_context(
+            "<root>a<![CDATA[b]]>c<a />&#x3042;d&amp;d</root>",
+            context,
+        )
+        .unwrap();
         let root = doc.document_element().unwrap();
         let text = root
             .child_nodes()
             .item(0)
             .unwrap()
-            .as_resolved_text()
+            .as_expanded_text()
             .unwrap();
 
         // fmt::Display
@@ -7724,7 +7477,7 @@ mod tests {
             .child_nodes()
             .item(2)
             .unwrap()
-            .as_resolved_text()
+            .as_expanded_text()
             .unwrap();
 
         // fmt::Display

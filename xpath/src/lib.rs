@@ -23,7 +23,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_para() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<para />").unwrap();
+        let (rest, doc) = parse_xml("<para />");
         assert_eq!("", rest);
 
         let r = query(doc, "child::para", &mut eval::model::Context::default()).unwrap();
@@ -32,7 +32,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_ns() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<a />").unwrap();
+        let (rest, doc) = parse_xml("<a />");
         assert_eq!("", rest);
 
         let r = query(doc, "child::*", &mut eval::model::Context::default()).unwrap();
@@ -41,8 +41,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_text() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root>text1<para />text2</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1<para />text2</root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -56,8 +55,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_node() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root>text1<para />text2</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1<para />text2</root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -71,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_attr_name() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root name='a'></root>").unwrap();
+        let (rest, doc) = parse_xml("<root name='a'></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -85,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_attr_ns() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root name='a'></root>").unwrap();
+        let (rest, doc) = parse_xml("<root name='a'></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -99,8 +97,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_descendant_para() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root>text1<para />text2</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1<para />text2</root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -114,8 +111,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_ancestor_div() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><div><para /></div></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><div><para /></div></root>");
         assert_eq!("", rest);
 
         let r = query(doc, "//ancestor::div", &mut eval::model::Context::default()).unwrap();
@@ -124,8 +120,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_ancestor_self_div() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><div><para /></div></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><div><para /></div></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -139,8 +134,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_descendant_self_para() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><div><para /></div></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><div><para /></div></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -154,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_self_para() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root><para /></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para /></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -185,8 +179,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_ns_para() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><chapter><para /></chapter></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><chapter><para /></chapter></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -200,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_root() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = query(doc, "/", &mut eval::model::Context::default()).unwrap();
@@ -209,8 +202,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_root_descendant_para() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><chapter><para /></chapter></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><chapter><para /></chapter></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -224,8 +216,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_root_olist_item() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><olist><item /></olist></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><olist><item /></olist></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -239,8 +230,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_para_1() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><para>1</para><para>2</para></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para>1</para><para>2</para></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -254,8 +244,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_para_last() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><para>1</para><para>2</para></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para>1</para><para>2</para></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -269,8 +258,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_para_prelast() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><para>1</para><para>2</para></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para>1</para><para>2</para></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -284,8 +272,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_para_gt_1() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><para>1</para><para>2</para></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para>1</para><para>2</para></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -366,7 +353,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_root_chapter_5_section_2() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<doc><chapter>1</chapter><chapter><section>1</section><section>2</section></chapter></doc>").unwrap();
+        let (rest, doc) = parse_xml("<doc><chapter>1</chapter><chapter><section>1</section><section>2</section></chapter></doc>");
         assert_eq!("", rest);
 
         let r = query(
@@ -397,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_para_warning_5() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root><para type='warning'>1</para><para type='error' /><para type='warning'>2</para><para type='normal' /><para type='warning'>3</para><para type='warning'>4</para><para type='warning'>5</para></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para type='warning'>1</para><para type='error' /><para type='warning'>2</para><para type='normal' /><para type='warning'>3</para><para type='warning'>4</para><para type='warning'>5</para></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -411,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_para_5_warning() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root><para type='warning'>1</para><para type='error' /><para type='warning'>2</para><para type='normal' /><para type='warning'>3</para><para type='warning'>4</para><para type='warning'>5</para></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para type='warning'>1</para><para type='error' /><para type='warning'>2</para><para type='normal' /><para type='warning'>3</para><para type='warning'>4</para><para type='warning'>5</para></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -425,7 +412,7 @@ mod tests {
 
     #[test]
     fn test_eg_location_path_chapter_intro() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root><chapter><title>Introduction</title></chapter><chapter><title>Second</title></chapter></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><chapter><title>Introduction</title></chapter><chapter><title>Second</title></chapter></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -493,7 +480,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_para() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<para></para>").unwrap();
+        let (rest, doc) = parse_xml("<para></para>");
         assert_eq!("", rest);
 
         let r = query(doc, "para", &mut eval::model::Context::default()).unwrap();
@@ -502,7 +489,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_ns() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<para></para>").unwrap();
+        let (rest, doc) = parse_xml("<para></para>");
         assert_eq!("", rest);
 
         let r = query(doc, "*", &mut eval::model::Context::default()).unwrap();
@@ -511,7 +498,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_text() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root>a</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>a</root>");
         assert_eq!("", rest);
 
         let r = query(doc, "root/text()", &mut eval::model::Context::default()).unwrap();
@@ -520,7 +507,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_attr_name() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root name='a'></root>").unwrap();
+        let (rest, doc) = parse_xml("<root name='a'></root>");
         assert_eq!("", rest);
 
         let r = query(doc, "root/@name", &mut eval::model::Context::default()).unwrap();
@@ -529,7 +516,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_attr_ns() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root name='a'></root>").unwrap();
+        let (rest, doc) = parse_xml("<root name='a'></root>");
         assert_eq!("", rest);
 
         let r = query(doc, "root/@*", &mut eval::model::Context::default()).unwrap();
@@ -538,8 +525,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_para_1() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><para>2</para><para>1</para></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para>2</para><para>1</para></root>");
         assert_eq!("", rest);
 
         let r = query(doc, "root/para[1]", &mut eval::model::Context::default()).unwrap();
@@ -548,8 +534,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_para_last() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><para>2</para><para>1</para></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para>2</para><para>1</para></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -563,7 +548,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_root_para() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<para></para>").unwrap();
+        let (rest, doc) = parse_xml("<para></para>");
         assert_eq!("", rest);
 
         let r = query(doc, "/para", &mut eval::model::Context::default()).unwrap();
@@ -572,7 +557,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_root_chapter_5_section_2() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<doc><chapter/><chapter/><chapter/><chapter/><chapter><section/><section>section</section><section/></chapter></doc>").unwrap();
+        let (rest, doc) = parse_xml("<doc><chapter/><chapter/><chapter/><chapter/><chapter><section/><section>section</section><section/></chapter></doc>");
         assert_eq!("", rest);
 
         let r = query(
@@ -628,7 +613,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_current() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = query(doc, ".", &mut eval::model::Context::default()).unwrap();
@@ -652,7 +637,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_parent() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root><para /></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para /></root>");
         assert_eq!("", rest);
 
         let r = query(doc, "root/para/..", &mut eval::model::Context::default()).unwrap();
@@ -661,7 +646,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_parent_attr_lang() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root lang='a'><para /></root>").unwrap();
+        let (rest, doc) = parse_xml("<root lang='a'><para /></root>");
         assert_eq!("", rest);
 
         let r = query(doc, "//para/../@lang", &mut eval::model::Context::default()).unwrap();
@@ -687,7 +672,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_para_warning_5() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root><para type='warning'>1</para><para type='error' /><para type='warning'>2</para><para type='normal' /><para type='warning'>3</para><para type='warning'>4</para><para type='warning'>5</para></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para type='warning'>1</para><para type='error' /><para type='warning'>2</para><para type='normal' /><para type='warning'>3</para><para type='warning'>4</para><para type='warning'>5</para></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -701,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_para_5_warning() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root><para type='warning'>1</para><para type='error' /><para type='warning'>2</para><para type='normal' /><para type='warning'>3</para><para type='warning'>4</para><para type='warning'>5</para></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><para type='warning'>1</para><para type='error' /><para type='warning'>2</para><para type='normal' /><para type='warning'>3</para><para type='warning'>4</para><para type='warning'>5</para></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -715,7 +700,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_chapter_intro() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root><chapter><title>Introduction</title></chapter><chapter><title>Second</title></chapter></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><chapter><title>Introduction</title></chapter><chapter><title>Second</title></chapter></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -749,7 +734,7 @@ mod tests {
 
     #[test]
     fn test_eg_abbreviated_employee() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root><employee secretary='a'/><employee secretary='a' assistant='b' /><employee a='b'/><employee assistant='b'/></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><employee secretary='a'/><employee secretary='a' assistant='b' /><employee a='b'/><employee assistant='b'/></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -766,7 +751,7 @@ mod tests {
 
     #[test]
     fn test_eg_namespace_predicate() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root xmlns:b='http://test/b'><e2 xmlns='http://test/' /><e2 xmlns:a='http://test/a' /><e2 /></root>").unwrap();
+        let (rest, doc) = parse_xml("<root xmlns:b='http://test/b'><e2 xmlns='http://test/' /><e2 xmlns:a='http://test/a' /><e2 /></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -780,7 +765,7 @@ mod tests {
 
     #[test]
     fn test_eg_namespace_value() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root xmlns:b='http://test/b'><e2 xmlns='http://test/' /><e2 xmlns:a='http://test/a' /><e2 /></root>").unwrap();
+        let (rest, doc) = parse_xml("<root xmlns:b='http://test/b'><e2 xmlns='http://test/' /><e2 xmlns:a='http://test/a' /><e2 /></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -794,7 +779,7 @@ mod tests {
 
     #[test]
     fn test_eg_namespace_default() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root xmlns:b='http://test/b'><e2 xmlns='http://test/' /><e2 xmlns:a='http://test/a' /><e2 /></root>").unwrap();
+        let (rest, doc) = parse_xml("<root xmlns:b='http://test/b'><e2 xmlns='http://test/' /><e2 xmlns:a='http://test/a' /><e2 /></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -808,8 +793,7 @@ mod tests {
 
     #[test]
     fn test_eg_text_reference() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root>a&amp;b<e1/><![CDATA[c]]></root>").unwrap();
+        let (rest, doc) = parse_xml("<root>a&amp;b<e1/><![CDATA[c]]></root>");
         assert_eq!("", rest);
 
         let r = query(doc, "root/text()", &mut eval::model::Context::default()).unwrap();
@@ -818,8 +802,7 @@ mod tests {
 
     #[test]
     fn test_eg_text_reference_eq() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root>a&lt;b<e1/><![CDATA[c]]></root>").unwrap();
+        let (rest, doc) = parse_xml("<root>a&lt;b<e1/><![CDATA[c]]></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -833,8 +816,7 @@ mod tests {
 
     #[test]
     fn test_eg_text_reference_contains() {
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root>a&lt;b<e1/><![CDATA[c]]></root>").unwrap();
+        let (rest, doc) = parse_xml("<root>a&lt;b<e1/><![CDATA[c]]></root>");
         assert_eq!("", rest);
 
         let r = query(
@@ -859,5 +841,10 @@ mod tests {
 
         let (rest, _) = expr::parse("foo -bar").unwrap();
         assert_eq!("", rest);
+    }
+
+    fn parse_xml(xml: &str) -> (&str, xml_dom::XmlDocument) {
+        let context = xml_dom::Context::from_text_expanded(true);
+        xml_dom::XmlDocument::from_raw_with_context(xml, context).unwrap()
     }
 }

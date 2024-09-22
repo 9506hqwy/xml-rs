@@ -111,7 +111,8 @@ fn document(path: Option<&Path>) -> Result<xml_dom::XmlDocument, Box<dyn Error>>
         }
     };
 
-    let (rest, dom) = xml_dom::XmlDocument::from_raw(contents.as_str())?;
+    let context = xml_dom::Context::from_text_expanded(true);
+    let (rest, dom) = xml_dom::XmlDocument::from_raw_with_context(contents.as_str(), context)?;
     if !rest.is_empty() {
         return Err("invalid format XML".into());
     }

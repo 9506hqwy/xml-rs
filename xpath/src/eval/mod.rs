@@ -982,10 +982,9 @@ mod tests {
         let (rest, expr) = parse("/").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1002,10 +1001,9 @@ mod tests {
         let (rest, expr) = parse("/root").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
@@ -1024,10 +1022,9 @@ mod tests {
         let (rest, expr) = parse("//root").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
@@ -1046,10 +1043,9 @@ mod tests {
         let (rest, expr) = parse("root").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
@@ -1068,10 +1064,9 @@ mod tests {
         let (rest, expr) = parse("root/e2").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -1090,10 +1085,9 @@ mod tests {
         let (rest, expr) = parse("root//ee2").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let ee2 = doc.get_elements_by_tag_name("ee2").item(0).unwrap();
@@ -1112,8 +1106,7 @@ mod tests {
         let (rest, expr) = parse("(root)/e1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><e1><ee1>1</ee1></e1></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><e1><ee1>1</ee1></e1></root>");
         assert_eq!("", rest);
 
         let root = doc.document_element().unwrap();
@@ -1133,8 +1126,7 @@ mod tests {
         let (rest, expr) = parse("(root)//ee1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><e1><ee1>1</ee1></e1></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><e1><ee1>1</ee1></e1></root>");
         assert_eq!("", rest);
 
         let ee1 = doc.get_elements_by_tag_name("ee1").item(0).unwrap();
@@ -1153,10 +1145,9 @@ mod tests {
         let (rest, expr) = parse("root//ee2/ancestor::root").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
@@ -1175,10 +1166,9 @@ mod tests {
         let (rest, expr) = parse("root//ee2/ancestor-or-self::root").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
@@ -1197,10 +1187,9 @@ mod tests {
         let (rest, expr) = parse("root/e2[attribute::a]").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2 a='b'><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -1219,10 +1208,9 @@ mod tests {
         let (rest, expr) = parse("root/child::e2").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -1241,10 +1229,9 @@ mod tests {
         let (rest, expr) = parse("root/descendant::ee2").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let ee2 = doc.get_elements_by_tag_name("ee2").item(0).unwrap();
@@ -1263,10 +1250,9 @@ mod tests {
         let (rest, expr) = parse("root/descendant-or-self::ee2").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let ee2 = doc.get_elements_by_tag_name("ee2").item(0).unwrap();
@@ -1285,10 +1271,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/following::ee3").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let ee3 = doc.get_elements_by_tag_name("ee3").item(0).unwrap();
@@ -1307,10 +1292,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/following-sibling::e3").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e3 = doc.get_elements_by_tag_name("e3").item(0).unwrap();
@@ -1332,10 +1316,7 @@ mod tests {
         let (rest, expr) = parse("root/a:e2[namespace::a]").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
-            "<root><e2 /><a:e2 xmlns:a='http://test/a' /><e2 /></root>",
-        )
-        .unwrap();
+        let (rest, doc) = parse_xml("<root><e2 /><a:e2 xmlns:a='http://test/a' /><e2 /></root>");
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(1).unwrap();
@@ -1354,10 +1335,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/parent::*").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
@@ -1376,10 +1356,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/preceding::ee1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let ee1 = doc.get_elements_by_tag_name("ee1").item(0).unwrap();
@@ -1398,10 +1377,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/preceding-sibling::e1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e1 = doc.get_elements_by_tag_name("e1").item(0).unwrap();
@@ -1420,10 +1398,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/self::*").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -1442,10 +1419,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/ee2").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let ee2 = doc.get_elements_by_tag_name("ee2").item(0).unwrap();
@@ -1464,10 +1440,9 @@ mod tests {
         let (rest, expr) = parse("root/e2[@a]").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2 a='b'><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -1486,10 +1461,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/.").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -1508,10 +1482,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/..").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
@@ -1530,7 +1503,7 @@ mod tests {
         let (rest, expr) = parse("last()").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let mut ctx = model::Context::default();
@@ -1549,7 +1522,7 @@ mod tests {
         let (rest, expr) = parse("position()").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let mut ctx = model::Context::default();
@@ -1568,10 +1541,9 @@ mod tests {
         let (rest, expr) = parse("count(/root/*)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1588,7 +1560,7 @@ mod tests {
         let (rest, expr) = parse("local-name(/root)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1608,8 +1580,7 @@ mod tests {
         let (rest, expr) = parse("namespace-uri(/b:root)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root xmlns='http://test/'></root>").unwrap();
+        let (rest, doc) = parse_xml("<root xmlns='http://test/'></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut context).unwrap();
@@ -1629,8 +1600,7 @@ mod tests {
         let (rest, expr) = parse("name(/a:root)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<a:root xmlns:a='http://test/a'></a:root>").unwrap();
+        let (rest, doc) = parse_xml("<a:root xmlns:a='http://test/a'></a:root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut context).unwrap();
@@ -1647,7 +1617,7 @@ mod tests {
         let (rest, expr) = parse("string(/root)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root>text1</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1</root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1664,7 +1634,7 @@ mod tests {
         let (rest, expr) = parse("concat(/root, '2')").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root>text1</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1</root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1681,7 +1651,7 @@ mod tests {
         let (rest, expr) = parse("starts-with(/root, 'te')").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root>text1</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1</root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1698,7 +1668,7 @@ mod tests {
         let (rest, expr) = parse("contains(/root, 'ex')").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root>text1</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1</root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1715,7 +1685,7 @@ mod tests {
         let (rest, expr) = parse("substring-before(/root, 'ex')").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root>text1</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1</root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1732,7 +1702,7 @@ mod tests {
         let (rest, expr) = parse("substring-after(/root, 'ex')").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root>text1</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1</root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1749,7 +1719,7 @@ mod tests {
         let (rest, expr) = parse("substring(/root, 2, 3)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root>text1</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1</root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1766,7 +1736,7 @@ mod tests {
         let (rest, expr) = parse("string-length(/root)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root>text1</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>text1</root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1783,7 +1753,7 @@ mod tests {
         let (rest, expr) = parse("normalize-space(/root)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root> te  x t   1 </root>").unwrap();
+        let (rest, doc) = parse_xml("<root> te  x t   1 </root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1800,7 +1770,7 @@ mod tests {
         let (rest, expr) = parse("translate(/root, 'abc-', 'ABC')").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root>--abcd--</root>").unwrap();
+        let (rest, doc) = parse_xml("<root>--abcd--</root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1817,7 +1787,7 @@ mod tests {
         let (rest, expr) = parse("boolean(true())").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root />").unwrap();
+        let (rest, doc) = parse_xml("<root />");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1834,7 +1804,7 @@ mod tests {
         let (rest, expr) = parse("not(false())").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root />").unwrap();
+        let (rest, doc) = parse_xml("<root />");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1851,7 +1821,7 @@ mod tests {
         let (rest, expr) = parse("true()").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root />").unwrap();
+        let (rest, doc) = parse_xml("<root />");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1868,7 +1838,7 @@ mod tests {
         let (rest, expr) = parse("false()").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root />").unwrap();
+        let (rest, doc) = parse_xml("<root />");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1885,7 +1855,7 @@ mod tests {
         let (rest, expr) = parse("root[lang('ja')]").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root xml:lang='ja'/>").unwrap();
+        let (rest, doc) = parse_xml("<root xml:lang='ja'/>");
         assert_eq!("", rest);
 
         let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
@@ -1904,7 +1874,7 @@ mod tests {
         let (rest, expr) = parse("number(1)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root />").unwrap();
+        let (rest, doc) = parse_xml("<root />");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1921,8 +1891,7 @@ mod tests {
         let (rest, expr) = parse("sum(/root/e)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) =
-            xml_dom::XmlDocument::from_raw("<root><e>1</e><e>3</e><e>5</e></root>").unwrap();
+        let (rest, doc) = parse_xml("<root><e>1</e><e>3</e><e>5</e></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1939,7 +1908,7 @@ mod tests {
         let (rest, expr) = parse("floor(3.6)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root />").unwrap();
+        let (rest, doc) = parse_xml("<root />");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1956,7 +1925,7 @@ mod tests {
         let (rest, expr) = parse("ceiling(3.6)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root />").unwrap();
+        let (rest, doc) = parse_xml("<root />");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1973,7 +1942,7 @@ mod tests {
         let (rest, expr) = parse("round(3.6)").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root />").unwrap();
+        let (rest, doc) = parse_xml("<root />");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -1990,7 +1959,7 @@ mod tests {
         let (rest, expr) = parse("1 or 0").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2007,7 +1976,7 @@ mod tests {
         let (rest, expr) = parse("0 or 0").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2024,7 +1993,7 @@ mod tests {
         let (rest, expr) = parse("1 and 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2041,7 +2010,7 @@ mod tests {
         let (rest, expr) = parse("1 and 0").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2058,7 +2027,7 @@ mod tests {
         let (rest, expr) = parse("1 = 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2075,7 +2044,7 @@ mod tests {
         let (rest, expr) = parse("1 = 0").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2092,7 +2061,7 @@ mod tests {
         let (rest, expr) = parse("1 != 0").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2109,7 +2078,7 @@ mod tests {
         let (rest, expr) = parse("1 != 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2126,7 +2095,7 @@ mod tests {
         let (rest, expr) = parse("0 < 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2143,7 +2112,7 @@ mod tests {
         let (rest, expr) = parse("1 < 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2160,7 +2129,7 @@ mod tests {
         let (rest, expr) = parse("1 > 0").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2177,7 +2146,7 @@ mod tests {
         let (rest, expr) = parse("1 > 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2194,7 +2163,7 @@ mod tests {
         let (rest, expr) = parse("1 <= 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2211,7 +2180,7 @@ mod tests {
         let (rest, expr) = parse("2 <= 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2228,7 +2197,7 @@ mod tests {
         let (rest, expr) = parse("1 >= 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2245,7 +2214,7 @@ mod tests {
         let (rest, expr) = parse("1 >= 2").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2262,7 +2231,7 @@ mod tests {
         let (rest, expr) = parse("2 + 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2279,7 +2248,7 @@ mod tests {
         let (rest, expr) = parse("2 - 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2296,7 +2265,7 @@ mod tests {
         let (rest, expr) = parse("2 * 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2313,7 +2282,7 @@ mod tests {
         let (rest, expr) = parse("2 div 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2330,7 +2299,7 @@ mod tests {
         let (rest, expr) = parse("2 mod 1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2347,7 +2316,7 @@ mod tests {
         let (rest, expr) = parse("-1").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2364,7 +2333,7 @@ mod tests {
         let (rest, expr) = parse("'text'").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw("<root></root>").unwrap();
+        let (rest, doc) = parse_xml("<root></root>");
         assert_eq!("", rest);
 
         let r = document(&expr, doc.clone(), &mut model::Context::default()).unwrap();
@@ -2384,10 +2353,7 @@ mod tests {
         let (rest, expr) = parse("root/a:*").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
-            "<root xmlns:a='http://test/a'><a:e1 /><a:e2 /><e3 /></root>",
-        )
-        .unwrap();
+        let (rest, doc) = parse_xml("<root xmlns:a='http://test/a'><a:e1 /><a:e2 /><e3 /></root>");
         assert_eq!("", rest);
 
         let root = doc.document_element().unwrap();
@@ -2411,10 +2377,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/comment()").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><!--a--><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let comment = doc
@@ -2438,10 +2403,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/ee2/text()").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let text = doc
@@ -2465,10 +2429,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/ee2/text()").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>&amp;</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let text = doc
@@ -2492,10 +2455,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/ee2/text()").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2><![CDATA[a]]></ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let text = doc
@@ -2522,10 +2484,9 @@ mod tests {
         let (rest, expr) = parse("root/e2/node()").unwrap();
         assert_eq!("", rest);
 
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let ee2 = doc.get_elements_by_tag_name("ee2").item(0).unwrap();
@@ -2541,10 +2502,9 @@ mod tests {
 
     #[test]
     fn test_ancestor() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
@@ -2556,10 +2516,9 @@ mod tests {
 
     #[test]
     fn test_ancestor_and_self() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let root = doc.get_elements_by_tag_name("root").item(0).unwrap();
@@ -2571,10 +2530,9 @@ mod tests {
 
     #[test]
     fn test_attributes() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -2585,10 +2543,9 @@ mod tests {
 
     #[test]
     fn test_child() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -2600,10 +2557,9 @@ mod tests {
 
     #[test]
     fn test_descendant() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -2616,10 +2572,9 @@ mod tests {
 
     #[test]
     fn test_descendant_and_self() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -2632,10 +2587,9 @@ mod tests {
 
     #[test]
     fn test_following() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -2649,10 +2603,9 @@ mod tests {
 
     #[test]
     fn test_following_sibling() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e2 = doc.get_elements_by_tag_name("e2").item(0).unwrap();
@@ -2664,10 +2617,9 @@ mod tests {
 
     #[test]
     fn test_preceding() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e1 = doc.get_elements_by_tag_name("e1").item(0).unwrap();
@@ -2681,10 +2633,9 @@ mod tests {
 
     #[test]
     fn test_preceding_sibling() {
-        let (rest, doc) = xml_dom::XmlDocument::from_raw(
+        let (rest, doc) = parse_xml(
             "<root><e1><ee1>1</ee1></e1><e2><ee2>2</ee2></e2><e3><ee3>3</ee3></e3></root>",
-        )
-        .unwrap();
+        );
         assert_eq!("", rest);
 
         let e1 = doc.get_elements_by_tag_name("e1").item(0).unwrap();
@@ -2725,7 +2676,7 @@ mod tests {
         assert!(!not_equal_value(&a, &b).unwrap());
 
         let a = false.as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let b = doc.as_node().as_value();
         assert!(!equal_value(&a, &b).unwrap());
         assert!(not_equal_value(&a, &b).unwrap());
@@ -2736,7 +2687,7 @@ mod tests {
         assert!(not_equal_value(&a, &b).unwrap());
 
         let a = true.as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let b = doc.as_node().as_value();
         assert!(equal_value(&a, &b).unwrap());
         assert!(!not_equal_value(&a, &b).unwrap());
@@ -2829,7 +2780,7 @@ mod tests {
         assert!(!less_than_value(&a, &b).unwrap());
 
         let a = false.as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let b = doc.as_node().as_value();
         assert!(!greater_eq_value(&a, &b).unwrap());
         assert!(!greater_than_value(&a, &b).unwrap());
@@ -2844,7 +2795,7 @@ mod tests {
         assert!(!less_than_value(&a, &b).unwrap());
 
         let a = true.as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let b = doc.as_node().as_value();
         assert!(greater_eq_value(&a, &b).unwrap());
         assert!(!greater_than_value(&a, &b).unwrap());
@@ -2916,30 +2867,30 @@ mod tests {
 
     #[test]
     fn test_bool_eq_node_node() {
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>a</root>").unwrap();
+        let (_, doc) = parse_xml("<root>a</root>");
         let a = doc.as_node().as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>a</root>").unwrap();
+        let (_, doc) = parse_xml("<root>a</root>");
         let b = doc.as_node().as_value();
         assert!(equal_value(&a, &b).unwrap());
         assert!(!not_equal_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>a</root>").unwrap();
+        let (_, doc) = parse_xml("<root>a</root>");
         let a = doc.as_node().as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>b</root>").unwrap();
+        let (_, doc) = parse_xml("<root>b</root>");
         let b = doc.as_node().as_value();
         assert!(!equal_value(&a, &b).unwrap());
         assert!(not_equal_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>b</root>").unwrap();
+        let (_, doc) = parse_xml("<root>b</root>");
         let a = doc.as_node().as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>a</root>").unwrap();
+        let (_, doc) = parse_xml("<root>a</root>");
         let b = doc.as_node().as_value();
         assert!(!equal_value(&a, &b).unwrap());
         assert!(not_equal_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>b</root>").unwrap();
+        let (_, doc) = parse_xml("<root>b</root>");
         let a = doc.as_node().as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>b</root>").unwrap();
+        let (_, doc) = parse_xml("<root>b</root>");
         let b = doc.as_node().as_value();
         assert!(equal_value(&a, &b).unwrap());
         assert!(!not_equal_value(&a, &b).unwrap());
@@ -2947,25 +2898,25 @@ mod tests {
 
     #[test]
     fn test_bool_eq_node_number() {
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>0</root>").unwrap();
+        let (_, doc) = parse_xml("<root>0</root>");
         let a = doc.as_node().as_value();
         let b = 0f64.as_value();
         assert!(equal_value(&a, &b).unwrap());
         assert!(!not_equal_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>0</root>").unwrap();
+        let (_, doc) = parse_xml("<root>0</root>");
         let a = doc.as_node().as_value();
         let b = 1f64.as_value();
         assert!(!equal_value(&a, &b).unwrap());
         assert!(not_equal_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let a = doc.as_node().as_value();
         let b = 0f64.as_value();
         assert!(!equal_value(&a, &b).unwrap());
         assert!(not_equal_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let a = doc.as_node().as_value();
         let b = 1f64.as_value();
         assert!(equal_value(&a, &b).unwrap());
@@ -2974,25 +2925,25 @@ mod tests {
 
     #[test]
     fn test_bool_eq_node_text() {
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>a</root>").unwrap();
+        let (_, doc) = parse_xml("<root>a</root>");
         let a = doc.as_node().as_value();
         let b = "a".as_value();
         assert!(equal_value(&a, &b).unwrap());
         assert!(!not_equal_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>a</root>").unwrap();
+        let (_, doc) = parse_xml("<root>a</root>");
         let a = doc.as_node().as_value();
         let b = "b".as_value();
         assert!(!equal_value(&a, &b).unwrap());
         assert!(not_equal_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>b</root>").unwrap();
+        let (_, doc) = parse_xml("<root>b</root>");
         let a = doc.as_node().as_value();
         let b = "a".as_value();
         assert!(!equal_value(&a, &b).unwrap());
         assert!(not_equal_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>b</root>").unwrap();
+        let (_, doc) = parse_xml("<root>b</root>");
         let a = doc.as_node().as_value();
         let b = "b".as_value();
         assert!(equal_value(&a, &b).unwrap());
@@ -3001,36 +2952,36 @@ mod tests {
 
     #[test]
     fn test_bool_cmp_node_node() {
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>0</root>").unwrap();
+        let (_, doc) = parse_xml("<root>0</root>");
         let a = doc.as_node().as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>0</root>").unwrap();
+        let (_, doc) = parse_xml("<root>0</root>");
         let b = doc.as_node().as_value();
         assert!(greater_eq_value(&a, &b).unwrap());
         assert!(!greater_than_value(&a, &b).unwrap());
         assert!(less_eq_value(&a, &b).unwrap());
         assert!(!less_than_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>0</root>").unwrap();
+        let (_, doc) = parse_xml("<root>0</root>");
         let a = doc.as_node().as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let b = doc.as_node().as_value();
         assert!(!greater_eq_value(&a, &b).unwrap());
         assert!(!greater_than_value(&a, &b).unwrap());
         assert!(less_eq_value(&a, &b).unwrap());
         assert!(less_than_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let a = doc.as_node().as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>0</root>").unwrap();
+        let (_, doc) = parse_xml("<root>0</root>");
         let b = doc.as_node().as_value();
         assert!(greater_eq_value(&a, &b).unwrap());
         assert!(greater_than_value(&a, &b).unwrap());
         assert!(!less_eq_value(&a, &b).unwrap());
         assert!(!less_than_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let a = doc.as_node().as_value();
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let b = doc.as_node().as_value();
         assert!(greater_eq_value(&a, &b).unwrap());
         assert!(!greater_than_value(&a, &b).unwrap());
@@ -3040,7 +2991,7 @@ mod tests {
 
     #[test]
     fn test_bool_cmp_node_number() {
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>0</root>").unwrap();
+        let (_, doc) = parse_xml("<root>0</root>");
         let a = doc.as_node().as_value();
         let b = 0f64.as_value();
         assert!(greater_eq_value(&a, &b).unwrap());
@@ -3048,7 +2999,7 @@ mod tests {
         assert!(less_eq_value(&a, &b).unwrap());
         assert!(!less_than_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>0</root>").unwrap();
+        let (_, doc) = parse_xml("<root>0</root>");
         let a = doc.as_node().as_value();
         let b = 1f64.as_value();
         assert!(!greater_eq_value(&a, &b).unwrap());
@@ -3056,7 +3007,7 @@ mod tests {
         assert!(less_eq_value(&a, &b).unwrap());
         assert!(less_than_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let a = doc.as_node().as_value();
         let b = 0f64.as_value();
         assert!(greater_eq_value(&a, &b).unwrap());
@@ -3064,7 +3015,7 @@ mod tests {
         assert!(!less_eq_value(&a, &b).unwrap());
         assert!(!less_than_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let a = doc.as_node().as_value();
         let b = 1f64.as_value();
         assert!(greater_eq_value(&a, &b).unwrap());
@@ -3075,7 +3026,7 @@ mod tests {
 
     #[test]
     fn test_bool_cmp_node_text() {
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>0</root>").unwrap();
+        let (_, doc) = parse_xml("<root>0</root>");
         let a = doc.as_node().as_value();
         let b = "0".as_value();
         assert!(greater_eq_value(&a, &b).unwrap());
@@ -3083,7 +3034,7 @@ mod tests {
         assert!(less_eq_value(&a, &b).unwrap());
         assert!(!less_than_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>0</root>").unwrap();
+        let (_, doc) = parse_xml("<root>0</root>");
         let a = doc.as_node().as_value();
         let b = "1".as_value();
         assert!(!greater_eq_value(&a, &b).unwrap());
@@ -3091,7 +3042,7 @@ mod tests {
         assert!(less_eq_value(&a, &b).unwrap());
         assert!(less_than_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let a = doc.as_node().as_value();
         let b = "0".as_value();
         assert!(greater_eq_value(&a, &b).unwrap());
@@ -3099,7 +3050,7 @@ mod tests {
         assert!(!less_eq_value(&a, &b).unwrap());
         assert!(!less_than_value(&a, &b).unwrap());
 
-        let (_, doc) = xml_dom::XmlDocument::from_raw("<root>1</root>").unwrap();
+        let (_, doc) = parse_xml("<root>1</root>");
         let a = doc.as_node().as_value();
         let b = "1".as_value();
         assert!(greater_eq_value(&a, &b).unwrap());
@@ -3268,5 +3219,10 @@ mod tests {
         assert!(!greater_than_value(&a, &b).unwrap());
         assert!(less_eq_value(&a, &b).unwrap());
         assert!(!less_than_value(&a, &b).unwrap());
+    }
+
+    fn parse_xml(xml: &str) -> (&str, xml_dom::XmlDocument) {
+        let context = xml_dom::Context::from_text_expanded(true);
+        xml_dom::XmlDocument::from_raw_with_context(xml, context).unwrap()
     }
 }

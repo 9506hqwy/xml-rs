@@ -3687,6 +3687,7 @@ pub struct Context {
     document: Rc<XmlItem>,
     ordering: Singleton<DocumentOrder>,
     id_map: Singleton<HashMap<usize, Weak<XmlItem>>>,
+    text_expanded: bool,
 }
 
 impl PartialEq<Context> for Context {
@@ -3715,6 +3716,7 @@ impl Context {
             document,
             ordering: singleton(DocumentOrder::default()),
             id_map,
+            text_expanded: false,
         }
     }
 
@@ -3751,6 +3753,14 @@ impl Context {
         }
     }
 
+    pub fn set_text_expanded(&mut self, value: bool) {
+        self.text_expanded = value;
+    }
+
+    pub fn text_expanded(&self) -> bool {
+        self.text_expanded
+    }
+
     fn next(&self) -> Context {
         let info = singleton(ContextInfo::from(self.idm.borrow_mut().next()));
 
@@ -3760,6 +3770,7 @@ impl Context {
             document: self.document.clone(),
             ordering: self.ordering.clone(),
             id_map: self.id_map.clone(),
+            text_expanded: self.text_expanded,
         }
     }
 
@@ -3774,6 +3785,7 @@ impl Context {
             document: self.document.clone(),
             ordering: self.ordering.clone(),
             id_map: self.id_map.clone(),
+            text_expanded: self.text_expanded,
         }
     }
 }
