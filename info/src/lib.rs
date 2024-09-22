@@ -965,7 +965,6 @@ impl XmlCData {
         let data2 = chars2.iter().collect::<String>();
 
         let node = XmlCData::node(data2.as_str(), self.parent_id(), self.context());
-        // TODO: insert to parent
         node.as_cdata().unwrap()
     }
 
@@ -3293,7 +3292,6 @@ impl XmlText {
         let text2 = chars2.iter().collect::<String>();
 
         let node = XmlText::node(text2.as_str(), self.parent_id(), self.context());
-        // TODO: insert to parent.
         node.as_text().unwrap()
     }
 

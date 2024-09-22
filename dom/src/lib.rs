@@ -5718,10 +5718,8 @@ mod tests {
         assert_eq!(Some(doc.clone()), text2.owner_document());
         assert_ne!(0, text2.data.borrow().id());
         assert_ne!(0, text2.data.borrow().order());
-
-        // FIXME:
-        //assert_eq!(Some(text.as_node()), text2.previous_sibling());
-        //assert_eq!(Some(text2.as_node()), text.next_sibling());
+        assert_eq!(Some(text.as_node()), text2.previous_sibling());
+        assert_eq!(Some(text2.as_node()), text.next_sibling());
     }
 
     #[test]
@@ -6343,10 +6341,8 @@ mod tests {
         assert_eq!(Some(doc.clone()), cdata2.owner_document());
         assert_ne!(0, cdata2.data.borrow().id());
         assert_ne!(0, cdata2.data.borrow().order());
-
-        // FIXME:
-        //assert_eq!(Some(cdata.as_node()), cdata2.previous_sibling());
-        //assert_eq!(Some(cdata2.as_node()), cdata.next_sibling());
+        assert_eq!(Some(cdata.as_node()), cdata2.previous_sibling());
+        assert_eq!(Some(cdata2.as_node()), cdata.next_sibling());
     }
 
     #[test]
