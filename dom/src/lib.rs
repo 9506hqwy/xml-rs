@@ -17,6 +17,9 @@ use xml_info::{
 // TODO: re-implement DocumentFragment
 
 pub type ExpandedName = (String, Option<String>, Option<String>);
+pub type NamedMapAdd<T> = dyn FnMut(&mut XmlNode, T) -> error::Result<Option<T>>;
+pub type NamedMapGet<T> = dyn Fn(&XmlNode) -> Vec<(String, T)>;
+pub type NamedMapRemove<T> = dyn FnMut(&mut XmlNode, &str) -> error::Result<T>;
 
 // -----------------------------------------------------------------------------------------------
 
@@ -1357,9 +1360,9 @@ where
     T: Node + Clone,
 {
     node: XmlNode,
-    get: Box<dyn Fn(&XmlNode) -> Vec<(String, T)>>,
-    add: Box<dyn FnMut(&mut XmlNode, T) -> error::Result<Option<T>>>,
-    remove: Box<dyn FnMut(&mut XmlNode, &str) -> error::Result<T>>,
+    get: Box<NamedMapGet<T>>,
+    add: Box<NamedMapAdd<T>>,
+    remove: Box<NamedMapRemove<T>>,
 }
 
 impl<T> NamedNodeMap<T> for XmlNamedNodeMap<T>
