@@ -5707,7 +5707,7 @@ mod tests {
     }
 
     #[test]
-    fn test_atttibute_append() {
+    fn test_attribute_append() {
         let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
         assert_eq!("", rest);
 
@@ -5731,7 +5731,7 @@ mod tests {
     }
 
     #[test]
-    fn test_atttibute_delete() {
+    fn test_attribute_delete() {
         let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
         assert_eq!("", rest);
 
@@ -5746,7 +5746,7 @@ mod tests {
     }
 
     #[test]
-    fn test_atttibute_insert_before() {
+    fn test_attribute_insert_before() {
         let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
         assert_eq!("", rest);
 
@@ -5776,7 +5776,7 @@ mod tests {
     }
 
     #[test]
-    fn test_atttibute_set_values() {
+    fn test_attribute_set_values() {
         let (rest, tree) = xml_parser::document("<root a='1&amp;2'/>").unwrap();
         assert_eq!("", rest);
 
