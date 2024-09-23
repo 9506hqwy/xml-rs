@@ -28,18 +28,17 @@ pub trait HasChildren: HasContext {
 
     fn last_child_or_self_id(&self) -> usize;
 
-    fn delete_by_id(&mut self, id: usize) -> Option<Rc<XmlItem>>;
+    fn delete_by_id(&self, id: usize) -> Option<Rc<XmlItem>>;
 
-    fn insert_by_id(&mut self, value: Rc<XmlItem>, id: Option<usize>)
-        -> error::Result<Rc<XmlItem>>;
+    fn insert_by_id(&self, value: Rc<XmlItem>, id: Option<usize>) -> error::Result<Rc<XmlItem>>;
 
-    fn append(&mut self, value: Rc<XmlItem>) -> error::Result<Rc<XmlItem>> {
+    fn append(&self, value: Rc<XmlItem>) -> error::Result<Rc<XmlItem>> {
         let id = self.last_child_or_self_id();
         value.set_order_after(id);
         self.insert_by_id(value, None)
     }
 
-    fn delete(&mut self, id: usize) -> Option<Rc<XmlItem>> {
+    fn delete(&self, id: usize) -> Option<Rc<XmlItem>> {
         if let Some(v) = self.delete_by_id(id) {
             v.clear_order();
             Some(v)
@@ -48,7 +47,7 @@ pub trait HasChildren: HasContext {
         }
     }
 
-    fn insert_after(&mut self, value: Rc<XmlItem>, id: usize) -> error::Result<Rc<XmlItem>> {
+    fn insert_after(&self, value: Rc<XmlItem>, id: usize) -> error::Result<Rc<XmlItem>> {
         let index = self.child_index(id).ok_or(error::Error::OufOfIndex(id))?;
         if let Some(child) = self.child_by_index(index + 1) {
             self.insert_before(value, child.id())
@@ -57,7 +56,7 @@ pub trait HasChildren: HasContext {
         }
     }
 
-    fn insert_before(&mut self, value: Rc<XmlItem>, id: usize) -> error::Result<Rc<XmlItem>> {
+    fn insert_before(&self, value: Rc<XmlItem>, id: usize) -> error::Result<Rc<XmlItem>> {
         self.child_index(id).ok_or(error::Error::OufOfIndex(id))?;
         value
             .set_order_before(id)
@@ -383,7 +382,7 @@ pub trait UnparsedEntity {
 pub struct XmlAttribute {
     local_name: String,
     prefix: Option<String>,
-    values: Vec<XmlAttributeValue>,
+    values: Singleton<Vec<XmlAttributeValue>>,
     from_dtd: bool,
     parent_id: Option<usize>,
     context: Context,
@@ -391,11 +390,11 @@ pub struct XmlAttribute {
 
 impl HasChildren for XmlAttribute {
     fn child_index(&self, id: usize) -> Option<usize> {
-        self.values.iter().position(|v| v.id() == id)
+        self.values.borrow().iter().position(|v| v.id() == id)
     }
 
     fn child_by_index(&self, index: usize) -> Option<Rc<XmlItem>> {
-        match self.values.get(index) {
+        match self.values.borrow().get(index) {
             Some(XmlAttributeValue::Char(v)) => Some(v.clone()),
             Some(XmlAttributeValue::Entity(v)) => Some(v.clone()),
             Some(XmlAttributeValue::Text(v)) => Some(v.clone()),
@@ -403,9 +402,9 @@ impl HasChildren for XmlAttribute {
         }
     }
 
-    fn delete_by_id(&mut self, id: usize) -> Option<Rc<XmlItem>> {
+    fn delete_by_id(&self, id: usize) -> Option<Rc<XmlItem>> {
         if let Some(index) = self.child_index(id) {
-            let value = self.values.remove(index);
+            let value = self.values.borrow_mut().remove(index);
             value.set_parent_id(None);
             match value {
                 XmlAttributeValue::Char(v) => Some(v.clone()),
@@ -418,29 +417,26 @@ impl HasChildren for XmlAttribute {
     }
 
     fn last_child_or_self_id(&self) -> usize {
-        if let Some(last) = self.values.iter().last() {
+        if let Some(last) = self.values.borrow().iter().last() {
             last.id()
         } else {
             self.id()
         }
     }
 
-    fn insert_by_id(
-        &mut self,
-        value: Rc<XmlItem>,
-        id: Option<usize>,
-    ) -> error::Result<Rc<XmlItem>> {
+    fn insert_by_id(&self, value: Rc<XmlItem>, id: Option<usize>) -> error::Result<Rc<XmlItem>> {
         if self.ancestor(value.id()) {
             return Err(error::Error::InvalidHierarchy);
         }
 
+        value.remove_from_parent();
         value.set_parent_id(Some(self.id()));
         let v = XmlAttributeValue::try_from(value.clone())?;
         if let Some(id) = id {
             let index = self.child_index(id).unwrap();
-            self.values.insert(index, v.clone());
+            self.values.borrow_mut().insert(index, v.clone());
         } else {
-            self.values.push(v);
+            self.values.borrow_mut().push(v);
         }
         Ok(value)
     }
@@ -458,7 +454,7 @@ impl HasContext for XmlAttribute {
     fn init_order_recursive(&self) {
         self.init_order();
 
-        for v in self.values() {
+        for v in self.values.borrow().as_slice() {
             v.init_order_recursive();
         }
     }
@@ -504,7 +500,7 @@ impl Attribute for XmlAttribute {
     fn normalized_value(&self) -> error::Result<String> {
         let mut normalized = String::new();
 
-        for value in self.values.as_slice() {
+        for value in self.values.borrow().as_slice() {
             match value {
                 XmlAttributeValue::Char(v) => {
                     normalized.push_str(v.as_char_reference().unwrap().borrow().character_code())
@@ -648,7 +644,7 @@ impl fmt::Display for XmlAttribute {
         }
 
         let mut value = String::new();
-        for v in self.values.as_slice() {
+        for v in self.values.borrow().as_slice() {
             value.push_str(&format!("{}", v));
         }
 
@@ -666,7 +662,7 @@ impl XmlAttribute {
         let attribute = node(XmlAttribute {
             local_name,
             prefix,
-            values: vec![],
+            values: singleton(vec![]),
             from_dtd: false,
             parent_id,
             context: context.next(),
@@ -675,7 +671,7 @@ impl XmlAttribute {
 
         for value in value.value.as_slice() {
             if let Some(v) = XmlAttributeValue::new(value, attribute_id, context)? {
-                attribute.borrow_mut().values.push(v);
+                attribute.borrow_mut().values.borrow_mut().push(v);
             }
         }
 
@@ -688,7 +684,7 @@ impl XmlAttribute {
         let attribute = node(XmlAttribute {
             local_name: value.local_name().to_string(),
             prefix: value.prefix().map(|v| v.to_string()),
-            values: vec![],
+            values: singleton(vec![]),
             from_dtd: true,
             parent_id: None,
             context: context.zero(),
@@ -696,7 +692,11 @@ impl XmlAttribute {
 
         if let XmlDeclarationAttDefault::Value(_, values) = &value.value {
             for value in values.as_slice() {
-                attribute.borrow_mut().values.push(value.clone());
+                attribute
+                    .borrow_mut()
+                    .values
+                    .borrow_mut()
+                    .push(value.clone());
             }
         }
 
@@ -713,7 +713,7 @@ impl XmlAttribute {
         }
     }
 
-    pub fn set_values(&mut self, value: &str) -> error::Result<()> {
+    pub fn set_values(&self, value: &str) -> error::Result<()> {
         // TODO: `from_dtd`` update false to true.
         let xml = format!("{}={}", self.local_name(), escape(value));
         let (rest, tree) = xml_parser::attribute(xml.as_str())?;
@@ -721,22 +721,24 @@ impl XmlAttribute {
             let attr = XmlAttribute::node(&tree, self.parent_id(), self.context())?;
             // TODO: remove id from id_map.
             let attr = attr.as_attribute().unwrap();
-            self.values.clear();
+            self.values.borrow_mut().clear();
 
-            for v in attr.borrow().values() {
+            for v in attr.borrow().values.borrow().as_slice() {
                 v.init_order_recursive();
                 v.set_parent_id(Some(self.id()));
             }
 
-            self.values.extend_from_slice(attr.borrow().values());
+            self.values
+                .borrow_mut()
+                .extend_from_slice(attr.borrow().values.borrow().as_slice());
             Ok(())
         } else {
             Err(error::Error::InvalidData(value.to_string()))
         }
     }
 
-    pub fn values(&self) -> &[XmlAttributeValue] {
-        self.values.as_slice()
+    pub fn values(&self) -> Singleton<Vec<XmlAttributeValue>> {
+        self.values.clone()
     }
 
     fn declaration_def(&self) -> Option<XmlDeclarationAttDef> {
@@ -1366,7 +1368,7 @@ impl From<&parser::DeclarationAttType<'_>> for XmlDeclarationAttType {
 
 #[derive(Clone, Debug)]
 pub struct XmlDocument {
-    children: Vec<Rc<XmlItem>>,
+    children: Singleton<Vec<Rc<XmlItem>>>,
     base_uri: String,
     encoding: String,
     standalone: Option<bool>,
@@ -1377,16 +1379,16 @@ pub struct XmlDocument {
 
 impl HasChildren for XmlDocument {
     fn child_index(&self, id: usize) -> Option<usize> {
-        self.children.iter().position(|v| v.id() == id)
+        self.children.borrow().iter().position(|v| v.id() == id)
     }
 
     fn child_by_index(&self, index: usize) -> Option<Rc<XmlItem>> {
-        self.children.get(index).cloned()
+        self.children.borrow().get(index).cloned()
     }
 
-    fn delete_by_id(&mut self, id: usize) -> Option<Rc<XmlItem>> {
+    fn delete_by_id(&self, id: usize) -> Option<Rc<XmlItem>> {
         if let Some(index) = self.child_index(id) {
-            let value = self.children.remove(index);
+            let value = self.children.borrow_mut().remove(index);
             value.set_parent_id(None);
             Some(value)
         } else {
@@ -1395,25 +1397,22 @@ impl HasChildren for XmlDocument {
     }
 
     fn last_child_or_self_id(&self) -> usize {
-        if let Some(last) = self.children.iter().last() {
+        if let Some(last) = self.children.borrow().iter().last() {
             last.id()
         } else {
             self.id()
         }
     }
 
-    fn insert_by_id(
-        &mut self,
-        value: Rc<XmlItem>,
-        id: Option<usize>,
-    ) -> error::Result<Rc<XmlItem>> {
-        fn add_or_insert(doc: &mut XmlDocument, value: Rc<XmlItem>, id: Option<usize>) {
+    fn insert_by_id(&self, value: Rc<XmlItem>, id: Option<usize>) -> error::Result<Rc<XmlItem>> {
+        fn add_or_insert(doc: &XmlDocument, value: Rc<XmlItem>, id: Option<usize>) {
+            value.remove_from_parent();
             value.set_parent_id(Some(doc.id()));
             if let Some(id) = id {
                 let index = doc.child_index(id).unwrap();
-                doc.children.insert(index, value);
+                doc.children.borrow_mut().insert(index, value);
             } else {
-                doc.children.push(value);
+                doc.children.borrow_mut().push(value);
             }
         }
 
@@ -1459,7 +1458,7 @@ impl HasContext for XmlDocument {
     fn init_order_recursive(&self) {
         self.init_order();
 
-        for v in self.children.as_slice() {
+        for v in self.children.borrow().as_slice() {
             v.init_order_recursive();
         }
     }
@@ -1467,12 +1466,16 @@ impl HasContext for XmlDocument {
 
 impl Document for XmlDocument {
     fn children(&self) -> OrderedList<Rc<XmlItem>> {
-        let items = self.children.clone();
+        let mut items = vec![];
+        for item in self.children.borrow().iter() {
+            items.push(item.clone());
+        }
         OrderedList::new(items)
     }
 
     fn document_element(&self) -> error::Result<XmlNode<XmlElement>> {
         self.children
+            .borrow()
             .iter()
             .find_map(|v| v.as_element())
             .ok_or(error::Error::NotFoundDoumentElement)
@@ -1547,7 +1550,7 @@ impl fmt::Display for XmlDocument {
             write!(f, "?>")?;
         }
 
-        for child in self.children.as_slice() {
+        for child in self.children.borrow().as_slice() {
             child.fmt(f)?;
         }
 
@@ -1558,7 +1561,7 @@ impl fmt::Display for XmlDocument {
 impl XmlDocument {
     pub fn new(value: &parser::Document<'_>) -> error::Result<XmlNode<Self>> {
         let document = node(XmlDocument {
-            children: vec![],
+            children: singleton(vec![]),
             base_uri: String::new(),
             encoding: xml_encoding(value),
             standalone: xml_standalone(value),
@@ -1616,16 +1619,20 @@ impl XmlDocument {
         let doc = XmlDocument::new(&tree).unwrap();
         doc.borrow_mut()
             .children
+            .borrow_mut()
             .retain(|v| v.as_element().is_none());
         doc
     }
 
     pub fn document_declaration(&self) -> Option<XmlNode<XmlDocumentTypeDeclaration>> {
-        self.children.iter().find_map(|v| v.as_document_type())
+        self.children
+            .borrow()
+            .iter()
+            .find_map(|v| v.as_document_type())
     }
 
-    fn push_child(&mut self, child: Rc<XmlItem>) {
-        self.children.push(child);
+    fn push_child(&self, child: Rc<XmlItem>) {
+        self.children.borrow_mut().push(child);
     }
 }
 
@@ -1637,7 +1644,7 @@ pub struct XmlDocumentTypeDeclaration {
     prefix: Option<String>,
     system_identifier: Option<String>,
     public_identifier: Option<String>,
-    children: Vec<Rc<XmlItem>>,
+    children: Singleton<Vec<Rc<XmlItem>>>,
     context: Context,
 }
 
@@ -1653,7 +1660,7 @@ impl HasContext for XmlDocumentTypeDeclaration {
     fn init_order_recursive(&self) {
         self.init_order();
 
-        for v in self.children.as_slice() {
+        for v in self.children.borrow().as_slice() {
             v.init_order_recursive();
         }
     }
@@ -1679,7 +1686,12 @@ impl DocumentTypeDeclaration for XmlDocumentTypeDeclaration {
     }
 
     fn children(&self) -> OrderedList<XmlNode<XmlProcessingInstruction>> {
-        let pis = self.children.iter().filter_map(|v| v.as_pi()).collect();
+        let pis = self
+            .children
+            .borrow()
+            .iter()
+            .filter_map(|v| v.as_pi())
+            .collect();
         OrderedList::new(pis)
     }
 
@@ -1718,10 +1730,10 @@ impl fmt::Display for XmlDocumentTypeDeclaration {
             write!(f, " SYSTEM {}", escape(sys_id))?;
         }
 
-        if !self.children.is_empty() {
+        if !self.children.borrow().is_empty() {
             write!(f, " [")?;
 
-            for child in self.children.as_slice() {
+            for child in self.children.borrow().as_slice() {
                 child.fmt(f)?;
             }
             write!(f, "]")?;
@@ -1751,7 +1763,7 @@ impl XmlDocumentTypeDeclaration {
             prefix,
             system_identifier,
             public_identifier,
-            children: vec![],
+            children: singleton(vec![]),
             context: context.next(),
         });
         let declaration_id = declaration.borrow().id();
@@ -1807,7 +1819,7 @@ impl XmlDocumentTypeDeclaration {
             prefix: None,
             system_identifier: None,
             public_identifier: None,
-            children: vec![],
+            children: singleton(vec![]),
             context: context.next(),
         });
         let node = Rc::new(declaration.clone().into());
@@ -1818,17 +1830,23 @@ impl XmlDocumentTypeDeclaration {
 
     pub fn attributes(&self) -> Vec<XmlNode<XmlDeclarationAttList>> {
         self.children
+            .borrow()
             .iter()
             .filter_map(|v| v.as_declaration_att_list())
             .collect()
     }
 
     pub fn entities(&self) -> Vec<XmlNode<XmlEntity>> {
-        self.children.iter().filter_map(|v| v.as_entity()).collect()
+        self.children
+            .borrow()
+            .iter()
+            .filter_map(|v| v.as_entity())
+            .collect()
     }
 
     pub fn notations(&self) -> Vec<XmlNode<XmlNotation>> {
         self.children
+            .borrow()
             .iter()
             .filter_map(|v| v.as_notation())
             .collect()
@@ -1836,6 +1854,7 @@ impl XmlDocumentTypeDeclaration {
 
     pub fn unparsed_entities(&self) -> Vec<XmlNode<XmlUnparsedEntity>> {
         self.children
+            .borrow()
             .iter()
             .filter_map(|v| v.as_entity())
             .filter(|v| v.borrow().notation_name.is_some())
@@ -1843,8 +1862,8 @@ impl XmlDocumentTypeDeclaration {
             .collect()
     }
 
-    fn push_child(&mut self, child: Rc<XmlItem>) {
-        self.children.push(child);
+    fn push_child(&self, child: Rc<XmlItem>) {
+        self.children.borrow_mut().push(child);
     }
 }
 
@@ -1854,7 +1873,7 @@ impl XmlDocumentTypeDeclaration {
 pub struct XmlElement {
     local_name: String,
     prefix: Option<String>,
-    children: Vec<Rc<XmlItem>>,
+    children: Singleton<Vec<Rc<XmlItem>>>,
     attributes: Vec<Rc<XmlItem>>,
     base_uri: String,
     parent_id: Option<usize>,
@@ -1863,16 +1882,16 @@ pub struct XmlElement {
 
 impl HasChildren for XmlElement {
     fn child_index(&self, id: usize) -> Option<usize> {
-        self.children.iter().position(|v| v.id() == id)
+        self.children.borrow().iter().position(|v| v.id() == id)
     }
 
     fn child_by_index(&self, index: usize) -> Option<Rc<XmlItem>> {
-        self.children.get(index).cloned()
+        self.children.borrow().get(index).cloned()
     }
 
-    fn delete_by_id(&mut self, id: usize) -> Option<Rc<XmlItem>> {
+    fn delete_by_id(&self, id: usize) -> Option<Rc<XmlItem>> {
         if let Some(index) = self.child_index(id) {
-            let value = self.children.remove(index);
+            let value = self.children.borrow_mut().remove(index);
             value.set_parent_id(None);
             Some(value)
         } else {
@@ -1881,18 +1900,14 @@ impl HasChildren for XmlElement {
     }
 
     fn last_child_or_self_id(&self) -> usize {
-        if let Some(last) = self.children.iter().last() {
+        if let Some(last) = self.children.borrow().iter().last() {
             last.id()
         } else {
             self.id()
         }
     }
 
-    fn insert_by_id(
-        &mut self,
-        value: Rc<XmlItem>,
-        id: Option<usize>,
-    ) -> error::Result<Rc<XmlItem>> {
+    fn insert_by_id(&self, value: Rc<XmlItem>, id: Option<usize>) -> error::Result<Rc<XmlItem>> {
         if self.ancestor(value.id()) {
             return Err(error::Error::InvalidHierarchy);
         }
@@ -1905,12 +1920,13 @@ impl HasChildren for XmlElement {
             | XmlItem::PI(_)
             | XmlItem::Text(_)
             | XmlItem::Unexpanded(_) => {
+                value.remove_from_parent();
                 value.set_parent_id(Some(self.id()));
                 if let Some(id) = id {
                     let index = self.child_index(id).unwrap();
-                    self.children.insert(index, value.clone());
+                    self.children.borrow_mut().insert(index, value.clone());
                 } else {
-                    self.children.push(value.clone());
+                    self.children.borrow_mut().push(value.clone());
                 }
                 Ok(value)
             }
@@ -1939,7 +1955,7 @@ impl HasContext for XmlElement {
             child.borrow().init_order_recursive();
         }
 
-        for child in self.children.as_slice() {
+        for child in self.children.borrow().as_slice() {
             child.init_order_recursive();
         }
     }
@@ -1972,7 +1988,11 @@ impl Element for XmlElement {
     }
 
     fn children(&self) -> OrderedList<Rc<XmlItem>> {
-        OrderedList::new(self.children.clone())
+        let mut items = vec![];
+        for item in self.children.borrow().iter() {
+            items.push(item.clone());
+        }
+        OrderedList::new(items)
     }
 
     fn attributes(&self) -> UnorderedSet<XmlNode<XmlAttribute>> {
@@ -2058,12 +2078,12 @@ impl fmt::Display for XmlElement {
             write!(f, " {}", attr)?;
         }
 
-        if self.children.is_empty() {
+        if self.children.borrow().is_empty() {
             write!(f, " />")
         } else {
             write!(f, ">")?;
 
-            for child in self.children.as_slice() {
+            for child in self.children.borrow().as_slice() {
                 child.fmt(f)?;
             }
 
@@ -2087,7 +2107,7 @@ impl XmlElement {
         let element = node(XmlElement {
             local_name,
             prefix,
-            children: vec![],
+            children: singleton(vec![]),
             attributes: vec![],
             base_uri: String::new(),
             parent_id,
@@ -2279,8 +2299,8 @@ impl XmlElement {
         self.attributes.push(attr);
     }
 
-    fn push_child(&mut self, child: Rc<XmlItem>) {
-        self.children.push(child);
+    fn push_child(&self, child: Rc<XmlItem>) {
+        self.children.borrow_mut().push(child);
     }
 }
 
@@ -2776,6 +2796,26 @@ impl XmlItem {
         }
     }
 
+    fn context(&self) -> Context {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().context().clone(),
+            XmlItem::CData(v) => v.borrow().context().clone(),
+            XmlItem::CharReference(v) => v.borrow().context().clone(),
+            XmlItem::Comment(v) => v.borrow().context().clone(),
+            XmlItem::DeclarationAttList(v) => v.borrow().context().clone(),
+            XmlItem::Document(v) => v.borrow().context().clone(),
+            XmlItem::DocumentType(v) => v.borrow().context().clone(),
+            XmlItem::Element(v) => v.borrow().context().clone(),
+            XmlItem::Entity(v) => v.borrow().context().clone(),
+            XmlItem::Namespace(v) => v.borrow().context().clone(),
+            XmlItem::Notation(v) => v.borrow().context().clone(),
+            XmlItem::PI(v) => v.borrow().context().clone(),
+            XmlItem::Text(v) => v.borrow().context().clone(),
+            XmlItem::Unexpanded(v) => v.borrow().context().clone(),
+            XmlItem::Unparsed(v) => v.borrow().entity().borrow().context().clone(),
+        }
+    }
+
     fn init_order_recursive(&self) {
         match self {
             XmlItem::Attribute(v) => v.borrow().init_order_recursive(),
@@ -2813,6 +2853,25 @@ impl XmlItem {
             XmlItem::Text(v) => v.borrow().parent_id(),
             XmlItem::Unexpanded(v) => v.borrow().parent_id(),
             XmlItem::Unparsed(v) => v.borrow().entity().borrow().parent_id(),
+        }
+    }
+
+    fn remove_from_parent(&self) {
+        if let Some(parent_id) = self.parent_id() {
+            if let Some(parent) = self.context().node(parent_id) {
+                match &*parent {
+                    XmlItem::Attribute(v) => {
+                        v.borrow().delete_by_id(self.id());
+                    }
+                    XmlItem::Document(v) => {
+                        v.borrow().delete_by_id(self.id());
+                    }
+                    XmlItem::Element(v) => {
+                        v.borrow().delete_by_id(self.id());
+                    }
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 
@@ -3826,6 +3885,8 @@ impl DocumentOrder {
     }
 
     fn insert_after(&mut self, id: usize, info: &Singleton<ContextInfo>) -> Option<usize> {
+        self.remove(info.borrow().id);
+
         let order = self.get(id);
         if order > 0 {
             self.order.insert(order, Rc::downgrade(info));
@@ -3837,6 +3898,8 @@ impl DocumentOrder {
     }
 
     fn insert_before(&mut self, id: usize, info: &Singleton<ContextInfo>) -> Option<usize> {
+        self.remove(info.borrow().id);
+
         let order = self.get(id);
         if order > 0 {
             self.order.insert(order - 1, Rc::downgrade(info));
@@ -4249,39 +4312,45 @@ mod tests {
         let doc = XmlDocument::empty();
 
         let comment = XmlComment::node("a", None, doc.borrow().context());
-        doc.borrow_mut().append(comment).unwrap();
+        doc.borrow().append(comment).unwrap();
         assert_eq!("<!--a-->", format!("{}", doc.borrow()));
 
         let pi = XmlProcessingInstruction::empty("b", doc.borrow().context()).unwrap();
-        doc.borrow_mut().append(pi).unwrap();
+        doc.borrow().append(pi.clone()).unwrap();
         assert_eq!("<!--a--><?b?>", format!("{}", doc.borrow()));
 
         let doc_type = XmlDocumentTypeDeclaration::empty("c", doc.borrow().context());
-        doc.borrow_mut().append(doc_type).unwrap();
+        doc.borrow().append(doc_type).unwrap();
         assert_eq!("<!--a--><?b?><!DOCTYPE c>", format!("{}", doc.borrow()));
 
         let doc_type = XmlDocumentTypeDeclaration::empty("d", doc.borrow().context());
-        doc.borrow_mut().append(doc_type).err().unwrap();
+        doc.borrow().append(doc_type).err().unwrap();
 
         let element = XmlElement::empty("c", doc.borrow().context()).unwrap();
-        doc.borrow_mut().append(element).unwrap();
+        doc.borrow().append(element).unwrap();
         assert_eq!(
             "<!--a--><?b?><!DOCTYPE c><c />",
             format!("{}", doc.borrow())
         );
 
         let element = XmlElement::empty("d", doc.borrow().context()).unwrap();
-        doc.borrow_mut().append(element).err().unwrap();
+        doc.borrow().append(element).err().unwrap();
 
         let comment = XmlComment::node("e", None, doc.borrow().context());
-        doc.borrow_mut().append(comment).unwrap();
+        doc.borrow().append(comment).unwrap();
         assert_eq!(
             "<!--a--><?b?><!DOCTYPE c><c /><!--e-->",
             format!("{}", doc.borrow())
         );
 
+        doc.borrow().append(pi).unwrap();
+        assert_eq!(
+            "<!--a--><!DOCTYPE c><c /><!--e--><?b?>",
+            format!("{}", doc.borrow())
+        );
+
         let text = XmlText::node("f", None, doc.borrow().context());
-        doc.borrow_mut().append(text).err().unwrap();
+        doc.borrow().append(text).err().unwrap();
     }
 
     #[test]
@@ -4291,10 +4360,10 @@ mod tests {
 
         let doc = XmlDocument::new(&tree).unwrap();
 
-        doc.borrow_mut().delete(4).unwrap();
+        doc.borrow().delete(4).unwrap();
         assert_eq!("<!--a--><?b?><c /><!--e-->", format!("{}", doc.borrow()));
 
-        assert_eq!(None, doc.borrow_mut().delete(4));
+        assert_eq!(None, doc.borrow().delete(4));
     }
 
     #[test]
@@ -4305,27 +4374,33 @@ mod tests {
         let doc = XmlDocument::new(&tree).unwrap();
 
         let comment = XmlComment::node("f", None, doc.borrow().context());
-        doc.borrow_mut().insert_before(comment, 5).unwrap();
+        doc.borrow().insert_before(comment.clone(), 5).unwrap();
         assert_eq!(
             "<!--a--><?b?><!DOCTYPE c><!--f--><c /><!--e-->",
             format!("{}", doc.borrow())
         );
 
         let pi = XmlProcessingInstruction::empty("g", doc.borrow().context()).unwrap();
-        doc.borrow_mut().insert_before(pi, 6).unwrap();
+        doc.borrow().insert_before(pi, 6).unwrap();
         assert_eq!(
             "<!--a--><?b?><!DOCTYPE c><!--f--><c /><?g?><!--e-->",
             format!("{}", doc.borrow())
         );
 
+        doc.borrow().insert_before(comment, 6).unwrap();
+        assert_eq!(
+            "<!--a--><?b?><!DOCTYPE c><c /><?g?><!--f--><!--e-->",
+            format!("{}", doc.borrow())
+        );
+
         let doc_type = XmlDocumentTypeDeclaration::empty("h", doc.borrow().context());
-        doc.borrow_mut().insert_before(doc_type, 5).err().unwrap();
+        doc.borrow().insert_before(doc_type, 5).err().unwrap();
 
         let element = XmlElement::empty("i", doc.borrow().context()).unwrap();
-        doc.borrow_mut().insert_before(element, 5).err().unwrap();
+        doc.borrow().insert_before(element, 5).err().unwrap();
 
         let text = XmlText::node("f", None, doc.borrow().context());
-        doc.borrow_mut().insert_before(text, 5).err().unwrap();
+        doc.borrow().insert_before(text, 5).err().unwrap();
     }
 
     #[test]
@@ -5802,15 +5877,18 @@ mod tests {
         let attr = root.borrow().attributes().iter().next().unwrap();
 
         let text = XmlText::node("3", None, doc.borrow().context());
-        attr.borrow_mut().append(text).unwrap();
+        attr.borrow().append(text.clone()).unwrap();
         assert_eq!("1&23", attr.borrow().normalized_value().unwrap());
 
-        attr.borrow_mut()
+        attr.borrow()
             .append(XmlCharReference::node("3042", 16, None, doc.borrow().context()).unwrap())
             .unwrap();
         assert_eq!("1&23あ", attr.borrow().normalized_value().unwrap());
 
-        attr.borrow_mut()
+        attr.borrow().append(text).unwrap();
+        assert_eq!("1&2あ3", attr.borrow().normalized_value().unwrap());
+
+        attr.borrow()
             .append(XmlComment::node("a", None, doc.borrow().context()))
             .err()
             .unwrap();
@@ -5825,10 +5903,10 @@ mod tests {
         let root = doc.borrow().document_element().unwrap();
         let attr = root.borrow().attributes().iter().next().unwrap();
 
-        attr.borrow_mut().delete(5).unwrap();
+        attr.borrow().delete(5).unwrap();
         assert_eq!("12", attr.borrow().normalized_value().unwrap());
 
-        assert_eq!(None, attr.borrow_mut().delete(5));
+        assert_eq!(None, attr.borrow().delete(5));
     }
 
     #[test]
@@ -5841,21 +5919,24 @@ mod tests {
         let attr = root.borrow().attributes().iter().next().unwrap();
 
         let text = XmlText::node("3", None, doc.borrow().context());
-        attr.borrow_mut().insert_before(text, 5).unwrap();
+        attr.borrow().insert_before(text.clone(), 5).unwrap();
         assert_eq!("13&2", attr.borrow().normalized_value().unwrap());
 
-        let text = XmlText::node("3", None, doc.borrow().context());
-        attr.borrow_mut().insert_before(text, 8).err().unwrap();
+        attr.borrow().insert_before(text, 6).unwrap();
+        assert_eq!("1&32", attr.borrow().normalized_value().unwrap());
 
-        attr.borrow_mut()
+        let text = XmlText::node("3", None, doc.borrow().context());
+        attr.borrow().insert_before(text.clone(), 8).err().unwrap();
+
+        attr.borrow()
             .insert_before(
                 XmlCharReference::node("3042", 16, None, doc.borrow().context()).unwrap(),
                 5,
             )
             .unwrap();
-        assert_eq!("13あ&2", attr.borrow().normalized_value().unwrap());
+        assert_eq!("1あ&32", attr.borrow().normalized_value().unwrap());
 
-        attr.borrow_mut()
+        attr.borrow()
             .insert_before(XmlComment::node("a", None, doc.borrow().context()), 5)
             .err()
             .unwrap();
@@ -5870,16 +5951,16 @@ mod tests {
         let root = doc.borrow().document_element().unwrap();
         let attr = root.borrow().attributes().iter().next().unwrap();
 
-        attr.borrow_mut().set_values("a&gt;b").unwrap();
+        attr.borrow().set_values("a&gt;b").unwrap();
         assert_eq!("a>b", attr.borrow().normalized_value().unwrap());
 
-        attr.borrow_mut().set_values("a'b").unwrap();
+        attr.borrow().set_values("a'b").unwrap();
         assert_eq!("a'b", attr.borrow().normalized_value().unwrap());
 
-        attr.borrow_mut().set_values("a\"b").unwrap();
+        attr.borrow().set_values("a\"b").unwrap();
         assert_eq!("a\"b", attr.borrow().normalized_value().unwrap());
 
-        attr.borrow_mut().set_values("a'\"b").err().unwrap();
+        attr.borrow().set_values("a'\"b").err().unwrap();
     }
 
     #[test]

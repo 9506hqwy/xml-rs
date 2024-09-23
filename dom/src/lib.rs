@@ -17,9 +17,9 @@ use xml_info::{
 // TODO: re-implement DocumentFragment
 
 pub type ExpandedName = (String, Option<String>, Option<String>);
-pub type NamedMapAdd<T> = dyn FnMut(&mut XmlNode, T) -> error::Result<Option<T>>;
+pub type NamedMapAdd<T> = dyn Fn(&XmlNode, T) -> error::Result<Option<T>>;
 pub type NamedMapGet<T> = dyn Fn(&XmlNode) -> Vec<(String, T)>;
-pub type NamedMapRemove<T> = dyn FnMut(&mut XmlNode, &str) -> error::Result<T>;
+pub type NamedMapRemove<T> = dyn Fn(&XmlNode, &str) -> error::Result<T>;
 
 // -----------------------------------------------------------------------------------------------
 
@@ -94,22 +94,22 @@ pub trait Node {
 }
 
 pub trait NodeMut {
-    fn set_node_value(&mut self, value: &str) -> error::Result<()>;
+    fn set_node_value(&self, value: &str) -> error::Result<()>;
 
     fn insert_before(
-        &mut self,
+        &self,
         new_child: XmlNode,
         ref_child: Option<&XmlNode>,
     ) -> error::Result<XmlNode>;
 
-    fn replace_child(&mut self, new_child: XmlNode, old_child: &XmlNode) -> error::Result<XmlNode> {
+    fn replace_child(&self, new_child: XmlNode, old_child: &XmlNode) -> error::Result<XmlNode> {
         self.insert_before(new_child, Some(old_child))?;
         self.remove_child(old_child)
     }
 
-    fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode>;
+    fn remove_child(&self, old_child: &XmlNode) -> error::Result<XmlNode>;
 
-    fn append_child(&mut self, new_child: XmlNode) -> error::Result<XmlNode> {
+    fn append_child(&self, new_child: XmlNode) -> error::Result<XmlNode> {
         self.insert_before(new_child, None)
     }
 }
@@ -151,9 +151,9 @@ pub trait NamedNodeMap<T> {
 }
 
 pub trait NamedNodeMapMut<T>: NamedNodeMap<T> {
-    fn set_named_item(&mut self, arg: T) -> error::Result<Option<T>>;
+    fn set_named_item(&self, arg: T) -> error::Result<Option<T>>;
 
-    fn remove_named_item(&mut self, name: &str) -> error::Result<T>;
+    fn remove_named_item(&self, name: &str) -> error::Result<T>;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -167,19 +167,19 @@ pub trait CharacterData: Node {
 }
 
 pub trait CharacterDataMut: CharacterData + NodeMut {
-    fn set_data(&mut self, data: &str) -> error::Result<()> {
+    fn set_data(&self, data: &str) -> error::Result<()> {
         self.replace_data(0, self.length(), data)
     }
 
-    fn append_data(&mut self, arg: &str) -> error::Result<()> {
+    fn append_data(&self, arg: &str) -> error::Result<()> {
         self.insert_data(self.length(), arg)
     }
 
-    fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()>;
+    fn insert_data(&self, offset: usize, arg: &str) -> error::Result<()>;
 
-    fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()>;
+    fn delete_data(&self, offset: usize, count: usize) -> error::Result<()>;
 
-    fn replace_data(&mut self, offset: usize, count: usize, arg: &str) -> error::Result<()> {
+    fn replace_data(&self, offset: usize, count: usize, arg: &str) -> error::Result<()> {
         self.delete_data(offset, count)?;
         self.insert_data(offset, arg)
     }
@@ -196,7 +196,7 @@ pub trait Attr: Node {
 }
 
 pub trait AttrMut: Attr + NodeMut {
-    fn set_value(&mut self, value: &str) -> error::Result<()> {
+    fn set_value(&self, value: &str) -> error::Result<()> {
         self.set_node_value(value)
     }
 }
@@ -214,13 +214,13 @@ pub trait Element: Node {
 }
 
 pub trait ElementMut: Element + NodeMut {
-    fn set_attribute(&mut self, name: &str, value: &str) -> error::Result<()>;
+    fn set_attribute(&self, name: &str, value: &str) -> error::Result<()>;
 
-    fn remove_attribute(&mut self, name: &str) -> error::Result<()>;
+    fn remove_attribute(&self, name: &str) -> error::Result<()>;
 
-    fn set_attribute_node(&mut self, new_attr: XmlAttr) -> error::Result<Option<XmlAttr>>;
+    fn set_attribute_node(&self, new_attr: XmlAttr) -> error::Result<Option<XmlAttr>>;
 
-    fn remove_attribute_node(&mut self, old_attr: XmlAttr) -> error::Result<XmlAttr> {
+    fn remove_attribute_node(&self, old_attr: XmlAttr) -> error::Result<XmlAttr> {
         if let Some(attr) = self.get_attribute_node(old_attr.name().as_str()) {
             self.remove_attribute(old_attr.name().as_str())?;
             Ok(attr)
@@ -229,7 +229,7 @@ pub trait ElementMut: Element + NodeMut {
         }
     }
 
-    fn normalize(&mut self);
+    fn normalize(&self);
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -237,7 +237,7 @@ pub trait ElementMut: Element + NodeMut {
 pub trait Text: CharacterData {}
 
 pub trait TextMut: CharacterDataMut + Sized {
-    fn split_text(&mut self, offset: usize) -> error::Result<Self>;
+    fn split_text(&self, offset: usize) -> error::Result<Self>;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -293,7 +293,7 @@ pub trait ProcessingInstruction: Node {
 }
 
 pub trait ProcessingInstructionMut: ProcessingInstruction + NodeMut {
-    fn set_data(&mut self, data: &str) -> error::Result<()>;
+    fn set_data(&self, data: &str) -> error::Result<()>;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -1142,12 +1142,12 @@ impl Node for XmlDocument {
 }
 
 impl NodeMut for XmlDocument {
-    fn set_node_value(&mut self, _: &str) -> error::Result<()> {
+    fn set_node_value(&self, _: &str) -> error::Result<()> {
         Err(error::DomException::NoDataAllowedErr)?
     }
 
     fn insert_before(
-        &mut self,
+        &self,
         new_child: XmlNode,
         ref_child: Option<&XmlNode>,
     ) -> error::Result<XmlNode> {
@@ -1160,10 +1160,9 @@ impl NodeMut for XmlDocument {
                 return Err(error::DomException::WrongDocumentErr)?;
             }
 
-            // TODO: remove new_child from teee.
             match self
                 .document
-                .borrow_mut()
+                .borrow()
                 .insert_before(new_child.try_into()?, r.id())
             {
                 Ok(v) => Ok(v),
@@ -1172,7 +1171,7 @@ impl NodeMut for XmlDocument {
             }?
         } else {
             self.document
-                .borrow_mut()
+                .borrow()
                 .append(new_child.try_into()?)
                 .map_err(|_| error::DomException::HierarchyRequestErr)?
         };
@@ -1180,12 +1179,12 @@ impl NodeMut for XmlDocument {
         Ok(XmlNode::from(value))
     }
 
-    fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
+    fn remove_child(&self, old_child: &XmlNode) -> error::Result<XmlNode> {
         if Some(self.clone()) != old_child.owner_document() {
             return Err(error::DomException::WrongDocumentErr)?;
         }
 
-        match self.document.borrow_mut().delete(old_child.id()) {
+        match self.document.borrow().delete(old_child.id()) {
             Some(v) => Ok(XmlNode::from(v)),
             _ => Err(error::DomException::NotFoundErr)?,
         }
@@ -1391,19 +1390,19 @@ impl<T> NamedNodeMapMut<T> for XmlNamedNodeMap<T>
 where
     T: Node + Clone,
 {
-    fn set_named_item(&mut self, arg: T) -> error::Result<Option<T>> {
+    fn set_named_item(&self, arg: T) -> error::Result<Option<T>> {
         let name = arg.node_name();
         if let Ok(v) = self.remove_named_item(name.as_str()) {
-            (self.add)(&mut self.node, arg)?; // FIXME: revert on failed.
+            (self.add)(&self.node, arg)?; // FIXME: revert on failed.
             Ok(Some(v))
         } else {
-            (self.add)(&mut self.node, arg)?;
+            (self.add)(&self.node, arg)?;
             Ok(None)
         }
     }
 
-    fn remove_named_item(&mut self, name: &str) -> error::Result<T> {
-        (self.remove)(&mut self.node, name)
+    fn remove_named_item(&self, name: &str) -> error::Result<T> {
+        (self.remove)(&self.node, name)
     }
 }
 
@@ -1537,13 +1536,13 @@ impl Node for XmlAttr {
 }
 
 impl NodeMut for XmlAttr {
-    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
-        self.attribute.borrow_mut().set_values(value)?;
+    fn set_node_value(&self, value: &str) -> error::Result<()> {
+        self.attribute.borrow().set_values(value)?;
         Ok(())
     }
 
     fn insert_before(
-        &mut self,
+        &self,
         new_child: XmlNode,
         ref_child: Option<&XmlNode>,
     ) -> error::Result<XmlNode> {
@@ -1556,10 +1555,9 @@ impl NodeMut for XmlAttr {
                 return Err(error::DomException::WrongDocumentErr)?;
             }
 
-            // TODO: remove new_child from teee.
             match self
                 .attribute
-                .borrow_mut()
+                .borrow()
                 .insert_before(new_child.try_into()?, r.id())
             {
                 Ok(v) => Ok(v),
@@ -1568,7 +1566,7 @@ impl NodeMut for XmlAttr {
             }?
         } else {
             self.attribute
-                .borrow_mut()
+                .borrow()
                 .append(new_child.try_into()?)
                 .map_err(|_| error::DomException::HierarchyRequestErr)?
         };
@@ -1576,12 +1574,12 @@ impl NodeMut for XmlAttr {
         Ok(XmlNode::from(value))
     }
 
-    fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
+    fn remove_child(&self, old_child: &XmlNode) -> error::Result<XmlNode> {
         if self.owner_document() != old_child.owner_document() {
             return Err(error::DomException::WrongDocumentErr)?;
         }
 
-        match self.attribute.borrow_mut().delete(old_child.id()) {
+        match self.attribute.borrow().delete(old_child.id()) {
             Some(v) => Ok(XmlNode::from(v)),
             _ => Err(error::DomException::NotFoundErr)?,
         }
@@ -1628,7 +1626,7 @@ impl HasChild for XmlAttr {
     fn children(&self) -> Vec<XmlNode> {
         let mut nodes: Vec<XmlNode> = vec![];
 
-        for v in self.attribute.borrow().values() {
+        for v in self.attribute.borrow().values().borrow().iter() {
             match v {
                 info::XmlAttributeValue::Char(v) => {
                     nodes.push(XmlNode::from(v.clone()));
@@ -1704,19 +1702,19 @@ impl Element for XmlElement {
 }
 
 impl ElementMut for XmlElement {
-    fn set_attribute(&mut self, name: &str, value: &str) -> error::Result<()> {
-        let mut attr = self.owner_document().unwrap().create_attribute(name)?;
+    fn set_attribute(&self, name: &str, value: &str) -> error::Result<()> {
+        let attr = self.owner_document().unwrap().create_attribute(name)?;
         attr.set_value(value)?;
         self.set_attribute_node(attr)?;
         Ok(())
     }
 
-    fn remove_attribute(&mut self, name: &str) -> error::Result<()> {
+    fn remove_attribute(&self, name: &str) -> error::Result<()> {
         self.element.borrow_mut().remove_attribute(name);
         Ok(())
     }
 
-    fn set_attribute_node(&mut self, new_attr: XmlAttr) -> error::Result<Option<XmlAttr>> {
+    fn set_attribute_node(&self, new_attr: XmlAttr) -> error::Result<Option<XmlAttr>> {
         if self.owner_document() != new_attr.owner_document() {
             return Err(error::DomException::WrongDocumentErr)?;
         }
@@ -1738,7 +1736,7 @@ impl ElementMut for XmlElement {
         Ok(attr.map(XmlAttr::from))
     }
 
-    fn normalize(&mut self) {
+    fn normalize(&self) {
         todo!()
     }
 }
@@ -1799,13 +1797,13 @@ impl Node for XmlElement {
                 .collect()
         }
 
-        fn add(node: &mut XmlNode, attr: XmlAttr) -> error::Result<Option<XmlAttr>> {
-            let mut element = node.as_element().unwrap();
+        fn add(node: &XmlNode, attr: XmlAttr) -> error::Result<Option<XmlAttr>> {
+            let element = node.as_element().unwrap();
             element.set_attribute_node(attr)
         }
 
-        fn remove(node: &mut XmlNode, name: &str) -> error::Result<XmlAttr> {
-            let mut element = node.as_element().unwrap();
+        fn remove(node: &XmlNode, name: &str) -> error::Result<XmlAttr> {
+            let element = node.as_element().unwrap();
             if let Some(attr) = element.get_attribute_node(name) {
                 element.remove_attribute(name)?;
                 Ok(attr)
@@ -1832,12 +1830,12 @@ impl Node for XmlElement {
 }
 
 impl NodeMut for XmlElement {
-    fn set_node_value(&mut self, _: &str) -> error::Result<()> {
+    fn set_node_value(&self, _: &str) -> error::Result<()> {
         Err(error::DomException::NoDataAllowedErr)?
     }
 
     fn insert_before(
-        &mut self,
+        &self,
         new_child: XmlNode,
         ref_child: Option<&XmlNode>,
     ) -> error::Result<XmlNode> {
@@ -1850,10 +1848,9 @@ impl NodeMut for XmlElement {
                 return Err(error::DomException::WrongDocumentErr)?;
             }
 
-            // TODO: remove new_child from teee.
             match self
                 .element
-                .borrow_mut()
+                .borrow()
                 .insert_before(new_child.try_into()?, r.id())
             {
                 Ok(v) => Ok(v),
@@ -1862,7 +1859,7 @@ impl NodeMut for XmlElement {
             }?
         } else {
             self.element
-                .borrow_mut()
+                .borrow()
                 .append(new_child.try_into()?)
                 .map_err(|_| error::DomException::HierarchyRequestErr)?
         };
@@ -1870,12 +1867,12 @@ impl NodeMut for XmlElement {
         Ok(XmlNode::from(value))
     }
 
-    fn remove_child(&mut self, old_child: &XmlNode) -> error::Result<XmlNode> {
+    fn remove_child(&self, old_child: &XmlNode) -> error::Result<XmlNode> {
         if self.owner_document() != old_child.owner_document() {
             return Err(error::DomException::WrongDocumentErr)?;
         }
 
-        match self.element.borrow_mut().delete(old_child.id()) {
+        match self.element.borrow().delete(old_child.id()) {
             Some(v) => Ok(XmlNode::from(v)),
             _ => Err(error::DomException::NotFoundErr)?,
         }
@@ -2050,7 +2047,7 @@ pub struct XmlText {
 impl Text for XmlText {}
 
 impl TextMut for XmlText {
-    fn split_text(&mut self, offset: usize) -> error::Result<XmlText> {
+    fn split_text(&self, offset: usize) -> error::Result<XmlText> {
         if self.length() < offset {
             return Err(error::DomException::IndexSizeErr)?;
         }
@@ -2063,13 +2060,13 @@ impl TextMut for XmlText {
                     let data2_node: Rc<info::XmlItem> = Rc::new(data2.clone().into());
 
                     let inserted = v
-                        .borrow_mut()
+                        .borrow()
                         .insert_after(data2_node.clone(), self.data.borrow().id());
 
                     match inserted {
                         Ok(_) => {}
                         Err(info::error::Error::OufOfIndex(_)) => {
-                            v.borrow_mut().append(data2_node)?;
+                            v.borrow().append(data2_node)?;
                         }
                         Err(e) => {
                             return Err(error::Error::from(e));
@@ -2083,13 +2080,13 @@ impl TextMut for XmlText {
                     let data2_node: Rc<info::XmlItem> = Rc::new(data2.clone().into());
 
                     let inserted = v
-                        .borrow_mut()
+                        .borrow()
                         .insert_after(data2_node.clone(), self.data.borrow().id());
 
                     match inserted {
                         Ok(_) => {}
                         Err(info::error::Error::OufOfIndex(_)) => {
-                            v.borrow_mut().append(data2_node)?;
+                            v.borrow().append(data2_node)?;
                         }
                         Err(e) => {
                             return Err(error::Error::from(e));
@@ -2124,7 +2121,7 @@ impl CharacterData for XmlText {
 }
 
 impl CharacterDataMut for XmlText {
-    fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
+    fn insert_data(&self, offset: usize, arg: &str) -> error::Result<()> {
         if self.length() < offset {
             Err(error::DomException::IndexSizeErr)?
         } else {
@@ -2133,7 +2130,7 @@ impl CharacterDataMut for XmlText {
         }
     }
 
-    fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
+    fn delete_data(&self, offset: usize, count: usize) -> error::Result<()> {
         if self.length() < (offset + count) {
             Err(error::DomException::IndexSizeErr)?
         } else {
@@ -2200,15 +2197,15 @@ impl Node for XmlText {
 }
 
 impl NodeMut for XmlText {
-    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
+    fn set_node_value(&self, value: &str) -> error::Result<()> {
         self.set_data(value)
     }
 
-    fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
+    fn insert_before(&self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
         Err(error::DomException::HierarchyRequestErr)?
     }
 
-    fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
+    fn remove_child(&self, _: &XmlNode) -> error::Result<XmlNode> {
         Err(error::DomException::HierarchyRequestErr)?
     }
 }
@@ -2273,7 +2270,7 @@ impl CharacterData for XmlComment {
 }
 
 impl CharacterDataMut for XmlComment {
-    fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
+    fn insert_data(&self, offset: usize, arg: &str) -> error::Result<()> {
         if self.length() < offset {
             Err(error::DomException::IndexSizeErr)?
         } else {
@@ -2282,7 +2279,7 @@ impl CharacterDataMut for XmlComment {
         }
     }
 
-    fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
+    fn delete_data(&self, offset: usize, count: usize) -> error::Result<()> {
         if self.length() < (offset + count) {
             Err(error::DomException::IndexSizeErr)?
         } else {
@@ -2349,15 +2346,15 @@ impl Node for XmlComment {
 }
 
 impl NodeMut for XmlComment {
-    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
+    fn set_node_value(&self, value: &str) -> error::Result<()> {
         self.set_data(value)
     }
 
-    fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
+    fn insert_before(&self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
         Err(error::DomException::HierarchyRequestErr)?
     }
 
-    fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
+    fn remove_child(&self, _: &XmlNode) -> error::Result<XmlNode> {
         Err(error::DomException::HierarchyRequestErr)?
     }
 }
@@ -2404,7 +2401,7 @@ impl CDataSection for XmlCDataSection {}
 impl Text for XmlCDataSection {}
 
 impl TextMut for XmlCDataSection {
-    fn split_text(&mut self, offset: usize) -> error::Result<XmlCDataSection> {
+    fn split_text(&self, offset: usize) -> error::Result<XmlCDataSection> {
         if self.length() < offset {
             return Err(error::DomException::IndexSizeErr)?;
         }
@@ -2415,13 +2412,13 @@ impl TextMut for XmlCDataSection {
         let data2_node: Rc<info::XmlItem> = Rc::new(data2.clone().into());
 
         let inserted = v
-            .borrow_mut()
+            .borrow()
             .insert_after(data2_node.clone(), self.data.borrow().id());
 
         match inserted {
             Ok(_) => {}
             Err(info::error::Error::OufOfIndex(_)) => {
-                v.borrow_mut().append(data2_node)?;
+                v.borrow().append(data2_node)?;
             }
             Err(e) => {
                 return Err(error::Error::from(e));
@@ -2451,7 +2448,7 @@ impl CharacterData for XmlCDataSection {
 }
 
 impl CharacterDataMut for XmlCDataSection {
-    fn insert_data(&mut self, offset: usize, arg: &str) -> error::Result<()> {
+    fn insert_data(&self, offset: usize, arg: &str) -> error::Result<()> {
         if self.length() < offset {
             Err(error::DomException::IndexSizeErr)?
         } else {
@@ -2460,7 +2457,7 @@ impl CharacterDataMut for XmlCDataSection {
         }
     }
 
-    fn delete_data(&mut self, offset: usize, count: usize) -> error::Result<()> {
+    fn delete_data(&self, offset: usize, count: usize) -> error::Result<()> {
         if self.length() < (offset + count) {
             Err(error::DomException::IndexSizeErr)?
         } else {
@@ -2532,15 +2529,15 @@ impl Node for XmlCDataSection {
 }
 
 impl NodeMut for XmlCDataSection {
-    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
+    fn set_node_value(&self, value: &str) -> error::Result<()> {
         self.set_data(value)
     }
 
-    fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
+    fn insert_before(&self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
         Err(error::DomException::HierarchyRequestErr)?
     }
 
-    fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
+    fn remove_child(&self, _: &XmlNode) -> error::Result<XmlNode> {
         Err(error::DomException::HierarchyRequestErr)?
     }
 }
@@ -2605,11 +2602,11 @@ impl DocumentType for XmlDocumentType {
                 .collect()
         }
 
-        fn add(_: &mut XmlNode, _: XmlEntity) -> error::Result<Option<XmlEntity>> {
+        fn add(_: &XmlNode, _: XmlEntity) -> error::Result<Option<XmlEntity>> {
             Err(error::DomException::NoModificationAllowedErr)?
         }
 
-        fn remove(_: &mut XmlNode, _: &str) -> error::Result<XmlEntity> {
+        fn remove(_: &XmlNode, _: &str) -> error::Result<XmlEntity> {
             Err(error::DomException::NoModificationAllowedErr)?
         }
 
@@ -2635,11 +2632,11 @@ impl DocumentType for XmlDocumentType {
                 .collect()
         }
 
-        fn add(_: &mut XmlNode, _: XmlNotation) -> error::Result<Option<XmlNotation>> {
+        fn add(_: &XmlNode, _: XmlNotation) -> error::Result<Option<XmlNotation>> {
             Err(error::DomException::NoModificationAllowedErr)?
         }
 
-        fn remove(_: &mut XmlNode, _: &str) -> error::Result<XmlNotation> {
+        fn remove(_: &XmlNode, _: &str) -> error::Result<XmlNotation> {
             Err(error::DomException::NoModificationAllowedErr)?
         }
 
@@ -3130,7 +3127,7 @@ impl ProcessingInstruction for XmlProcessingInstruction {
 }
 
 impl ProcessingInstructionMut for XmlProcessingInstruction {
-    fn set_data(&mut self, data: &str) -> error::Result<()> {
+    fn set_data(&self, data: &str) -> error::Result<()> {
         self.pi.borrow_mut().set_content(data)?;
         Ok(())
     }
@@ -3193,15 +3190,15 @@ impl Node for XmlProcessingInstruction {
 }
 
 impl NodeMut for XmlProcessingInstruction {
-    fn set_node_value(&mut self, value: &str) -> error::Result<()> {
+    fn set_node_value(&self, value: &str) -> error::Result<()> {
         self.set_data(value)
     }
 
-    fn insert_before(&mut self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
+    fn insert_before(&self, _: XmlNode, _: Option<&XmlNode>) -> error::Result<XmlNode> {
         Err(error::DomException::HierarchyRequestErr)?
     }
 
-    fn remove_child(&mut self, _: &XmlNode) -> error::Result<XmlNode> {
+    fn remove_child(&self, _: &XmlNode) -> error::Result<XmlNode> {
         Err(error::DomException::HierarchyRequestErr)?
     }
 }
@@ -3914,7 +3911,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_set_node_value_err5() {
-        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root />").unwrap();
 
         // NodeMut
         let err = doc.set_node_value("a").err().unwrap();
@@ -3926,7 +3923,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_insert_before_ok() {
-        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root />").unwrap();
 
         // NodeMut
         let a = doc
@@ -3949,7 +3946,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_insert_before_err2() {
-        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root />").unwrap();
 
         // NodeMut
         let err = doc
@@ -3965,7 +3962,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_insert_before_err3() {
-        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root />").unwrap();
         let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
 
         // NodeMut
@@ -3982,7 +3979,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_insert_before_err7() {
-        let (_, mut doc) = XmlDocument::from_raw("<root><e><ee /></e></root>").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root><e><ee /></e></root>").unwrap();
         let ee = doc.get_elements_by_tag_name("ee").item(0).unwrap();
 
         // NodeMut
@@ -3996,7 +3993,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_replace_child_ok() {
-        let (_, mut doc) = XmlDocument::from_raw("<root /><!--b--><!--a-->").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root /><!--b--><!--a-->").unwrap();
         let b = doc.child_nodes().iter().nth(1).unwrap();
 
         // NodeMut
@@ -4018,7 +4015,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_replace_child_err2() {
-        let (_, mut doc) = XmlDocument::from_raw("<root /><!--b--><!--a-->").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root /><!--b--><!--a-->").unwrap();
         let b = doc.child_nodes().iter().nth(1).unwrap();
 
         // NodeMut
@@ -4035,7 +4032,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_replace_child_err3() {
-        let (_, mut doc) = XmlDocument::from_raw("<root /><!--b--><!--a-->").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root /><!--b--><!--a-->").unwrap();
         let b = doc.child_nodes().iter().nth(1).unwrap();
         let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
 
@@ -4053,8 +4050,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_replace_child_err7() {
-        let (_, mut doc) =
-            XmlDocument::from_raw("<root><e><ee /></e></root><!--b--><!--a-->").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root><e><ee /></e></root><!--b--><!--a-->").unwrap();
         let ee = doc.get_elements_by_tag_name("ee").item(0).unwrap();
 
         // NodeMut
@@ -4071,7 +4067,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_remove_child_ok() {
-        let (_, mut doc) = XmlDocument::from_raw("<root /><!--c--><!--a-->").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root /><!--c--><!--a-->").unwrap();
         let a = doc.child_nodes().iter().last().unwrap();
 
         // NodeMut
@@ -4085,8 +4081,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_remove_child_err7() {
-        let (_, mut doc) =
-            XmlDocument::from_raw("<root><e><ee /></e></root><!--c--><!--a-->").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root><e><ee /></e></root><!--c--><!--a-->").unwrap();
         let ee = doc.get_elements_by_tag_name("ee").item(0).unwrap();
 
         // NodeMut
@@ -4100,7 +4095,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_append_child_ok() {
-        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root />").unwrap();
 
         // NodeMut
         let a = doc.append_child(doc.create_comment("a").as_node()).unwrap();
@@ -4113,7 +4108,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_append_child_err2() {
-        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root />").unwrap();
 
         // NodeMut
         let err = doc
@@ -4129,7 +4124,7 @@ mod tests {
 
     #[test]
     fn test_document_node_mut_append_child_err3() {
-        let (_, mut doc) = XmlDocument::from_raw("<root />").unwrap();
+        let (_, doc) = XmlDocument::from_raw("<root />").unwrap();
         let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
 
         // NodeMut
@@ -4217,7 +4212,7 @@ mod tests {
     #[test]
     fn test_element_list_node_list() {
         let (_, doc) = XmlDocument::from_raw("<root><e>1</e><e>2</e></root>").unwrap();
-        let mut root = doc.root_element().unwrap();
+        let root = doc.root_element().unwrap();
         let children = root.get_elements_by_tag_name("e");
 
         // NodeList
@@ -4242,7 +4237,7 @@ mod tests {
     #[test]
     fn test_node_list_node_list() {
         let (_, doc) = XmlDocument::from_raw("<root><e>1</e><e>2</e></root>").unwrap();
-        let mut root = doc.root_element().unwrap();
+        let root = doc.root_element().unwrap();
         let children = root.child_nodes();
 
         // NodeList
@@ -4276,7 +4271,7 @@ mod tests {
     #[test]
     fn test_named_node_map_named_node_map() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
-        let mut root = doc.root_element().unwrap();
+        let root = doc.root_element().unwrap();
         let attrs = root.attributes().unwrap();
 
         // NamedNodeMap
@@ -4298,8 +4293,8 @@ mod tests {
     #[test]
     fn test_named_node_map_named_node_map_mut_set_named_item_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
-        let mut root = doc.root_element().unwrap();
-        let mut attrs = root.attributes().unwrap();
+        let root = doc.root_element().unwrap();
+        let attrs = root.attributes().unwrap();
 
         // NamedNodeMapMut
         let c = attrs
@@ -4328,7 +4323,7 @@ mod tests {
     fn test_named_node_map_named_node_map_mut_set_named_item_err3() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
         let root = doc.root_element().unwrap();
-        let mut attrs = root.attributes().unwrap();
+        let attrs = root.attributes().unwrap();
         let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
 
         // NamedNodeMapMut
@@ -4347,7 +4342,7 @@ mod tests {
     fn test_named_node_map_named_node_map_mut_set_named_item_err9() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'><e c='3' /></root>").unwrap();
         let root = doc.root_element().unwrap();
-        let mut attrs = root.attributes().unwrap();
+        let attrs = root.attributes().unwrap();
         let c = doc
             .get_elements_by_tag_name("e")
             .item(0)
@@ -4372,8 +4367,8 @@ mod tests {
     #[test]
     fn test_named_node_map_named_node_map_mut_remove_named_item_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
-        let mut root = doc.root_element().unwrap();
-        let mut attrs = root.attributes().unwrap();
+        let root = doc.root_element().unwrap();
+        let attrs = root.attributes().unwrap();
 
         // NamedNodeMapMut
         let a = attrs.remove_named_item("a").unwrap();
@@ -4392,7 +4387,7 @@ mod tests {
     fn test_named_node_map_named_node_map_mut_remove_named_item_err7() {
         let (_, doc) = XmlDocument::from_raw("<root a='1' b='2'/>").unwrap();
         let root = doc.root_element().unwrap();
-        let mut attrs = root.attributes().unwrap();
+        let attrs = root.attributes().unwrap();
 
         // NamedNodeMapMut
         let err = attrs.remove_named_item("c").err().unwrap();
@@ -4428,7 +4423,7 @@ mod tests {
     #[test]
     fn test_attr_attr_mut() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
-        let mut attr = doc
+        let attr = doc
             .document_element()
             .unwrap()
             .get_attribute_node("a")
@@ -4480,7 +4475,7 @@ mod tests {
     fn test_attr_node_mut_set_node_value_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
 
         // NodeMut
         attr.set_node_value("a&amp;b&amp;c").unwrap();
@@ -4508,7 +4503,7 @@ mod tests {
     fn test_attr_node_mut_insert_before_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
 
         // NodeMut
         let d = attr
@@ -4533,7 +4528,7 @@ mod tests {
     fn test_attr_node_mut_insert_before_err2() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
 
         // NodeMut
         let err = attr
@@ -4551,7 +4546,7 @@ mod tests {
     fn test_attr_node_mut_insert_before_err3() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
         let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
 
         // NodeMut
@@ -4570,7 +4565,7 @@ mod tests {
     fn test_attr_node_mut_insert_before_err7() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'><e /></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
         let e = root.get_elements_by_tag_name("e").item(0).unwrap();
 
         // NodeMut
@@ -4586,7 +4581,7 @@ mod tests {
     fn test_attr_node_mut_replace_child_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='b&amp;e'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
         let e = attr.children().last().cloned().unwrap();
 
         // NodeMut
@@ -4610,7 +4605,7 @@ mod tests {
     fn test_attr_node_mut_replace_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root a='b&amp;e'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
         let e = attr.children().last().cloned().unwrap();
 
         // NodeMut
@@ -4629,7 +4624,7 @@ mod tests {
     fn test_attr_node_mut_replace_child_err3() {
         let (_, doc) = XmlDocument::from_raw("<root a='b&amp;e'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
         let e = attr.children().last().cloned().unwrap();
         let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
 
@@ -4649,7 +4644,7 @@ mod tests {
     fn test_attr_node_mut_replace_child_err7() {
         let (_, doc) = XmlDocument::from_raw("<root a='b&amp;e'><e /></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
         let e = root.get_elements_by_tag_name("e").item(0).unwrap();
 
         // NodeMut
@@ -4665,7 +4660,7 @@ mod tests {
     fn test_attr_node_mut_remove_child_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='b&amp;d'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
         let d = attr.children().last().cloned().unwrap();
 
         // NodeMut
@@ -4681,7 +4676,7 @@ mod tests {
     fn test_attr_node_mut_remove_child_err7() {
         let (_, doc) = XmlDocument::from_raw("<root a='b&amp;d'><e /></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
         let e = root.get_elements_by_tag_name("e").item(0).unwrap();
 
         // NodeMut
@@ -4694,7 +4689,7 @@ mod tests {
     fn test_attr_node_mut_append_child_ok() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
 
         // NodeMut
         let d = attr
@@ -4711,7 +4706,7 @@ mod tests {
     fn test_attr_node_mut_append_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
 
         // NodeMut
         let err = attr
@@ -4729,7 +4724,7 @@ mod tests {
     fn test_attr_node_mut_append_child_err3() {
         let (_, doc) = XmlDocument::from_raw("<root a='b'></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut attr = root.get_attribute_node("a").unwrap();
+        let attr = root.get_attribute_node("a").unwrap();
         let (_, doc2) = XmlDocument::from_raw("<r />").unwrap();
 
         // NodeMut
@@ -4895,7 +4890,7 @@ mod tests {
     fn test_element_element_mut_set_attribute_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -4916,7 +4911,7 @@ mod tests {
     fn test_element_element_mut_set_attribute_err4() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -4937,7 +4932,7 @@ mod tests {
         let (_, doc) =
             XmlDocument::from_raw("<root><elem1 a=\"b\" d='e'>data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -4955,7 +4950,7 @@ mod tests {
     fn test_element_element_mut_set_attribute_node_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -4991,7 +4986,7 @@ mod tests {
     fn test_element_element_mut_set_attribute_node_err3() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5016,7 +5011,7 @@ mod tests {
         let (_, doc) =
             XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1><e c='3' /></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5045,7 +5040,7 @@ mod tests {
         let (_, doc) =
             XmlDocument::from_raw("<root><elem1 a=\"b\" d='e'>data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5068,7 +5063,7 @@ mod tests {
         let (_, doc) =
             XmlDocument::from_raw("<root><elem1 a=\"b\" d='e'>data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5153,7 +5148,7 @@ mod tests {
     fn test_element_node_mut_set_node_value_err5() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5172,7 +5167,7 @@ mod tests {
     fn test_element_node_mut_insert_before_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5202,7 +5197,7 @@ mod tests {
     fn test_element_node_mut_insert_before_err2_not_allowed() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a='b'>data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5228,7 +5223,7 @@ mod tests {
                 .unwrap();
         let root = doc.document_element().unwrap();
         let elem1 = root.get_elements_by_tag_name("elem1").item(0).unwrap();
-        let mut elem2 = root
+        let elem2 = root
             .get_elements_by_tag_name("elem2")
             .item(0)
             .unwrap()
@@ -5248,7 +5243,7 @@ mod tests {
     fn test_element_node_mut_insert_before_err3() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a='b'>data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5273,7 +5268,7 @@ mod tests {
         let (_, doc) =
             XmlDocument::from_raw("<root><elem1 a='b'>data1</elem1><e /></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5294,7 +5289,7 @@ mod tests {
     fn test_element_node_mut_replace_child_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5323,7 +5318,7 @@ mod tests {
     fn test_element_node_mut_replace_child_err2_not_allowed() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5350,7 +5345,7 @@ mod tests {
                 .unwrap();
         let root = doc.document_element().unwrap();
         let elem1 = root.get_elements_by_tag_name("elem1").item(0).unwrap();
-        let mut elem2 = root
+        let elem2 = root
             .get_elements_by_tag_name("elem2")
             .item(0)
             .unwrap()
@@ -5371,7 +5366,7 @@ mod tests {
     fn test_element_node_mut_replace_child_err3() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5397,7 +5392,7 @@ mod tests {
         let (_, doc) =
             XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1><e /></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5418,7 +5413,7 @@ mod tests {
     fn test_element_node_mut_remove_child_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5440,7 +5435,7 @@ mod tests {
         let (_, doc) =
             XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1><e /></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5458,7 +5453,7 @@ mod tests {
     fn test_element_node_mut_append_child_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5480,7 +5475,7 @@ mod tests {
     fn test_element_node_mut_append_child_err2_not_allowed() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5506,7 +5501,7 @@ mod tests {
                 .unwrap();
         let root = doc.document_element().unwrap();
         let elem1 = root.get_elements_by_tag_name("elem1").item(0).unwrap();
-        let mut elem2 = root
+        let elem2 = root
             .get_elements_by_tag_name("elem2")
             .item(0)
             .unwrap()
@@ -5526,7 +5521,7 @@ mod tests {
     fn test_element_node_mut_append_child_err3() {
         let (_, doc) = XmlDocument::from_raw("<root><elem1 a=\"b\">data1</elem1></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut elem1 = root
+        let elem1 = root
             .get_elements_by_tag_name("elem1")
             .item(0)
             .unwrap()
@@ -5690,7 +5685,7 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // TextMut
         let text2 = text.split_text(2).unwrap();
@@ -5707,7 +5702,7 @@ mod tests {
     fn test_text_split_text_ok_element() {
         let (_, doc) = XmlDocument::from_raw("<root>text</root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut text = root.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = root.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // TextMut
         let text2 = text.split_text(2).unwrap();
@@ -5730,7 +5725,7 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // TextMut
         let err = text.split_text(5).err().unwrap();
@@ -5790,7 +5785,7 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterDataMut
         text.set_data("あいう").unwrap();
@@ -5805,7 +5800,7 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterDataMut
         text.append_data("えお").unwrap();
@@ -5820,7 +5815,7 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterDataMut
         text.insert_data(1, "あい").unwrap();
@@ -5835,7 +5830,7 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterDataMut
         let err = text.insert_data(5, "あい").err().unwrap();
@@ -5850,7 +5845,7 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterDataMut
         text.delete_data(2, 1).unwrap();
@@ -5865,7 +5860,7 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterDataMut
         let err = text.delete_data(5, 1).err().unwrap();
@@ -5880,7 +5875,7 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterDataMut
         text.replace_data(1, 3, "いう").unwrap();
@@ -5895,7 +5890,7 @@ mod tests {
             .unwrap()
             .get_attribute_node("a")
             .unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // CharacterDataMut
         let err = text.replace_data(5, 3, "いう").err().unwrap();
@@ -5929,7 +5924,7 @@ mod tests {
         let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
         let root = doc.document_element().unwrap();
         let attr = root.get_attribute_node("a").unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // Nodemut
         text.set_node_value("abc").unwrap();
@@ -5941,7 +5936,7 @@ mod tests {
         let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
         let root = doc.document_element().unwrap();
         let attr = root.get_attribute_node("a").unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -5957,7 +5952,7 @@ mod tests {
         let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
         let root = doc.document_element().unwrap();
         let attr = root.get_attribute_node("a").unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -5973,7 +5968,7 @@ mod tests {
         let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
         let root = doc.document_element().unwrap();
         let attr = root.get_attribute_node("a").unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -5989,7 +5984,7 @@ mod tests {
         let (_, doc) = XmlDocument::from_raw("<root a='text' />").unwrap();
         let root = doc.document_element().unwrap();
         let attr = root.get_attribute_node("a").unwrap();
-        let mut text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
+        let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6092,7 +6087,7 @@ mod tests {
     fn test_comment_character_data_mut_set_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterDataMut
         comment.set_data("あいう").unwrap();
@@ -6103,7 +6098,7 @@ mod tests {
     fn test_comment_character_data_mut_append_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterDataMut
         comment.append_data("えお").unwrap();
@@ -6117,7 +6112,7 @@ mod tests {
     fn test_comment_character_data_mut_insert_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterDataMut
         comment.insert_data(1, "あい").unwrap();
@@ -6131,7 +6126,7 @@ mod tests {
     fn test_comment_character_data_mut_insert_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterDataMut
         let err = comment.insert_data(10, "あい").err().unwrap();
@@ -6142,7 +6137,7 @@ mod tests {
     fn test_comment_character_data_mut_delete_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterDataMut
         comment.delete_data(4, 2).unwrap();
@@ -6153,7 +6148,7 @@ mod tests {
     fn test_comment_character_data_mut_delete_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterDataMut
         let err = comment.delete_data(10, 2).err().unwrap();
@@ -6164,7 +6159,7 @@ mod tests {
     fn test_comment_character_data_mut_replace_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterDataMut
         comment.replace_data(1, 3, "いう").unwrap();
@@ -6175,7 +6170,7 @@ mod tests {
     fn test_comment_character_data_mut_replace_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // CharacterDataMut
         let err = comment.replace_data(10, 3, "いう").err().unwrap();
@@ -6207,7 +6202,7 @@ mod tests {
     fn test_comment_node_mut_set_node_value_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // Nodemut
         comment.set_node_value("abc").unwrap();
@@ -6218,7 +6213,7 @@ mod tests {
     fn test_comment_node_mut_insert_before_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6233,7 +6228,7 @@ mod tests {
     fn test_comment_node_mut_replace_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6248,7 +6243,7 @@ mod tests {
     fn test_comment_node_mut_remove_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6263,7 +6258,7 @@ mod tests {
     fn test_comment_node_mut_append_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><!-- comment --></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
+        let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6330,7 +6325,7 @@ mod tests {
     fn test_cdata_text_mut_split_text_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // TextMut
         let cdata2 = cdata.split_text(1).unwrap();
@@ -6349,7 +6344,7 @@ mod tests {
     fn test_cdata_text_mut_split_text_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[cdata]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // TextMut
         let err = cdata.split_text(6).err().unwrap();
@@ -6393,7 +6388,7 @@ mod tests {
     fn test_cdata_character_data_mut_set_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         cdata.set_data("あいう").unwrap();
@@ -6404,7 +6399,7 @@ mod tests {
     fn test_cdata_character_data_mut_append_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         cdata.append_data("えお").unwrap();
@@ -6415,7 +6410,7 @@ mod tests {
     fn test_cdata_character_data_mut_insert_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         cdata.insert_data(1, "abc").unwrap();
@@ -6426,7 +6421,7 @@ mod tests {
     fn test_cdata_character_data_mut_insert_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         let err = cdata.insert_data(5, "abc").err().unwrap();
@@ -6437,7 +6432,7 @@ mod tests {
     fn test_cdata_character_data_mut_delete_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         cdata.delete_data(1, 2).unwrap();
@@ -6448,7 +6443,7 @@ mod tests {
     fn test_cdata_character_data_mut_delete_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         let err = cdata.delete_data(5, 1).err().unwrap();
@@ -6459,7 +6454,7 @@ mod tests {
     fn test_cdata_character_data_mut_replace_data_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         cdata.replace_data(1, 3, "いう").unwrap();
@@ -6470,7 +6465,7 @@ mod tests {
     fn test_cdata_character_data_mut_replace_data_err0() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // CharacterDataMut
         let err = cdata.replace_data(5, 1, "いう").err().unwrap();
@@ -6505,7 +6500,7 @@ mod tests {
     fn test_cdata_node_mut_set_node_value_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // Nodemut
         cdata.set_node_value("abc").unwrap();
@@ -6516,7 +6511,7 @@ mod tests {
     fn test_cdata_node_mut_insert_before_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6531,7 +6526,7 @@ mod tests {
     fn test_cdata_node_mut_replace_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6546,7 +6541,7 @@ mod tests {
     fn test_cdata_node_mut_remove_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -6561,7 +6556,7 @@ mod tests {
     fn test_cdata_node_mut_append_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><![CDATA[&<>\"]]></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
+        let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // Nodemut
         let e = root.as_node();
@@ -7002,7 +6997,7 @@ mod tests {
     fn test_pi_pi_mut() {
         let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // ProcessingInstructionMut
         pi.set_data("c").unwrap();
@@ -7034,7 +7029,7 @@ mod tests {
     fn test_pi_node_mut_set_node_value_ok() {
         let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // NodeMut
         pi.set_node_value("c").unwrap();
@@ -7045,7 +7040,7 @@ mod tests {
     fn test_pi_node_mut_insert_before_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // NodeMut
         let e = root.as_node();
@@ -7060,7 +7055,7 @@ mod tests {
     fn test_pi_node_mut_replace_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // NodeMut
         let e = root.as_node();
@@ -7075,7 +7070,7 @@ mod tests {
     fn test_pi_node_mut_remove_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // NodeMut
         let e = root.as_node();
@@ -7090,7 +7085,7 @@ mod tests {
     fn test_pi_node_mut_append_child_err2() {
         let (_, doc) = XmlDocument::from_raw("<root><?a b?></root>").unwrap();
         let root = doc.document_element().unwrap();
-        let mut pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
+        let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // NodeMut
         let e = root.as_node();
