@@ -647,14 +647,12 @@ impl fmt::Display for XmlAttribute {
             write!(f, "{}:", prefix)?;
         }
 
-        write!(f, "{}=\"", self.local_name.as_str())?;
-
-        // FIXME: in case of contain `'`.
-        for value in self.values.as_slice() {
-            value.fmt(f)?;
+        let mut value = String::new();
+        for v in self.values.as_slice() {
+            value.push_str(&format!("{}", v));
         }
 
-        write!(f, "\"")
+        write!(f, "{}={}", self.local_name.as_str(), escape(value.as_str()))
     }
 }
 
@@ -717,8 +715,7 @@ impl XmlAttribute {
 
     pub fn set_values(&mut self, value: &str) -> error::Result<()> {
         // TODO: `from_dtd`` update false to true.
-        // FIXME: in case of contain `'`.
-        let xml = format!("{}='{}'", self.local_name(), value);
+        let xml = format!("{}={}", self.local_name(), escape(value));
         let (rest, tree) = xml_parser::attribute(xml.as_str())?;
         if rest.is_empty() {
             let attr = XmlAttribute::node(&tree, self.parent_id(), self.context())?;
@@ -1712,16 +1709,13 @@ impl fmt::Display for XmlDocumentTypeDeclaration {
         write!(f, "{}", self.local_name.as_str())?;
 
         if let Some(pub_id) = self.public_identifier.as_deref() {
-            // FIXME: in case of contain `'`.
-            write!(f, " PUBLIC \"{}\"", pub_id)?;
+            write!(f, " PUBLIC {}", escape(pub_id))?;
 
             if let Some(sys_id) = self.system_identifier.as_deref() {
-                // FIXME: in case of contain `'`.
-                write!(f, " \"{}\"", sys_id)?;
+                write!(f, " {}", escape(sys_id))?;
             }
         } else if let Some(sys_id) = self.system_identifier.as_deref() {
-            // FIXME: in case of contain `'`.
-            write!(f, " SYSTEM \"{}\"", sys_id)?;
+            write!(f, " SYSTEM {}", escape(sys_id))?;
         }
 
         if !self.children.is_empty() {
@@ -2358,24 +2352,20 @@ impl fmt::Display for XmlEntity {
         write!(f, "<!ENTITY {}", self.name.as_str())?;
 
         if let Some(pub_id) = self.public_identifier.as_deref() {
-            // FIXME: in case of contain `'`.
-            write!(f, " PUBLIC \"{}\"", pub_id)?;
+            write!(f, " PUBLIC {}", escape(pub_id))?;
 
             if let Some(sys_id) = self.system_identifier.as_deref() {
-                // FIXME: in case of contain `'`.
-                write!(f, " \"{}\"", sys_id)?;
+                write!(f, " {}", escape(sys_id))?;
             }
         } else if let Some(sys_id) = self.system_identifier.as_deref() {
-            // FIXME: in case of contain `'`.
-            write!(f, " SYSTEM \"{}\"", sys_id)?;
+            write!(f, " SYSTEM {}", escape(sys_id))?;
         } else if let Some(values) = self.values.as_deref() {
-            // FIXME: in case of contain `'`.
-            write!(f, " \"")?;
-            for value in values {
-                value.fmt(f)?;
+            let mut value = String::new();
+            for v in values {
+                value.push_str(&format!("{}", v));
             }
-            // FIXME: in case of contain `'`.
-            write!(f, "\"",)?;
+
+            write!(f, " {}", escape(value.as_str()))?;
         }
 
         if let Some(ndata) = self.notation_name.as_deref() {
@@ -3014,16 +3004,13 @@ impl fmt::Display for XmlNotation {
         write!(f, "<!NOTATION {}", self.name.as_str())?;
 
         if let Some(pub_id) = self.public_identifier.as_deref() {
-            // FIXME: in case of contain `'`.
-            write!(f, " PUBLIC \"{}\"", pub_id)?;
+            write!(f, " PUBLIC {}", escape(pub_id))?;
 
             if let Some(sys_id) = self.system_identifier.as_deref() {
-                // FIXME: in case of contain `'`.
-                write!(f, " \"{}\"", sys_id)?;
+                write!(f, " {}", escape(sys_id))?;
             }
         } else if let Some(sys_id) = self.system_identifier.as_deref() {
-            // FIXME: in case of contain `'`.
-            write!(f, " SYSTEM \"{}\"", sys_id)?;
+            write!(f, " SYSTEM {}", escape(sys_id))?;
         }
 
         write!(f, ">")
@@ -3958,6 +3945,14 @@ fn equal_qname(a: xml_nom::model::QName, b: xml_nom::model::QName) -> bool {
     }
 }
 
+fn escape(value: &str) -> String {
+    if value.contains("\"") {
+        format!("'{}'", value)
+    } else {
+        format!("\"{}\"", value)
+    }
+}
+
 fn external_id(id: &parser::ExternalId) -> (String, Option<String>) {
     match id {
         parser::ExternalId::Public(p, s) => (s.to_string(), Some(p.to_string())),
@@ -4398,6 +4393,97 @@ mod tests {
 
         // PartialEq
         assert_eq!(declaration, declaration);
+    }
+
+    #[test]
+    fn test_doc_type_display_system_id() {
+        let (rest, tree) = xml_parser::document("<!DOCTYPE root SYSTEM 'e'><root />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let declaration = doc.borrow().document_declaration().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!DOCTYPE root SYSTEM \"e\">",
+            format!("{}", declaration.borrow())
+        );
+    }
+
+    #[test]
+    fn test_doc_type_display_system_id_apos() {
+        let (rest, tree) = xml_parser::document("<!DOCTYPE root SYSTEM \"'\"><root />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let declaration = doc.borrow().document_declaration().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!DOCTYPE root SYSTEM \"'\">",
+            format!("{}", declaration.borrow())
+        );
+    }
+
+    #[test]
+    fn test_doc_type_display_system_id_quote() {
+        let (rest, tree) = xml_parser::document("<!DOCTYPE root SYSTEM '\"'><root />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let declaration = doc.borrow().document_declaration().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!DOCTYPE root SYSTEM '\"'>",
+            format!("{}", declaration.borrow())
+        );
+    }
+
+    #[test]
+    fn test_doc_type_display_public_id() {
+        let (rest, tree) = xml_parser::document("<!DOCTYPE root PUBLIC 'e' 'f'><root />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let declaration = doc.borrow().document_declaration().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!DOCTYPE root PUBLIC \"e\" \"f\">",
+            format!("{}", declaration.borrow())
+        );
+    }
+
+    #[test]
+    fn test_doc_type_display_public_id_apos() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root PUBLIC \"'\" \"'\"><root />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let declaration = doc.borrow().document_declaration().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!DOCTYPE root PUBLIC \"'\" \"'\">",
+            format!("{}", declaration.borrow())
+        );
+    }
+
+    #[test]
+    fn test_doc_type_display_public_id_quote() {
+        let (rest, tree) = xml_parser::document("<!DOCTYPE root PUBLIC 'e' '\"'><root />").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let declaration = doc.borrow().document_declaration().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!DOCTYPE root PUBLIC \"e\" '\"'>",
+            format!("{}", declaration.borrow())
+        );
     }
 
     #[test]
@@ -5787,7 +5873,52 @@ mod tests {
         attr.borrow_mut().set_values("a&gt;b").unwrap();
         assert_eq!("a>b", attr.borrow().normalized_value().unwrap());
 
+        attr.borrow_mut().set_values("a'b").unwrap();
+        assert_eq!("a'b", attr.borrow().normalized_value().unwrap());
+
+        attr.borrow_mut().set_values("a\"b").unwrap();
+        assert_eq!("a\"b", attr.borrow().normalized_value().unwrap());
+
         attr.borrow_mut().set_values("a'\"b").err().unwrap();
+    }
+
+    #[test]
+    fn test_attribute_display_apos() {
+        let (rest, tree) = xml_parser::document("<root a=\"'\"/>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!("a=\"'\"", format!("{}", attr.borrow()));
+    }
+
+    #[test]
+    fn test_attribute_display_quote() {
+        let (rest, tree) = xml_parser::document("<root a='\"'/>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!("a='\"'", format!("{}", attr.borrow()));
+    }
+
+    #[test]
+    fn test_attribute_display_prefix() {
+        let (rest, tree) = xml_parser::document("<root a:b='c'/>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let root = doc.borrow().document_element().unwrap();
+        let attr = root.borrow().attributes().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!("a:b=\"c\"", format!("{}", attr.borrow()));
     }
 
     #[test]
@@ -6794,6 +6925,109 @@ mod tests {
     }
 
     #[test]
+    fn test_unparsed_display_system_id() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!ENTITY aaa SYSTEM 'e' NDATA n>]><root/>")
+                .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let entity = doc.borrow().unparsed_entities().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!ENTITY aaa SYSTEM \"e\" NDATA n>",
+            format!("{}", entity.borrow().entity().borrow())
+        );
+    }
+
+    #[test]
+    fn test_unparsed_display_system_id_apos() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!ENTITY aaa SYSTEM \"'\" NDATA n>]><root/>")
+                .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let entity = doc.borrow().unparsed_entities().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!ENTITY aaa SYSTEM \"'\" NDATA n>",
+            format!("{}", entity.borrow().entity().borrow())
+        );
+    }
+
+    #[test]
+    fn test_unparsed_display_system_id_quote() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!ENTITY aaa SYSTEM '\"' NDATA n>]><root/>")
+                .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let entity = doc.borrow().unparsed_entities().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!ENTITY aaa SYSTEM '\"' NDATA n>",
+            format!("{}", entity.borrow().entity().borrow())
+        );
+    }
+
+    #[test]
+    fn test_unparsed_display_public_id() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!ENTITY aaa PUBLIC 'e' 'f' NDATA n>]><root/>")
+                .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let entity = doc.borrow().unparsed_entities().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!ENTITY aaa PUBLIC \"e\" \"f\" NDATA n>",
+            format!("{}", entity.borrow().entity().borrow())
+        );
+    }
+
+    #[test]
+    fn test_unparsed_display_public_id_apos() {
+        let (rest, tree) = xml_parser::document(
+            "<!DOCTYPE root [<!ENTITY aaa PUBLIC \"'\" \"'\" NDATA n>]><root/>",
+        )
+        .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let entity = doc.borrow().unparsed_entities().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!ENTITY aaa PUBLIC \"'\" \"'\" NDATA n>",
+            format!("{}", entity.borrow().entity().borrow())
+        );
+    }
+
+    #[test]
+    fn test_unparsed_display_public_id_quote() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!ENTITY aaa PUBLIC 'e' '\"' NDATA n>]><root/>")
+                .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let entity = doc.borrow().unparsed_entities().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!ENTITY aaa PUBLIC \"e\" '\"' NDATA n>",
+            format!("{}", entity.borrow().entity().borrow())
+        );
+    }
+
+    #[test]
     fn test_notation_min() {
         let (rest, tree) =
             xml_parser::document("<!DOCTYPE root [<!NOTATION aaa PUBLIC 'bbb'>]><root/>").unwrap();
@@ -6856,6 +7090,105 @@ mod tests {
 
         // PartialEq
         assert_eq!(notation, notation);
+    }
+
+    #[test]
+    fn test_notation_display_system_id() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!NOTATION aaa SYSTEM 'e'>]><root/>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let notation = doc.borrow().notations().unwrap().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!NOTATION aaa SYSTEM \"e\">",
+            format!("{}", notation.borrow())
+        );
+    }
+
+    #[test]
+    fn test_notation_display_system_id_apos() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!NOTATION aaa SYSTEM \"'\">]><root/>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let notation = doc.borrow().notations().unwrap().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!NOTATION aaa SYSTEM \"'\">",
+            format!("{}", notation.borrow())
+        );
+    }
+
+    #[test]
+    fn test_notation_display_system_id_quote() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!NOTATION aaa SYSTEM '\"'>]><root/>").unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let notation = doc.borrow().notations().unwrap().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!NOTATION aaa SYSTEM '\"'>",
+            format!("{}", notation.borrow())
+        );
+    }
+
+    #[test]
+    fn test_notation_display_public_id() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!NOTATION aaa PUBLIC 'e' 'f'>]><root/>")
+                .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let notation = doc.borrow().notations().unwrap().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!NOTATION aaa PUBLIC \"e\" \"f\">",
+            format!("{}", notation.borrow())
+        );
+    }
+
+    #[test]
+    fn test_notation_display_public_id_apos() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!NOTATION aaa PUBLIC \"'\" \"'\">]><root/>")
+                .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let notation = doc.borrow().notations().unwrap().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!NOTATION aaa PUBLIC \"'\" \"'\">",
+            format!("{}", notation.borrow())
+        );
+    }
+
+    #[test]
+    fn test_notation_display_public_id_quote() {
+        let (rest, tree) =
+            xml_parser::document("<!DOCTYPE root [<!NOTATION aaa PUBLIC 'e' '\"'>]><root/>")
+                .unwrap();
+        assert_eq!("", rest);
+
+        let doc = XmlDocument::new(&tree).unwrap();
+        let notation = doc.borrow().notations().unwrap().iter().next().unwrap();
+
+        // fmt::Display
+        assert_eq!(
+            "<!NOTATION aaa PUBLIC \"e\" '\"'>",
+            format!("{}", notation.borrow())
+        );
     }
 
     #[test]
