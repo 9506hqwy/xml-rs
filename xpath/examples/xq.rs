@@ -2,11 +2,13 @@ use std::error::Error;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
+use xml_dom::PrettyPrint;
 
 struct Argument {
     file: Option<PathBuf>,
     expr: String,
     ns: Vec<(Option<String>, String)>,
+    no_indent: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -28,7 +30,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         xml_xpath::eval::model::Value::Node(nodes) => {
             for node in nodes {
-                println!("{}", node);
+                if arg.no_indent {
+                    println!("{}", node);
+                } else {
+                    node.pretty_print()?;
+                    println!();
+                }
             }
         }
         xml_xpath::eval::model::Value::Number(v) => {
@@ -46,6 +53,7 @@ fn args() -> Result<Argument, Box<dyn Error>> {
     let mut file = None;
     let mut expr = None;
     let mut ns = vec![];
+    let mut no_indent = false;
 
     let mut args = env::args();
     args.next(); // skip exe.
@@ -80,6 +88,9 @@ fn args() -> Result<Argument, Box<dyn Error>> {
 
                 ns.push((name, uri.to_string()));
             }
+            "--no-indent" => {
+                no_indent = true;
+            }
             _ => {
                 if file.is_some() {
                     return Err("Specify `file path` only once.".into());
@@ -98,6 +109,7 @@ fn args() -> Result<Argument, Box<dyn Error>> {
         file,
         expr: expr.unwrap(),
         ns,
+        no_indent,
     })
 }
 

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 use xml_dom::{
     AsNode, Attr, AttrMut, CharacterData, Document, DocumentMut, Element, NamedNodeMapMut, Node,
+    PrettyPrint,
 };
 
 struct Argument {
@@ -12,6 +13,7 @@ struct Argument {
     expr: String,
     value: String,
     ns: Vec<(Option<String>, String)>,
+    no_indent: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -44,7 +46,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    println!("{}", dom);
+    if arg.no_indent {
+        println!("{}", dom);
+    } else {
+        dom.pretty_print()?;
+    }
     Ok(())
 }
 
@@ -53,6 +59,7 @@ fn args() -> Result<Argument, Box<dyn Error>> {
     let mut expr = None;
     let mut value = None;
     let mut ns = vec![];
+    let mut no_indent = false;
 
     let mut args = env::args();
     args.next(); // skip exe.
@@ -96,6 +103,9 @@ fn args() -> Result<Argument, Box<dyn Error>> {
 
                 ns.push((name, uri.to_string()));
             }
+            "--no-indent" => {
+                no_indent = true;
+            }
             _ => {
                 if file.is_some() {
                     return Err("Specify `file path` only once.".into());
@@ -119,6 +129,7 @@ fn args() -> Result<Argument, Box<dyn Error>> {
         expr: expr.unwrap(),
         value: value.unwrap(),
         ns,
+        no_indent,
     })
 }
 

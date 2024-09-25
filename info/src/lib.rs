@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert;
 use std::fmt;
+use std::io;
 use std::iter::Iterator;
 use std::ops::{Deref, Range};
 use std::rc::{Rc, Weak};
@@ -18,6 +19,12 @@ use xml_parser::model as parser;
 pub type XmlNode<T> = Rc<RefCell<T>>;
 
 pub type Singleton<T> = Rc<RefCell<T>>;
+
+// -----------------------------------------------------------------------------------------------
+
+pub trait IndentedDisplay: fmt::Display {
+    fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()>;
+}
 
 // -----------------------------------------------------------------------------------------------
 
@@ -386,6 +393,12 @@ pub struct XmlAttribute {
     from_dtd: bool,
     parent_id: Option<usize>,
     context: Context,
+}
+
+impl IndentedDisplay for XmlAttribute {
+    fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
+        write!(f, "{}", self)
+    }
 }
 
 impl HasChildren for XmlAttribute {
@@ -779,6 +792,12 @@ pub enum XmlAttributeValue {
     Text(Rc<XmlItem>),
 }
 
+impl IndentedDisplay for XmlAttributeValue {
+    fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
+        write!(f, "{}", self)
+    }
+}
+
 impl convert::TryFrom<Rc<XmlItem>> for XmlAttributeValue {
     type Error = error::Error;
 
@@ -860,6 +879,12 @@ pub struct XmlCData {
     data: String,
     parent_id: Option<usize>,
     context: Context,
+}
+
+impl IndentedDisplay for XmlCData {
+    fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
+        write!(f, "{}", self)
+    }
 }
 
 impl HasContext for XmlCData {
@@ -987,6 +1012,12 @@ pub struct XmlCharReference {
     context: Context,
 }
 
+impl IndentedDisplay for XmlCharReference {
+    fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
+        write!(f, "{}", self)
+    }
+}
+
 impl HasContext for XmlCharReference {
     fn context(&self) -> &Context {
         &self.context
@@ -1081,6 +1112,13 @@ pub struct XmlComment {
     comment: String,
     parent_id: Option<usize>,
     context: Context,
+}
+
+impl IndentedDisplay for XmlComment {
+    fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
+        let space = " ".repeat(indent);
+        write!(f, "{}{}", space, self)
+    }
 }
 
 impl HasContext for XmlComment {
@@ -1262,6 +1300,12 @@ pub struct XmlDeclarationAttList {
     context: Context,
 }
 
+impl IndentedDisplay for XmlDeclarationAttList {
+    fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
+        write!(f, "{}", self)
+    }
+}
+
 impl HasContext for XmlDeclarationAttList {
     fn context(&self) -> &Context {
         &self.context
@@ -1375,6 +1419,35 @@ pub struct XmlDocument {
     version: Option<String>,
     all_declarations_processed: bool,
     context: Option<Context>,
+}
+
+impl IndentedDisplay for XmlDocument {
+    fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
+        if let Some(version) = self.version.as_deref() {
+            write!(f, "<?xml version=\"{}\"", version)?;
+
+            if !self.encoding.is_empty() {
+                write!(f, " encoding=\"{}\"", self.encoding.as_str())?;
+            }
+
+            if let Some(sd) = self.standalone {
+                let yes_no = if sd { "yes" } else { "no" };
+                write!(f, " standalone=\"{}\"", yes_no)?;
+            }
+
+            write!(f, "?>")?;
+        }
+
+        for (i, child) in self.children.borrow().as_slice().iter().enumerate() {
+            if i != 0 || self.version.is_some() {
+                writeln!(f)?;
+            }
+
+            child.indented(indent, f)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl HasChildren for XmlDocument {
@@ -1648,6 +1721,40 @@ pub struct XmlDocumentTypeDeclaration {
     context: Context,
 }
 
+impl IndentedDisplay for XmlDocumentTypeDeclaration {
+    fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
+        write!(f, "<!DOCTYPE ")?;
+
+        if let Some(prefix) = self.prefix.as_deref() {
+            write!(f, "{}:", prefix)?;
+        }
+
+        write!(f, "{}", self.local_name.as_str())?;
+
+        if let Some(pub_id) = self.public_identifier.as_deref() {
+            write!(f, " PUBLIC {}", escape(pub_id))?;
+
+            if let Some(sys_id) = self.system_identifier.as_deref() {
+                write!(f, " {}", escape(sys_id))?;
+            }
+        } else if let Some(sys_id) = self.system_identifier.as_deref() {
+            write!(f, " SYSTEM {}", escape(sys_id))?;
+        }
+
+        if !self.children.borrow().is_empty() {
+            write!(f, "\n[")?;
+
+            for child in self.children.borrow().as_slice() {
+                writeln!(f)?;
+                child.indented(indent + 4, f)?;
+            }
+            write!(f, "\n]\n")?;
+        }
+
+        write!(f, ">")
+    }
+}
+
 impl HasContext for XmlDocumentTypeDeclaration {
     fn context(&self) -> &Context {
         &self.context
@@ -1878,6 +1985,48 @@ pub struct XmlElement {
     base_uri: String,
     parent_id: Option<usize>,
     context: Context,
+}
+
+impl IndentedDisplay for XmlElement {
+    fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
+        let space = " ".repeat(indent);
+
+        write!(f, "{}<", space)?;
+        if let Some(prefix) = self.prefix.as_deref() {
+            write!(f, "{}:", prefix)?;
+        }
+        write!(f, "{}", self.local_name.as_str())?;
+
+        for attr in self.attributes.as_slice() {
+            write!(f, " {}", attr)?;
+        }
+
+        if self.children.borrow().is_empty() {
+            write!(f, " />")
+        } else {
+            write!(f, ">")?;
+
+            let mut has_element = false;
+            for child in self.children.borrow().as_slice() {
+                if child.as_element().is_some() {
+                    has_element = true;
+                    writeln!(f)?;
+                }
+
+                child.indented(indent + 4, f)?;
+            }
+
+            if has_element {
+                write!(f, "\n{}", space)?;
+            }
+
+            write!(f, "</")?;
+            if let Some(prefix) = self.prefix.as_deref() {
+                write!(f, "{}:", prefix)?;
+            }
+            write!(f, "{}>", self.local_name.as_str())
+        }
+    }
 }
 
 impl HasChildren for XmlElement {
@@ -2317,6 +2466,13 @@ pub struct XmlEntity {
     context: Context,
 }
 
+impl IndentedDisplay for XmlEntity {
+    fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
+        let space = " ".repeat(indent);
+        write!(f, "{}{}", space, self)
+    }
+}
+
 impl HasContext for XmlEntity {
     fn context(&self) -> &Context {
         &self.context
@@ -2472,6 +2628,12 @@ pub enum XmlEntityValue {
     Text(String),
 }
 
+impl IndentedDisplay for XmlEntityValue {
+    fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
+        write!(f, "{}", self)
+    }
+}
+
 impl fmt::Display for XmlEntityValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
@@ -2521,6 +2683,28 @@ pub enum XmlItem {
     Text(XmlNode<XmlText>),
     Unexpanded(XmlNode<XmlUnexpandedEntityReference>),
     Unparsed(XmlNode<XmlUnparsedEntity>),
+}
+
+impl IndentedDisplay for XmlItem {
+    fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().indented(indent, f),
+            XmlItem::CData(v) => v.borrow().indented(indent, f),
+            XmlItem::CharReference(v) => v.borrow().indented(indent, f),
+            XmlItem::Comment(v) => v.borrow().indented(indent, f),
+            XmlItem::DeclarationAttList(v) => v.borrow().indented(indent, f),
+            XmlItem::Document(v) => v.borrow().indented(indent, f),
+            XmlItem::DocumentType(v) => v.borrow().indented(indent, f),
+            XmlItem::Element(v) => v.borrow().indented(indent, f),
+            XmlItem::Entity(v) => v.borrow().indented(indent, f),
+            XmlItem::Namespace(v) => v.borrow().indented(indent, f),
+            XmlItem::Notation(v) => v.borrow().indented(indent, f),
+            XmlItem::PI(v) => v.borrow().indented(indent, f),
+            XmlItem::Text(v) => v.borrow().indented(indent, f),
+            XmlItem::Unexpanded(v) => v.borrow().indented(indent, f),
+            XmlItem::Unparsed(v) => v.borrow().indented(indent, f),
+        }
+    }
 }
 
 impl From<XmlNode<XmlAttribute>> for XmlItem {
@@ -2946,6 +3130,12 @@ pub struct XmlNamespace {
     context: Context,
 }
 
+impl IndentedDisplay for XmlNamespace {
+    fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
+        write!(f, "{}", self)
+    }
+}
+
 impl HasContext for XmlNamespace {
     fn context(&self) -> &Context {
         &self.context
@@ -3006,6 +3196,13 @@ pub struct XmlNotation {
     declaration_base_uri: String,
     parent_id: usize,
     context: Context,
+}
+
+impl IndentedDisplay for XmlNotation {
+    fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
+        let space = " ".repeat(indent);
+        write!(f, "{}{}", space, self)
+    }
 }
 
 impl HasContext for XmlNotation {
@@ -3124,6 +3321,13 @@ pub struct XmlProcessingInstruction {
     context: Context,
 }
 
+impl IndentedDisplay for XmlProcessingInstruction {
+    fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
+        let space = " ".repeat(indent);
+        write!(f, "{}{}", space, self)
+    }
+}
+
 impl HasContext for XmlProcessingInstruction {
     fn context(&self) -> &Context {
         &self.context
@@ -3235,6 +3439,12 @@ pub struct XmlText {
     text: String,
     parent_id: Option<usize>,
     context: Context,
+}
+
+impl IndentedDisplay for XmlText {
+    fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
+        write!(f, "{}", self)
+    }
 }
 
 impl HasContext for XmlText {
@@ -3363,6 +3573,12 @@ pub struct XmlUnexpandedEntityReference {
     context: Context,
 }
 
+impl IndentedDisplay for XmlUnexpandedEntityReference {
+    fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
+        write!(f, "{}", self)
+    }
+}
+
 impl HasContext for XmlUnexpandedEntityReference {
     fn context(&self) -> &Context {
         &self.context
@@ -3473,6 +3689,13 @@ pub struct XmlUnparsedEntity {
     public_identifier: Option<String>,
     declaration_base_uri: String,
     notation_name: String,
+}
+
+impl IndentedDisplay for XmlUnparsedEntity {
+    fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
+        let space = " ".repeat(indent);
+        write!(f, "{}{}", space, self)
+    }
 }
 
 impl UnparsedEntity for XmlUnparsedEntity {

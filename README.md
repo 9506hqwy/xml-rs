@@ -7,10 +7,11 @@
 `xq` is command that query XML file (UTF-8/no-BOM) using XPATH.
 
 ```
-xq [--setns xmlns:<prefix>=<uri>]* [<file path>]? --xpath <EXPR>
+xq [--setns xmlns:<prefix>=<uri>]* [<file path>]? --xpath <EXPR> [--no-indent]
 
     --setns: Specify XML namespace for <EXPR>.
     --xpath: Specify XPATH expression.
+    --no-indent: Output without indentation.
     file path: Specify XML file path. (Default: stdin)
 ```
 
@@ -31,11 +32,12 @@ PS > write-output "<root xmlns:abc='http://abc'><abc:e>text</abc:e></root>" | xq
 `xe` is command that edit XML file (UTF-8/no-BOM) using XPATH.
 
 ```
-xe [--setns xmlns:<prefix>=<uri>]* [<file path>]? --xpath <EXPR> --value <NODE>
+xe [--setns xmlns:<prefix>=<uri>]* [<file path>]? --xpath <EXPR> --value <NODE> [--no-indent]
 
     --setns: Specify XML namespace for <EXPR>.
     --xpath: Specify XPATH expression.
     --value: Specify XML node.
+    --no-indent: Output without indentation.
     file path: Specify XML file path. (Default: stdin)
 ```
 

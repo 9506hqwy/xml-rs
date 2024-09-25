@@ -2,9 +2,11 @@ pub mod error;
 
 use std::convert;
 use std::fmt;
+use std::io;
 use std::iter::Iterator;
 use std::rc::Rc;
 use xml_info as info;
+use xml_info::IndentedDisplay;
 use xml_info::{
     Attribute as InfoAttribute, Character as InfoCharacter, Comment as InfoComment,
     Document as InfoDocument, DocumentTypeDeclaration as InfoDocumentTypeDeclaration,
@@ -588,6 +590,27 @@ impl AsStringValue for XmlNode {
     }
 }
 
+impl PrettyPrint for XmlNode {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        match self {
+            XmlNode::Element(v) => v.pretty(f),
+            XmlNode::Attribute(v) => v.pretty(f),
+            XmlNode::Text(v) => v.pretty(f),
+            XmlNode::CData(v) => v.pretty(f),
+            XmlNode::EntityReference(v) => v.pretty(f),
+            XmlNode::Entity(v) => v.pretty(f),
+            XmlNode::PI(v) => v.pretty(f),
+            XmlNode::Comment(v) => v.pretty(f),
+            XmlNode::Document(v) => v.pretty(f),
+            XmlNode::DocumentType(v) => v.pretty(f),
+            XmlNode::DocumentFragment(v) => v.pretty(f),
+            XmlNode::Notation(v) => v.pretty(f),
+            XmlNode::Namespace(v) => v.pretty(f),
+            XmlNode::ExpandedText(v) => v.pretty(f),
+        }
+    }
+}
+
 impl XmlNode {
     pub fn id(&self) -> usize {
         match self {
@@ -840,6 +863,16 @@ pub trait AsStringValue {
 
 // -----------------------------------------------------------------------------------------------
 
+pub trait PrettyPrint {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()>;
+
+    fn pretty_print(&self) -> io::Result<()> {
+        self.pretty(&mut std::io::stdout())
+    }
+}
+
+// -----------------------------------------------------------------------------------------------
+
 trait HasChild {
     fn children(&self) -> Vec<XmlNode>;
 
@@ -948,6 +981,12 @@ impl AsNode for XmlDocumentFragment {
 impl AsStringValue for XmlDocumentFragment {
     fn as_string_value(&self) -> error::Result<String> {
         self.root_element()?.as_string_value()
+    }
+}
+
+impl PrettyPrint for XmlDocumentFragment {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.document.borrow().indented(0, f)
     }
 }
 
@@ -1200,6 +1239,12 @@ impl AsNode for XmlDocument {
 impl AsStringValue for XmlDocument {
     fn as_string_value(&self) -> error::Result<String> {
         self.root_element()?.as_string_value()
+    }
+}
+
+impl PrettyPrint for XmlDocument {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.document.borrow().indented(0, f)
     }
 }
 
@@ -1622,6 +1667,12 @@ impl AsStringValue for XmlAttr {
     }
 }
 
+impl PrettyPrint for XmlAttr {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.attribute.borrow().indented(0, f)
+    }
+}
+
 impl HasChild for XmlAttr {
     fn children(&self) -> Vec<XmlNode> {
         let mut nodes: Vec<XmlNode> = vec![];
@@ -1930,6 +1981,12 @@ impl AsStringValue for XmlElement {
     }
 }
 
+impl PrettyPrint for XmlElement {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.element.borrow().indented(0, f)
+    }
+}
+
 impl HasChild for XmlElement {
     fn children(&self) -> Vec<XmlNode> {
         let text_expanded = self
@@ -2222,6 +2279,12 @@ impl AsStringValue for XmlText {
     }
 }
 
+impl PrettyPrint for XmlText {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.data.borrow().indented(0, f)
+    }
+}
+
 impl From<info::XmlNode<info::XmlText>> for XmlText {
     fn from(value: info::XmlNode<info::XmlText>) -> Self {
         XmlText { data: value }
@@ -2368,6 +2431,12 @@ impl AsNode for XmlComment {
 impl AsStringValue for XmlComment {
     fn as_string_value(&self) -> error::Result<String> {
         self.data()
+    }
+}
+
+impl PrettyPrint for XmlComment {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.data.borrow().indented(0, f)
     }
 }
 
@@ -2554,6 +2623,12 @@ impl AsStringValue for XmlCDataSection {
     }
 }
 
+impl PrettyPrint for XmlCDataSection {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.data.borrow().indented(0, f)
+    }
+}
+
 impl From<info::XmlNode<info::XmlCData>> for XmlCDataSection {
     fn from(value: info::XmlNode<info::XmlCData>) -> Self {
         XmlCDataSection { data: value }
@@ -2711,6 +2786,12 @@ impl AsNode for XmlDocumentType {
     }
 }
 
+impl PrettyPrint for XmlDocumentType {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.declaration.borrow().indented(0, f)
+    }
+}
+
 impl From<info::XmlNode<info::XmlDocumentTypeDeclaration>> for XmlDocumentType {
     fn from(value: info::XmlNode<info::XmlDocumentTypeDeclaration>) -> Self {
         XmlDocumentType { declaration: value }
@@ -2809,6 +2890,12 @@ impl Node for XmlNotation {
 impl AsNode for XmlNotation {
     fn as_node(&self) -> XmlNode {
         XmlNode::Notation(self.clone())
+    }
+}
+
+impl PrettyPrint for XmlNotation {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.notation.borrow().indented(0, f)
     }
 }
 
@@ -2924,6 +3011,12 @@ impl HasChild for XmlEntity {
     }
 }
 
+impl PrettyPrint for XmlEntity {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.entity.borrow().indented(0, f)
+    }
+}
+
 impl From<info::XmlNode<info::XmlEntity>> for XmlEntity {
     fn from(value: info::XmlNode<info::XmlEntity>) -> Self {
         XmlEntity { entity: value }
@@ -3031,6 +3124,15 @@ impl HasChild for XmlEntityReference {
     fn children(&self) -> Vec<XmlNode> {
         // TODO:
         vec![]
+    }
+}
+
+impl PrettyPrint for XmlEntityReference {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        match &self.value {
+            XmlEntityReferenceValue::Char(v) => v.borrow().indented(0, f),
+            XmlEntityReferenceValue::Entity(v) => v.borrow().indented(0, f),
+        }
     }
 }
 
@@ -3221,6 +3323,12 @@ impl AsStringValue for XmlProcessingInstruction {
     }
 }
 
+impl PrettyPrint for XmlProcessingInstruction {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.pi.borrow().indented(0, f)
+    }
+}
+
 impl From<info::XmlNode<info::XmlProcessingInstruction>> for XmlProcessingInstruction {
     fn from(value: info::XmlNode<info::XmlProcessingInstruction>) -> Self {
         XmlProcessingInstruction { pi: value }
@@ -3317,6 +3425,12 @@ impl AsExpandedName for XmlNamespace {
 impl AsStringValue for XmlNamespace {
     fn as_string_value(&self) -> error::Result<String> {
         Ok(self.namespace.borrow().namespace_name().to_string())
+    }
+}
+
+impl PrettyPrint for XmlNamespace {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        self.namespace.borrow().indented(0, f)
     }
 }
 
@@ -3456,6 +3570,16 @@ impl AsNode for XmlExpandedText {
 impl AsStringValue for XmlExpandedText {
     fn as_string_value(&self) -> error::Result<String> {
         self.data()
+    }
+}
+
+impl PrettyPrint for XmlExpandedText {
+    fn pretty(&self, f: &mut impl io::Write) -> io::Result<()> {
+        for d in self.data.as_slice() {
+            d.pretty(f)?;
+        }
+
+        Ok(())
     }
 }
 
