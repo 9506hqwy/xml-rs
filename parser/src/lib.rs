@@ -12,6 +12,8 @@ use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::{AsChar, IResult, InputTakeAtPosition};
 use xml_nom::{helper, ncname, qname, xmlchar};
 
+// TODO: Reduce memory consumption.
+
 // -----------------------------------------------------------------------------------------------
 
 /// prolog element Misc*
