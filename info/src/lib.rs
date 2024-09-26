@@ -10,6 +10,7 @@ use std::ops::{Deref, Range};
 use std::rc::{Rc, Weak};
 use xml_parser::model as parser;
 
+// TODO: Reduce memory consumption.
 // TODO: Base URI is always empty string.
 // TODO: White Space Handling.
 // TODO: Parameter Entity Reference.
@@ -785,7 +786,7 @@ impl XmlAttribute {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum XmlAttributeValue {
     Char(Rc<XmlItem>),
     Entity(Rc<XmlItem>),
@@ -807,6 +808,16 @@ impl convert::TryFrom<Rc<XmlItem>> for XmlAttributeValue {
             XmlItem::Text(_) => Ok(XmlAttributeValue::Text(value)),
             XmlItem::Unexpanded(_) => Ok(XmlAttributeValue::Entity(value)),
             _ => Err(error::Error::InvalidType),
+        }
+    }
+}
+
+impl fmt::Debug for XmlAttributeValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match &self {
+            XmlAttributeValue::Char(v) => v.fmt(f),
+            XmlAttributeValue::Entity(v) => v.fmt(f),
+            XmlAttributeValue::Text(v) => v.fmt(f),
         }
     }
 }
@@ -2666,7 +2677,7 @@ impl XmlEntityValue {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum XmlItem {
     Attribute(XmlNode<XmlAttribute>),
     CData(XmlNode<XmlCData>),
@@ -2794,6 +2805,28 @@ impl From<XmlNode<XmlUnexpandedEntityReference>> for XmlItem {
 impl From<XmlNode<XmlUnparsedEntity>> for XmlItem {
     fn from(value: XmlNode<XmlUnparsedEntity>) -> Self {
         XmlItem::Unparsed(value)
+    }
+}
+
+impl fmt::Debug for XmlItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            XmlItem::Attribute(v) => v.borrow().fmt(f),
+            XmlItem::CData(v) => v.borrow().fmt(f),
+            XmlItem::CharReference(v) => v.borrow().fmt(f),
+            XmlItem::Comment(v) => v.borrow().fmt(f),
+            XmlItem::DeclarationAttList(v) => v.borrow().fmt(f),
+            XmlItem::Document(v) => v.borrow().fmt(f),
+            XmlItem::DocumentType(v) => v.borrow().fmt(f),
+            XmlItem::Element(v) => v.borrow().fmt(f),
+            XmlItem::Entity(v) => v.borrow().fmt(f),
+            XmlItem::Namespace(v) => v.borrow().fmt(f),
+            XmlItem::Notation(v) => v.borrow().fmt(f),
+            XmlItem::PI(v) => v.borrow().fmt(f),
+            XmlItem::Text(v) => v.borrow().fmt(f),
+            XmlItem::Unexpanded(v) => v.borrow().fmt(f),
+            XmlItem::Unparsed(v) => v.borrow().fmt(f),
+        }
     }
 }
 
@@ -3947,7 +3980,7 @@ where
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Context {
     info: Singleton<ContextInfo>,
     idm: Singleton<IdManager>,
@@ -3960,6 +3993,12 @@ pub struct Context {
 impl PartialEq<Context> for Context {
     fn eq(&self, other: &Context) -> bool {
         self.info.borrow().id == other.info.borrow().id
+    }
+}
+
+impl fmt::Debug for Context {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "Context{{info: {:?}}}", self.info.borrow())
     }
 }
 
@@ -4073,7 +4112,7 @@ impl IdManager {
 
 // -----------------------------------------------------------------------------------------------
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct ContextInfo {
     id: usize,
     order_cache: usize,
@@ -4087,6 +4126,12 @@ impl From<usize> for ContextInfo {
             order_cache: 0,
             order_version: 0,
         }
+    }
+}
+
+impl fmt::Debug for ContextInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "ContextInfo({:?},{:?})", self.id, self.order_cache)
     }
 }
 
