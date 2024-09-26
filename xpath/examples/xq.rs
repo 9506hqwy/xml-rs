@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 use xml_dom::PrettyPrint;
@@ -29,12 +29,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("{}", v);
         }
         xml_xpath::eval::model::Value::Node(nodes) => {
+            let mut buf = io::BufWriter::new(io::stdout().lock());
             for node in nodes {
                 if arg.no_indent {
-                    println!("{}", node);
+                    buf.write_fmt(format_args!("{}\n", node))?;
                 } else {
-                    node.pretty_print()?;
-                    println!();
+                    node.pretty(&mut buf)?;
+                    buf.write_all(&[b'\n'])?;
                 }
             }
         }

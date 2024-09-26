@@ -1,6 +1,6 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::error::Error;
-use std::io::Read;
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 use xml_dom::{
@@ -46,10 +46,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    let mut buf = BufWriter::new(io::stdout().lock());
     if arg.no_indent {
-        println!("{}", dom);
+        buf.write_fmt(format_args!("{}\n", dom))?;
     } else {
-        dom.pretty_print()?;
+        dom.pretty(&mut buf)?;
     }
     Ok(())
 }

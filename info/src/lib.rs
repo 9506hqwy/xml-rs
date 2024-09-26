@@ -11,6 +11,7 @@ use std::rc::{Rc, Weak};
 use xml_parser::model as parser;
 
 // TODO: Reduce memory consumption.
+// TODO: Improve performance.
 // TODO: Base URI is always empty string.
 // TODO: White Space Handling.
 // TODO: Parameter Entity Reference.

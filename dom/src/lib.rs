@@ -16,6 +16,7 @@ use xml_info::{
     UnexpandedEntityReference as InfoUnexpandedEntityReference,
 };
 
+// TODO: Improve performance.
 // TODO: re-implement DocumentFragment
 
 pub type ExpandedName = (String, Option<String>, Option<String>);
@@ -865,10 +866,6 @@ pub trait AsStringValue {
 
 pub trait PrettyPrint {
     fn pretty(&self, f: &mut impl io::Write) -> io::Result<()>;
-
-    fn pretty_print(&self) -> io::Result<()> {
-        self.pretty(&mut std::io::stdout())
-    }
 }
 
 // -----------------------------------------------------------------------------------------------
