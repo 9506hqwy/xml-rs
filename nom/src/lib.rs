@@ -2,11 +2,11 @@ pub mod helper;
 pub mod model;
 pub mod xmlchar;
 
+use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::combinator::map;
 use nom::sequence::{preceded, tuple};
-use nom::IResult;
 
 /// Name - (Char* ':' Char*)
 ///

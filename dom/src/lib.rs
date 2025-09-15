@@ -903,7 +903,7 @@ pub struct XmlDomImplementation;
 
 impl DomImplementation for XmlDomImplementation {
     fn has_feature(&self, feature: &str, version: Option<&str>) -> bool {
-        feature.to_ascii_lowercase() == "xml" && version.map(|v| v == "1.0").unwrap_or(true)
+        feature.eq_ignore_ascii_case("xml") && version.map(|v| v == "1.0").unwrap_or(true)
     }
 }
 
@@ -1110,7 +1110,7 @@ impl DocumentMut for XmlDocument {
     }
 
     fn create_entity_reference(&self, name: &str) -> error::Result<XmlEntityReference> {
-        let ref_name = format!("&{};", name);
+        let ref_name = format!("&{name};");
         xml_parser::reference(ref_name.as_str())
             .map_err(|_| error::DomException::InvalidCharacterErr)?;
 
@@ -3791,7 +3791,7 @@ mod tests {
         // fmt::Debug
         assert_eq!(
             "XmlDocumentFragment { Ok(XmlElement { root }) }",
-            format!("{:?}", flag)
+            format!("{flag:?}")
         );
     }
 
@@ -3806,7 +3806,7 @@ mod tests {
         };
 
         // fmt::Display
-        assert_eq!("<root />", format!("{}", flag));
+        assert_eq!("<root />", format!("{flag}"));
     }
 
     #[test]
@@ -4050,7 +4050,7 @@ mod tests {
         let a = doc
             .insert_before(doc.create_comment("a").as_node(), None)
             .unwrap();
-        assert_eq!("<root /><!--a-->", format!("{}", doc));
+        assert_eq!("<root /><!--a-->", format!("{doc}"));
         assert_eq!(Some(doc.as_node()), a.parent_node());
         assert_eq!(Some(doc.clone()), a.owner_document());
         assert_ne!(0, a.as_comment().unwrap().data.borrow().id());
@@ -4058,7 +4058,7 @@ mod tests {
         let b = doc
             .insert_before(doc.create_comment("b").as_node(), Some(&a))
             .unwrap();
-        assert_eq!("<root /><!--b--><!--a-->", format!("{}", doc));
+        assert_eq!("<root /><!--b--><!--a-->", format!("{doc}"));
         assert_eq!(Some(doc.as_node()), b.parent_node());
         assert_eq!(Some(doc.clone()), b.owner_document());
         assert_ne!(0, b.as_comment().unwrap().data.borrow().id());
@@ -4074,7 +4074,7 @@ mod tests {
             .insert_before(doc.create_attribute("a").unwrap().as_node(), None)
             .err()
             .unwrap();
-        assert_eq!("<root />", format!("{}", doc));
+        assert_eq!("<root />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -4091,7 +4091,7 @@ mod tests {
             .insert_before(doc2.create_comment("a").as_node(), None)
             .err()
             .unwrap();
-        assert_eq!("<root />", format!("{}", doc));
+        assert_eq!("<root />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -4108,7 +4108,7 @@ mod tests {
             .insert_before(doc.create_comment("a").as_node(), Some(&ee))
             .err()
             .unwrap();
-        assert_eq!("<root><e><ee /></e></root>", format!("{}", doc));
+        assert_eq!("<root><e><ee /></e></root>", format!("{doc}"));
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
 
@@ -4121,7 +4121,7 @@ mod tests {
         let b = doc
             .replace_child(doc.create_comment("c").as_node(), &b)
             .unwrap();
-        assert_eq!("<root /><!--c--><!--a-->", format!("{}", doc));
+        assert_eq!("<root /><!--c--><!--a-->", format!("{doc}"));
         assert_eq!(None, b.parent_node());
         assert_eq!(Some(doc.clone()), b.owner_document());
         assert_ne!(0, b.as_comment().unwrap().data.borrow().id());
@@ -4144,7 +4144,7 @@ mod tests {
             .replace_child(doc.create_attribute("c").unwrap().as_node(), &b)
             .err()
             .unwrap();
-        assert_eq!("<root /><!--b--><!--a-->", format!("{}", doc));
+        assert_eq!("<root /><!--b--><!--a-->", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -4162,7 +4162,7 @@ mod tests {
             .replace_child(doc2.create_comment("c").as_node(), &b)
             .err()
             .unwrap();
-        assert_eq!("<root /><!--b--><!--a-->", format!("{}", doc));
+        assert_eq!("<root /><!--b--><!--a-->", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -4181,7 +4181,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             "<root><e><ee /></e></root><!--b--><!--a-->",
-            format!("{}", doc)
+            format!("{doc}")
         );
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
@@ -4193,7 +4193,7 @@ mod tests {
 
         // NodeMut
         let a = doc.remove_child(&a).unwrap();
-        assert_eq!("<root /><!--c-->", format!("{}", doc));
+        assert_eq!("<root /><!--c-->", format!("{doc}"));
         assert_eq!(None, a.parent_node());
         assert_eq!(Some(doc.clone()), a.owner_document());
         assert_ne!(0, a.as_comment().unwrap().data.borrow().id());
@@ -4209,7 +4209,7 @@ mod tests {
         let err = doc.remove_child(&ee).err().unwrap();
         assert_eq!(
             "<root><e><ee /></e></root><!--c--><!--a-->",
-            format!("{}", doc)
+            format!("{doc}")
         );
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
@@ -4220,7 +4220,7 @@ mod tests {
 
         // NodeMut
         let a = doc.append_child(doc.create_comment("a").as_node()).unwrap();
-        assert_eq!("<root /><!--a-->", format!("{}", doc));
+        assert_eq!("<root /><!--a-->", format!("{doc}"));
         assert_eq!(Some(doc.as_node()), a.parent_node());
         assert_eq!(Some(doc.clone()), a.owner_document());
         assert_ne!(0, a.as_comment().unwrap().data.borrow().id());
@@ -4236,7 +4236,7 @@ mod tests {
             .append_child(doc.create_attribute("a").unwrap().as_node())
             .err()
             .unwrap();
-        assert_eq!("<root />", format!("{}", doc));
+        assert_eq!("<root />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -4253,7 +4253,7 @@ mod tests {
             .append_child(doc2.create_comment("a").as_node())
             .err()
             .unwrap();
-        assert_eq!("<root />", format!("{}", doc));
+        assert_eq!("<root />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -4309,7 +4309,7 @@ mod tests {
         // fmt::Debug
         assert_eq!(
             "XmlDocument { Ok(XmlElement { root }) }",
-            format!("{:?}", doc)
+            format!("{doc:?}")
         );
     }
 
@@ -4318,7 +4318,7 @@ mod tests {
         let (_, doc) = XmlDocument::from_raw("<root></root>").unwrap();
 
         // fmt::Display
-        assert_eq!("<root />", format!("{}", doc));
+        assert_eq!("<root />", format!("{doc}"));
     }
 
     #[test]
@@ -4452,7 +4452,7 @@ mod tests {
             .set_named_item(doc2.create_attribute("c").unwrap())
             .err()
             .unwrap();
-        assert_eq!("<root a=\"1\" b=\"2\" />", format!("{}", doc));
+        assert_eq!("<root a=\"1\" b=\"2\" />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -4477,7 +4477,7 @@ mod tests {
         let err = attrs.set_named_item(c).err().unwrap();
         assert_eq!(
             "<root a=\"1\" b=\"2\"><e c=\"3\" /></root>",
-            format!("{}", doc)
+            format!("{doc}")
         );
         assert_eq!(
             error::Error::Dom(error::DomException::InuseAttributeErr),
@@ -4512,7 +4512,7 @@ mod tests {
 
         // NamedNodeMapMut
         let err = attrs.remove_named_item("c").err().unwrap();
-        assert_eq!("<root a=\"1\" b=\"2\" />", format!("{}", doc));
+        assert_eq!("<root a=\"1\" b=\"2\" />", format!("{doc}"));
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
 
@@ -4656,7 +4656,7 @@ mod tests {
             .insert_before(doc.create_comment("d").as_node(), None)
             .err()
             .unwrap();
-        assert_eq!("<root a=\"b\" />", format!("{}", doc));
+        assert_eq!("<root a=\"b\" />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -4675,7 +4675,7 @@ mod tests {
             .insert_before(doc2.create_text_node("d").as_node(), None)
             .err()
             .unwrap();
-        assert_eq!("<root a=\"b\" />", format!("{}", doc));
+        assert_eq!("<root a=\"b\" />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -4694,7 +4694,7 @@ mod tests {
             .insert_before(doc.create_text_node("d").as_node(), Some(&e))
             .err()
             .unwrap();
-        assert_eq!("<root a=\"b\"><e /></root>", format!("{}", doc));
+        assert_eq!("<root a=\"b\"><e /></root>", format!("{doc}"));
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
 
@@ -4734,7 +4734,7 @@ mod tests {
             .replace_child(doc.create_comment("f").as_node(), &e)
             .err()
             .unwrap();
-        assert_eq!("<root a=\"b&amp;e\" />", format!("{}", doc));
+        assert_eq!("<root a=\"b&amp;e\" />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -4754,7 +4754,7 @@ mod tests {
             .replace_child(doc2.create_text_node("f").as_node(), &e)
             .err()
             .unwrap();
-        assert_eq!("<root a=\"b&amp;e\" />", format!("{}", doc));
+        assert_eq!("<root a=\"b&amp;e\" />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -4773,7 +4773,7 @@ mod tests {
             .replace_child(doc.create_text_node("f").as_node(), &e)
             .err()
             .unwrap();
-        assert_eq!("<root a=\"b&amp;e\"><e /></root>", format!("{}", doc));
+        assert_eq!("<root a=\"b&amp;e\"><e /></root>", format!("{doc}"));
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
 
@@ -4802,7 +4802,7 @@ mod tests {
 
         // NodeMut
         let err = attr.remove_child(&e).err().unwrap();
-        assert_eq!("<root a=\"b&amp;d\"><e /></root>", format!("{}", doc));
+        assert_eq!("<root a=\"b&amp;d\"><e /></root>", format!("{doc}"));
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
 
@@ -4834,7 +4834,7 @@ mod tests {
             .append_child(doc.create_comment("d").as_node())
             .err()
             .unwrap();
-        assert_eq!("<root a=\"b\" />", format!("{}", doc));
+        assert_eq!("<root a=\"b\" />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -4853,7 +4853,7 @@ mod tests {
             .append_child(doc2.create_text_node("d").as_node())
             .err()
             .unwrap();
-        assert_eq!("<root a=\"b\" />", format!("{}", doc));
+        assert_eq!("<root a=\"b\" />", format!("{doc}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -4970,7 +4970,7 @@ mod tests {
             .unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlAttr { a }", format!("{:?}", attr));
+        assert_eq!("XmlAttr { a }", format!("{attr:?}"));
     }
 
     #[test]
@@ -4983,7 +4983,7 @@ mod tests {
             .unwrap();
 
         // fmt::Display
-        assert_eq!("a=\"b\"", format!("{}", attr));
+        assert_eq!("a=\"b\"", format!("{attr}"));
     }
 
     #[test]
@@ -5041,7 +5041,7 @@ mod tests {
 
         // ElementMut
         let err = elem1.set_attribute("<", "e").err().unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(
             error::Error::Dom(error::DomException::InvalidCharacterErr),
             err
@@ -5120,7 +5120,7 @@ mod tests {
             .set_attribute_node(doc2.create_attribute("d").unwrap())
             .err()
             .unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -5149,7 +5149,7 @@ mod tests {
 
         // ElementMut
         let err = elem1.set_attribute_node(c).err().unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(
             error::Error::Dom(error::DomException::InuseAttributeErr),
             err
@@ -5330,7 +5330,7 @@ mod tests {
             .insert_before(doc.create_attribute("d").unwrap().as_node(), None)
             .err()
             .unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -5353,7 +5353,7 @@ mod tests {
 
         // NodeMut
         let err = elem2.insert_before(elem1, None).err().unwrap();
-        assert_eq!("<elem2>data1</elem2>", format!("{}", elem2));
+        assert_eq!("<elem2>data1</elem2>", format!("{elem2}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -5377,7 +5377,7 @@ mod tests {
             .insert_before(doc2.create_text_node("d").as_node(), None)
             .err()
             .unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -5402,7 +5402,7 @@ mod tests {
             .insert_before(doc.create_text_node("d").as_node(), Some(&e))
             .err()
             .unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
 
@@ -5452,7 +5452,7 @@ mod tests {
             .replace_child(doc.create_attribute("f").unwrap().as_node(), &t)
             .err()
             .unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -5476,7 +5476,7 @@ mod tests {
 
         // NodeMut
         let err = elem2.replace_child(elem1, &t).err().unwrap();
-        assert_eq!("<elem2>data1</elem2>", format!("{}", elem2));
+        assert_eq!("<elem2>data1</elem2>", format!("{elem2}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -5501,7 +5501,7 @@ mod tests {
             .replace_child(doc2.create_text_node("f").as_node(), &t)
             .err()
             .unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -5526,7 +5526,7 @@ mod tests {
             .replace_child(doc.create_text_node("f").as_node(), &e)
             .err()
             .unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
 
@@ -5566,7 +5566,7 @@ mod tests {
 
         // NodeMut
         let err = elem1.remove_child(&e).err().unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(error::Error::Dom(error::DomException::NotFoundErr), err);
     }
 
@@ -5608,7 +5608,7 @@ mod tests {
             .append_child(doc.create_attribute("d").unwrap().as_node())
             .err()
             .unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -5631,7 +5631,7 @@ mod tests {
 
         // NodeMut
         let err = elem2.append_child(elem1).err().unwrap();
-        assert_eq!("<elem2>data1</elem2>", format!("{}", elem2));
+        assert_eq!("<elem2>data1</elem2>", format!("{elem2}"));
         assert_eq!(
             error::Error::Dom(error::DomException::HierarchyRequestErr),
             err
@@ -5655,7 +5655,7 @@ mod tests {
             .append_child(doc2.create_text_node("d").as_node())
             .err()
             .unwrap();
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
         assert_eq!(
             error::Error::Dom(error::DomException::WrongDocumentErr),
             err
@@ -5777,7 +5777,7 @@ mod tests {
             .unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlElement { elem1 }", format!("{:?}", elem1));
+        assert_eq!("XmlElement { elem1 }", format!("{elem1:?}"));
     }
 
     #[test]
@@ -5795,7 +5795,7 @@ mod tests {
             .unwrap();
 
         // fmt::Display
-        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{}", elem1));
+        assert_eq!("<elem1 a=\"b\">data1</elem1>", format!("{elem1}"));
     }
 
     #[test]
@@ -6158,7 +6158,7 @@ mod tests {
         let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlText { text }", format!("{:?}", text));
+        assert_eq!("XmlText { text }", format!("{text:?}"));
     }
 
     #[test]
@@ -6169,7 +6169,7 @@ mod tests {
         let text = attr.child_nodes().item(0).unwrap().as_text().unwrap();
 
         // fmt::Display
-        assert_eq!("text", format!("{}", text));
+        assert_eq!("text", format!("{text}"));
     }
 
     #[test]
@@ -6429,7 +6429,7 @@ mod tests {
         let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlComment {  comment  }", format!("{:?}", comment));
+        assert_eq!("XmlComment {  comment  }", format!("{comment:?}"));
     }
 
     #[test]
@@ -6439,7 +6439,7 @@ mod tests {
         let comment = root.child_nodes().item(0).unwrap().as_comment().unwrap();
 
         // fmt::Display
-        assert_eq!("<!-- comment -->", format!("{}", comment));
+        assert_eq!("<!-- comment -->", format!("{comment}"));
     }
 
     #[test]
@@ -6727,7 +6727,7 @@ mod tests {
         let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlCDataSection { &<>\" }", format!("{:?}", cdata));
+        assert_eq!("XmlCDataSection { &<>\" }", format!("{cdata:?}"));
     }
 
     #[test]
@@ -6737,7 +6737,7 @@ mod tests {
         let cdata = root.child_nodes().item(0).unwrap().as_cdata().unwrap();
 
         // fmt::Display
-        assert_eq!("<![CDATA[&<>\"]]>", format!("{}", cdata));
+        assert_eq!("<![CDATA[&<>\"]]>", format!("{cdata}"));
     }
 
     #[test]
@@ -6812,7 +6812,7 @@ mod tests {
         let doctype = doc.child_nodes().item(0).unwrap().as_doctype().unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlDocumentType { root }", format!("{:?}", doctype));
+        assert_eq!("XmlDocumentType { root }", format!("{doctype:?}"));
     }
 
     #[test]
@@ -6826,7 +6826,7 @@ mod tests {
         // fmt::Display
         assert_eq!(
             "<!DOCTYPE root [<!NOTATION a SYSTEM \"b\"><!ENTITY c \"d\">]>",
-            format!("{}", doctype)
+            format!("{doctype}")
         );
     }
 
@@ -6899,7 +6899,7 @@ mod tests {
         let notation = doctype.notations().item(0).unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlNotation { a }", format!("{:?}", notation));
+        assert_eq!("XmlNotation { a }", format!("{notation:?}"));
     }
 
     #[test]
@@ -6911,7 +6911,7 @@ mod tests {
         let notation = doctype.notations().item(0).unwrap();
 
         // fmt::Display
-        assert_eq!("<!NOTATION a PUBLIC \"b\" \"c\">", format!("{}", notation));
+        assert_eq!("<!NOTATION a PUBLIC \"b\" \"c\">", format!("{notation}"));
     }
 
     #[test]
@@ -6996,7 +6996,7 @@ mod tests {
         let entity = doctype.entities().item(0).unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlEntity { a }", format!("{:?}", entity));
+        assert_eq!("XmlEntity { a }", format!("{entity:?}"));
     }
 
     #[test]
@@ -7010,7 +7010,7 @@ mod tests {
         // fmt::Display
         assert_eq!(
             "<!ENTITY a PUBLIC \"b\" \"c\" NDATA d>",
-            format!("{}", entity)
+            format!("{entity}")
         );
     }
 
@@ -7078,7 +7078,7 @@ mod tests {
         let eref = attr.child_nodes().item(0).unwrap().as_entity_ref().unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlEntityReference { amp }", format!("{:?}", eref));
+        assert_eq!("XmlEntityReference { amp }", format!("{eref:?}"));
     }
 
     #[test]
@@ -7089,7 +7089,7 @@ mod tests {
         let eref = attr.child_nodes().item(0).unwrap().as_entity_ref().unwrap();
 
         // fmt::Display
-        assert_eq!("&amp;", format!("{}", eref));
+        assert_eq!("&amp;", format!("{eref}"));
     }
 
     #[test]
@@ -7269,7 +7269,7 @@ mod tests {
         let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlProcessingInstruction { a }", format!("{:?}", pi));
+        assert_eq!("XmlProcessingInstruction { a }", format!("{pi:?}"));
     }
 
     #[test]
@@ -7279,7 +7279,7 @@ mod tests {
         let pi = root.child_nodes().item(0).unwrap().as_pi().unwrap();
 
         // fmt::Display
-        assert_eq!("<?a b?>", format!("{}", pi));
+        assert_eq!("<?a b?>", format!("{pi}"));
     }
 
     #[test]
@@ -7363,7 +7363,7 @@ mod tests {
         let ns = namespaces.first().unwrap();
 
         // fmt::Debug
-        assert_eq!("XmlNamespace { http://test/a }", format!("{:?}", ns));
+        assert_eq!("XmlNamespace { http://test/a }", format!("{ns:?}"));
     }
 
     #[test]
@@ -7374,7 +7374,7 @@ mod tests {
         let ns = namespaces.first().unwrap();
 
         // fmt::Display
-        assert_eq!("xmlns:a=\"http://test/a\"", format!("{}", ns));
+        assert_eq!("xmlns:a=\"http://test/a\"", format!("{ns}"));
     }
 
     #[test]
@@ -7586,7 +7586,7 @@ mod tests {
             .unwrap();
 
         // fmt::Display
-        assert_eq!("a<![CDATA[b]]>c", format!("{}", text));
+        assert_eq!("a<![CDATA[b]]>c", format!("{text}"));
 
         let text = root
             .child_nodes()
@@ -7596,7 +7596,7 @@ mod tests {
             .unwrap();
 
         // fmt::Display
-        assert_eq!("&#x3042;d&amp;d", format!("{}", text));
+        assert_eq!("&#x3042;d&amp;d", format!("{text}"));
     }
 }
 

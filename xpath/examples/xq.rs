@@ -26,24 +26,24 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     match value {
         xml_xpath::eval::model::Value::Boolean(v) => {
-            println!("{}", v);
+            println!("{v}");
         }
         xml_xpath::eval::model::Value::Node(nodes) => {
             let mut buf = io::BufWriter::new(io::stdout().lock());
             for node in nodes {
                 if arg.no_indent {
-                    buf.write_fmt(format_args!("{}\n", node))?;
+                    buf.write_fmt(format_args!("{node}\n"))?;
                 } else {
                     node.pretty(&mut buf)?;
-                    buf.write_all(&[b'\n'])?;
+                    buf.write_all(b"\n")?;
                 }
             }
         }
         xml_xpath::eval::model::Value::Number(v) => {
-            println!("{}", v);
+            println!("{v}");
         }
         xml_xpath::eval::model::Value::Text(v) => {
-            println!("{}", v);
+            println!("{v}");
         }
     }
 

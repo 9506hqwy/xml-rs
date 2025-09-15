@@ -144,11 +144,7 @@ fn eval_unary_expr(
 ) -> error::Result<model::Value> {
     let value = eval_union_expr(uni.value(), node.clone(), context)?;
     let inv = uni.inv().len() % 2;
-    if inv == 0 {
-        Ok(value)
-    } else {
-        Ok(-value)
-    }
+    if inv == 0 { Ok(value) } else { Ok(-value) }
 }
 
 fn eval_union_expr(

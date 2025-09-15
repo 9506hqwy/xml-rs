@@ -6,7 +6,7 @@
 
 `xq` is command that query XML file (UTF-8/no-BOM) using XPATH.
 
-```
+```sh
 xq [--setns xmlns:<prefix>=<uri>]* [<file path>]? --xpath <EXPR> [--no-indent]
 
     --setns: Specify XML namespace for <EXPR>.
@@ -31,7 +31,7 @@ PS > write-output "<root xmlns:abc='http://abc'><abc:e>text</abc:e></root>" | xq
 
 `xe` is command that edit XML file (UTF-8/no-BOM) using XPATH.
 
-```
+```sh
 xe [--setns xmlns:<prefix>=<uri>]* [<file path>]? --xpath <EXPR> --value <NODE> [--no-indent]
 
     --setns: Specify XML namespace for <EXPR>.

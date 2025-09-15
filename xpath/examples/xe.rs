@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut buf = BufWriter::new(io::stdout().lock());
     if arg.no_indent {
-        buf.write_fmt(format_args!("{}\n", dom))?;
+        buf.write_fmt(format_args!("{dom}\n"))?;
     } else {
         dom.pretty(&mut buf)?;
     }
@@ -154,7 +154,7 @@ fn document(path: Option<&Path>) -> Result<xml_dom::XmlDocument, Box<dyn Error>>
 }
 
 fn parse_node(node: &str) -> Result<xml_dom::XmlElement, Box<dyn Error>> {
-    let doc = format!("<e>{}</e>", node);
+    let doc = format!("<e>{node}</e>");
     let (rest, dom) = xml_dom::XmlDocument::from_raw(doc.as_str())?;
     if !rest.is_empty() {
         return Err("invalid format XML".into());

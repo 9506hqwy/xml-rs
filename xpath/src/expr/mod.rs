@@ -1,12 +1,12 @@
 pub mod model;
 
+use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_till};
 use nom::character::complete::{char, digit0, digit1, multispace0};
 use nom::combinator::{map, opt, recognize};
 use nom::multi::{many0, separated_list0, separated_list1};
 use nom::sequence::{delimited, preceded, terminated, tuple};
-use nom::IResult;
 use xml_nom::model::QName;
 use xml_nom::{ncname, qname};
 

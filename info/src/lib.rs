@@ -399,7 +399,7 @@ pub struct XmlAttribute {
 
 impl IndentedDisplay for XmlAttribute {
     fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -655,12 +655,12 @@ impl PartialEq<XmlAttribute> for XmlAttribute {
 impl fmt::Display for XmlAttribute {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         if let Some(prefix) = self.prefix.as_deref() {
-            write!(f, "{}:", prefix)?;
+            write!(f, "{prefix}:")?;
         }
 
         let mut value = String::new();
         for v in self.values.borrow().as_slice() {
-            value.push_str(&format!("{}", v));
+            value.push_str(&format!("{v}"));
         }
 
         write!(f, "{}={}", self.local_name.as_str(), escape(value.as_str()))
@@ -719,7 +719,7 @@ impl XmlAttribute {
     }
 
     pub fn empty(name: &str, context: &Context) -> error::Result<Rc<XmlItem>> {
-        let xml = format!("{}=''", name);
+        let xml = format!("{name}=''");
         let (rest, tree) = xml_parser::attribute(xml.as_str())?;
         if rest.is_empty() {
             XmlAttribute::node(&tree, None, context)
@@ -796,7 +796,7 @@ pub enum XmlAttributeValue {
 
 impl IndentedDisplay for XmlAttributeValue {
     fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -863,7 +863,7 @@ impl XmlAttributeValue {
         match self {
             XmlAttributeValue::Char(v) => v.id(),
             XmlAttributeValue::Entity(v) => v.id(),
-            XmlAttributeValue::Text(ref v) => v.id(),
+            XmlAttributeValue::Text(v) => v.id(),
         }
     }
 
@@ -871,7 +871,7 @@ impl XmlAttributeValue {
         match self {
             XmlAttributeValue::Char(v) => v.init_order_recursive(),
             XmlAttributeValue::Entity(v) => v.init_order_recursive(),
-            XmlAttributeValue::Text(ref v) => v.init_order_recursive(),
+            XmlAttributeValue::Text(v) => v.init_order_recursive(),
         }
     }
 
@@ -879,7 +879,7 @@ impl XmlAttributeValue {
         match self {
             XmlAttributeValue::Char(v) => v.set_parent_id(parent_id),
             XmlAttributeValue::Entity(v) => v.set_parent_id(parent_id),
-            XmlAttributeValue::Text(ref v) => v.set_parent_id(parent_id),
+            XmlAttributeValue::Text(v) => v.set_parent_id(parent_id),
         }
     }
 }
@@ -895,7 +895,7 @@ pub struct XmlCData {
 
 impl IndentedDisplay for XmlCData {
     fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -971,7 +971,7 @@ impl XmlCData {
 
     pub fn insert(&mut self, offset: usize, data: &str) -> error::Result<()> {
         fn check(value: &str) -> error::Result<bool> {
-            let new = format!("<![CDATA[{}]]>", value);
+            let new = format!("<![CDATA[{value}]]>");
             let (rest, _) = xml_parser::cdsect(new.as_str())?;
             Ok(rest.is_empty())
         }
@@ -1026,7 +1026,7 @@ pub struct XmlCharReference {
 
 impl IndentedDisplay for XmlCharReference {
     fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -1129,7 +1129,7 @@ pub struct XmlComment {
 impl IndentedDisplay for XmlComment {
     fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
         let space = " ".repeat(indent);
-        write!(f, "{}{}", space, self)
+        write!(f, "{space}{self}")
     }
 }
 
@@ -1200,7 +1200,7 @@ impl XmlComment {
 
     pub fn insert(&mut self, offset: usize, comment: &str) -> error::Result<()> {
         fn check(value: &str) -> error::Result<bool> {
-            let new = format!("<!--{}-->", value);
+            let new = format!("<!--{value}-->");
             let (rest, _) = xml_parser::comment(new.as_str())?;
             Ok(rest.is_empty())
         }
@@ -1314,7 +1314,7 @@ pub struct XmlDeclarationAttList {
 
 impl IndentedDisplay for XmlDeclarationAttList {
     fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -1436,7 +1436,7 @@ pub struct XmlDocument {
 impl IndentedDisplay for XmlDocument {
     fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
         if let Some(version) = self.version.as_deref() {
-            write!(f, "<?xml version=\"{}\"", version)?;
+            write!(f, "<?xml version=\"{version}\"")?;
 
             if !self.encoding.is_empty() {
                 write!(f, " encoding=\"{}\"", self.encoding.as_str())?;
@@ -1444,7 +1444,7 @@ impl IndentedDisplay for XmlDocument {
 
             if let Some(sd) = self.standalone {
                 let yes_no = if sd { "yes" } else { "no" };
-                write!(f, " standalone=\"{}\"", yes_no)?;
+                write!(f, " standalone=\"{yes_no}\"")?;
             }
 
             write!(f, "?>")?;
@@ -1621,7 +1621,7 @@ impl PartialEq<XmlDocument> for XmlDocument {
 impl fmt::Display for XmlDocument {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         if let Some(version) = self.version.as_deref() {
-            write!(f, "<?xml version=\"{}\"", version)?;
+            write!(f, "<?xml version=\"{version}\"")?;
 
             if !self.encoding.is_empty() {
                 write!(f, " encoding=\"{}\"", self.encoding.as_str())?;
@@ -1629,7 +1629,7 @@ impl fmt::Display for XmlDocument {
 
             if let Some(sd) = self.standalone {
                 let yes_no = if sd { "yes" } else { "no" };
-                write!(f, " standalone=\"{}\"", yes_no)?;
+                write!(f, " standalone=\"{yes_no}\"")?;
             }
 
             write!(f, "?>")?;
@@ -1738,7 +1738,7 @@ impl IndentedDisplay for XmlDocumentTypeDeclaration {
         write!(f, "<!DOCTYPE ")?;
 
         if let Some(prefix) = self.prefix.as_deref() {
-            write!(f, "{}:", prefix)?;
+            write!(f, "{prefix}:")?;
         }
 
         write!(f, "{}", self.local_name.as_str())?;
@@ -1834,7 +1834,7 @@ impl fmt::Display for XmlDocumentTypeDeclaration {
         write!(f, "<!DOCTYPE ")?;
 
         if let Some(prefix) = self.prefix.as_deref() {
-            write!(f, "{}:", prefix)?;
+            write!(f, "{prefix}:")?;
         }
 
         write!(f, "{}", self.local_name.as_str())?;
@@ -2003,14 +2003,14 @@ impl IndentedDisplay for XmlElement {
     fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
         let space = " ".repeat(indent);
 
-        write!(f, "{}<", space)?;
+        write!(f, "{space}<")?;
         if let Some(prefix) = self.prefix.as_deref() {
-            write!(f, "{}:", prefix)?;
+            write!(f, "{prefix}:")?;
         }
         write!(f, "{}", self.local_name.as_str())?;
 
         for attr in self.attributes.as_slice() {
-            write!(f, " {}", attr)?;
+            write!(f, " {attr}")?;
         }
 
         if self.children.borrow().is_empty() {
@@ -2029,12 +2029,12 @@ impl IndentedDisplay for XmlElement {
             }
 
             if has_element {
-                write!(f, "\n{}", space)?;
+                write!(f, "\n{space}")?;
             }
 
             write!(f, "</")?;
             if let Some(prefix) = self.prefix.as_deref() {
-                write!(f, "{}:", prefix)?;
+                write!(f, "{prefix}:")?;
             }
             write!(f, "{}>", self.local_name.as_str())
         }
@@ -2231,12 +2231,12 @@ impl fmt::Display for XmlElement {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "<")?;
         if let Some(prefix) = self.prefix.as_deref() {
-            write!(f, "{}:", prefix)?;
+            write!(f, "{prefix}:")?;
         }
         write!(f, "{}", self.local_name.as_str())?;
 
         for attr in self.attributes.as_slice() {
-            write!(f, " {}", attr)?;
+            write!(f, " {attr}")?;
         }
 
         if self.children.borrow().is_empty() {
@@ -2250,7 +2250,7 @@ impl fmt::Display for XmlElement {
 
             write!(f, "</")?;
             if let Some(prefix) = self.prefix.as_deref() {
-                write!(f, "{}:", prefix)?;
+                write!(f, "{prefix}:")?;
             }
             write!(f, "{}>", self.local_name.as_str())
         }
@@ -2337,7 +2337,7 @@ impl XmlElement {
     }
 
     pub fn empty(name: &str, context: &Context) -> error::Result<Rc<XmlItem>> {
-        let xml = format!("<{} />", name);
+        let xml = format!("<{name} />");
         let (rest, tree) = xml_parser::element(xml.as_str())?;
         if rest.is_empty() {
             XmlElement::node(&tree, None, context)
@@ -2481,7 +2481,7 @@ pub struct XmlEntity {
 impl IndentedDisplay for XmlEntity {
     fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
         let space = " ".repeat(indent);
-        write!(f, "{}{}", space, self)
+        write!(f, "{space}{self}")
     }
 }
 
@@ -2550,14 +2550,14 @@ impl fmt::Display for XmlEntity {
         } else if let Some(values) = self.values.as_deref() {
             let mut value = String::new();
             for v in values {
-                value.push_str(&format!("{}", v));
+                value.push_str(&format!("{v}"));
             }
 
             write!(f, " {}", escape(value.as_str()))?;
         }
 
         if let Some(ndata) = self.notation_name.as_deref() {
-            write!(f, " NDATA {}", ndata)?;
+            write!(f, " NDATA {ndata}")?;
         }
 
         write!(f, ">")
@@ -2642,7 +2642,7 @@ pub enum XmlEntityValue {
 
 impl IndentedDisplay for XmlEntityValue {
     fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -2650,13 +2650,13 @@ impl fmt::Display for XmlEntityValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match &self {
             XmlEntityValue::Character(v, radix) => match radix {
-                10 => write!(f, "&#{};", v),
-                16 => write!(f, "&#x{};", v),
+                10 => write!(f, "&#{v};"),
+                16 => write!(f, "&#x{v};"),
                 _ => unreachable!(),
             },
-            XmlEntityValue::Entity(v) => write!(f, "&{};", v),
-            XmlEntityValue::Parameter(v) => write!(f, "%{};", v),
-            XmlEntityValue::Text(v) => write!(f, "{}", v),
+            XmlEntityValue::Entity(v) => write!(f, "&{v};"),
+            XmlEntityValue::Parameter(v) => write!(f, "%{v};"),
+            XmlEntityValue::Text(v) => write!(f, "{v}"),
         }
     }
 }
@@ -3166,7 +3166,7 @@ pub struct XmlNamespace {
 
 impl IndentedDisplay for XmlNamespace {
     fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -3197,7 +3197,7 @@ impl Namespace for XmlNamespace {
 impl fmt::Display for XmlNamespace {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let name = if let Some(prefix) = self.prefix.as_deref() {
-            format!("xmlns:{}", prefix)
+            format!("xmlns:{prefix}")
         } else {
             "xmlns".to_string()
         };
@@ -3235,7 +3235,7 @@ pub struct XmlNotation {
 impl IndentedDisplay for XmlNotation {
     fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
         let space = " ".repeat(indent);
-        write!(f, "{}{}", space, self)
+        write!(f, "{space}{self}")
     }
 }
 
@@ -3358,7 +3358,7 @@ pub struct XmlProcessingInstruction {
 impl IndentedDisplay for XmlProcessingInstruction {
     fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
         let space = " ".repeat(indent);
-        write!(f, "{}{}", space, self)
+        write!(f, "{space}{self}")
     }
 }
 
@@ -3414,7 +3414,7 @@ impl fmt::Display for XmlProcessingInstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "<?{}", self.target.as_str())?;
         if let Some(content) = self.content.as_deref() {
-            write!(f, " {}?>", content)
+            write!(f, " {content}?>")
         } else {
             write!(f, "?>")
         }
@@ -3447,7 +3447,7 @@ impl XmlProcessingInstruction {
     }
 
     pub fn empty(target: &str, context: &Context) -> error::Result<Rc<XmlItem>> {
-        let xml = format!("<?{}?>", target);
+        let xml = format!("<?{target}?>");
         let (rest, tree) = xml_parser::pi(xml.as_str())?;
         if rest.is_empty() {
             Ok(XmlProcessingInstruction::node(&tree, None, context))
@@ -3477,7 +3477,7 @@ pub struct XmlText {
 
 impl IndentedDisplay for XmlText {
     fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -3609,7 +3609,7 @@ pub struct XmlUnexpandedEntityReference {
 
 impl IndentedDisplay for XmlUnexpandedEntityReference {
     fn indented(&self, _: usize, f: &mut impl io::Write) -> io::Result<()> {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 
@@ -3728,7 +3728,7 @@ pub struct XmlUnparsedEntity {
 impl IndentedDisplay for XmlUnparsedEntity {
     fn indented(&self, indent: usize, f: &mut impl io::Write) -> io::Result<()> {
         let space = " ".repeat(indent);
-        write!(f, "{}{}", space, self)
+        write!(f, "{space}{self}")
     }
 }
 
@@ -4232,14 +4232,14 @@ fn attr_value_from_name(name: &str, context: &Context) -> error::Result<String> 
 fn char_from_char10(value: &str) -> error::Result<char> {
     let num = value
         .parse::<u32>()
-        .map_err(|_| error::Error::NotFoundReference(format!("#{}", value)))?;
-    char::from_u32(num).ok_or(error::Error::NotFoundReference(format!("#{}", value)))
+        .map_err(|_| error::Error::NotFoundReference(format!("#{value}")))?;
+    char::from_u32(num).ok_or(error::Error::NotFoundReference(format!("#{value}")))
 }
 
 fn char_from_char16(value: &str) -> error::Result<char> {
     let num = u32::from_str_radix(value, 16)
-        .map_err(|_| error::Error::NotFoundReference(format!("#x{}", value)))?;
-    char::from_u32(num).ok_or(error::Error::NotFoundReference(format!("#x{}", value)))
+        .map_err(|_| error::Error::NotFoundReference(format!("#x{value}")))?;
+    char::from_u32(num).ok_or(error::Error::NotFoundReference(format!("#x{value}")))
 }
 
 fn delete_char_range(value: &str, offset: usize, count: usize) -> String {
@@ -4279,9 +4279,9 @@ fn equal_qname(a: xml_nom::model::QName, b: xml_nom::model::QName) -> bool {
 
 fn escape(value: &str) -> String {
     if value.contains("\"") {
-        format!("'{}'", value)
+        format!("'{value}'")
     } else {
-        format!("\"{}\"", value)
+        format!("\"{value}\"")
     }
 }
 

@@ -325,7 +325,7 @@ fn name(
                 if prefix == "xmlns" {
                     Ok(model::Value::Text(local_name))
                 } else {
-                    Ok(model::Value::Text(format!("{}:{}", prefix, local_name)))
+                    Ok(model::Value::Text(format!("{prefix}:{local_name}")))
                 }
             }
             Some((local_name, _, _)) => Ok(model::Value::Text(local_name)),
