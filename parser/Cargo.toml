@@ -12,5 +12,5 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-nom = { version="8.0.0", features=["alloc"] }
-xml-nom = { path="../nom" }
+nom = { git = "https://github.com/rust-bakery/nom", features = ["alloc"] }
+xml-nom = { path = "../nom" }
