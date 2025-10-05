@@ -8,8 +8,8 @@ use nom::character::complete::{alpha1, digit1, hex_digit1, multispace0, multispa
 use nom::combinator::{map, opt, recognize};
 use nom::error::{ErrorKind, ParseError};
 use nom::multi::{many0, many1};
-use nom::sequence::{delimited, preceded, terminated, tuple};
-use nom::{AsChar, IResult, InputTakeAtPosition};
+use nom::sequence::{delimited, preceded, terminated};
+use nom::{AsChar, IResult, Input, Parser};
 use xml_nom::{helper, ncname, qname, xmlchar};
 
 // TODO: Reduce memory consumption.
@@ -20,7 +20,7 @@ use xml_nom::{helper, ncname, qname, xmlchar};
 ///
 /// [\[1\] document](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-document)
 pub fn document(input: &str) -> IResult<&str, model::Document<'_>> {
-    map(tuple((prolog, element, many0(misc))), model::Document::from)(input)
+    map((prolog, element, many0(misc)), model::Document::from).parse(input)
 }
 
 /// Recognizes zero or more XML characters.
@@ -30,8 +30,8 @@ pub fn document(input: &str) -> IResult<&str, model::Document<'_>> {
 /// [\[2\] Char](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Char)
 fn multichar0<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     input.split_at_position_complete(|i| !xmlchar::is_char(i.as_char()))
 }
@@ -45,8 +45,8 @@ where
 /// [\[4\] NameStartChar](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-NameStartChar)
 fn multinamestartchar0<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     input.split_at_position_complete(|i| !xmlchar::is_name_start_char(i.as_char()))
 }
@@ -58,8 +58,8 @@ where
 /// [\[4a\] NameChar](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-NameChar)
 fn multinamechar0<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     input.split_at_position_complete(|i| !xmlchar::is_name_char(i.as_char()))
 }
@@ -68,7 +68,7 @@ where
 ///
 /// [\[5\] Name](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Name)
 fn name(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((multinamestartchar0, multinamechar0)))(input)
+    recognize((multinamestartchar0, multinamechar0)).parse(input)
 }
 
 /// (NameChar)+
@@ -76,8 +76,8 @@ fn name(input: &str) -> IResult<&str, &str> {
 /// [\[7\] Nmtoken](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Nmtoken)
 fn nmtoken<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     input.split_at_position1_complete(|i| !xmlchar::is_name_char(i.as_char()), ErrorKind::Fail)
 }
@@ -105,7 +105,8 @@ fn entity_value(input: &str) -> IResult<&str, Vec<model::EntityValue>> {
             ))),
             tag("'"),
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// '"' ([^<&"] | Reference)* '"' |  "'" ([^<&'] | Reference)* "'"
@@ -129,7 +130,8 @@ fn att_value(input: &str) -> IResult<&str, Vec<model::AttributeValue<'_>>> {
             ))),
             tag("'"),
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// ('"' [^"]* '"') | ("'" [^']* "'")
@@ -139,7 +141,8 @@ fn system_literal(input: &str) -> IResult<&str, &str> {
     alt((
         delimited(tag("\""), xmlchar::char_except0("\""), tag("\"")),
         delimited(tag("'"), xmlchar::char_except0("'"), tag("'")),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// '"' PubidChar* '"' | "'" (PubidChar - "'")* "'"
@@ -149,7 +152,8 @@ fn pubid_literal(input: &str) -> IResult<&str, &str> {
     alt((
         delimited(tag("\""), multipubidchar0, tag("\"")),
         delimited(tag("'"), xmlchar::pubid_char_except0("'"), tag("'")),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// Recognizes zero or more public identifier characters.
@@ -159,8 +163,8 @@ fn pubid_literal(input: &str) -> IResult<&str, &str> {
 /// [[13] PubidChar](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-PubidChar)
 fn multipubidchar0<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     input.split_at_position_complete(|i| !xmlchar::is_pubid_char(i.as_char()))
 }
@@ -169,7 +173,7 @@ where
 ///
 /// [\[14\] CharData](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-CharData)
 fn char_data(input: &str) -> IResult<&str, &str> {
-    helper::take_until(xmlchar::char_except0("<&"), "]]>")(input)
+    helper::take_until(xmlchar::char_except0("<&"), "]]>").parse(input)
 }
 
 /// '\<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
@@ -179,11 +183,12 @@ pub fn comment(input: &str) -> IResult<&str, model::Comment<'_>> {
     map(
         delimited(
             tag("<!--"),
-            recognize(many0(tuple((opt(tag("-")), xmlchar::char_except1("-"))))),
+            recognize(many0((opt(tag("-")), xmlchar::char_except1("-")))),
             tag("-->"),
         ),
         model::Comment::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '\<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
@@ -193,21 +198,22 @@ pub fn pi(input: &str) -> IResult<&str, model::PI<'_>> {
     map(
         delimited(
             tag("<?"),
-            tuple((
+            (
                 pi_target,
                 opt(preceded(multispace1, helper::take_until(multichar0, "?>"))),
-            )),
+            ),
             tag("?>"),
         ),
         model::PI::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
 ///
 /// [\[17\] PITarget](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-PITarget)
 fn pi_target(input: &str) -> IResult<&str, &str> {
-    helper::take_except(name, "xml")(input)
+    helper::take_except(name, "xml").parse(input)
 }
 
 /// CDStart CData CDEnd
@@ -221,7 +227,8 @@ pub fn cdsect(input: &str) -> IResult<&str, model::CData<'_>> {
             tag("]]>"),                            // [21] CDEnd
         ),
         model::CData::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// XMLDecl? Misc* (doctypedecl Misc*)?
@@ -229,13 +236,10 @@ pub fn cdsect(input: &str) -> IResult<&str, model::CData<'_>> {
 /// [\[22\] prolog](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-prolog)
 fn prolog(input: &str) -> IResult<&str, model::Prolog<'_>> {
     map(
-        tuple((
-            opt(xml_decl),
-            many0(misc),
-            opt(tuple((doctype_decl, many0(misc)))),
-        )),
+        (opt(xml_decl), many0(misc), opt((doctype_decl, many0(misc)))),
         model::Prolog::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '\<?xml' VersionInfo EncodingDecl? SDDecl? S? '?>'
@@ -245,11 +249,12 @@ fn xml_decl(input: &str) -> IResult<&str, model::DeclarationXml<'_>> {
     map(
         delimited(
             tag("<?xml"),
-            tuple((version_info, opt(encoding_decl), opt(sd_decl))),
-            tuple((multispace0, tag("?>"))),
+            (version_info, opt(encoding_decl), opt(sd_decl)),
+            (multispace0, tag("?>")),
         ),
         model::DeclarationXml::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// S 'version' Eq ("'" VersionNum "'" | '"' VersionNum '"')
@@ -257,26 +262,27 @@ fn xml_decl(input: &str) -> IResult<&str, model::DeclarationXml<'_>> {
 /// [\[24\] VersionInfo](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-VersionInfo)
 fn version_info(input: &str) -> IResult<&str, &str> {
     preceded(
-        tuple((multispace1, tag("version"), eq)),
+        (multispace1, tag("version"), eq),
         alt((
             delimited(tag("'"), version_num, tag("'")),
             delimited(tag("\""), version_num, tag("\"")),
         )),
-    )(input)
+    )
+    .parse(input)
 }
 
 /// S? '=' S?
 ///
 /// [\[25\] Eq](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Eq)
 fn eq(input: &str) -> IResult<&str, &str> {
-    delimited(multispace0, tag("="), multispace0)(input)
+    delimited(multispace0, tag("="), multispace0).parse(input)
 }
 
 /// '1.' [0-9]+
 ///
 /// [\[26\] VersionNum](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-VersionNum)
 pub fn version_num(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((tag("1."), digit1)))(input)
+    recognize((tag("1."), digit1)).parse(input)
 }
 
 ///  Comment | PI | S
@@ -287,7 +293,8 @@ fn misc(input: &str) -> IResult<&str, model::Misc<'_>> {
         map(comment, model::Misc::from),
         map(pi, model::Misc::from),
         map(multispace1, model::Misc::from),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// '\<!DOCTYPE' S Name (S ExternalID)? S? ('[' intSubset ']' S?)? '>'
@@ -297,20 +304,17 @@ fn misc(input: &str) -> IResult<&str, model::Misc<'_>> {
 /// [\[16\] doctypedecl](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-doctypedecl)
 fn doctype_decl(input: &str) -> IResult<&str, model::DeclarationDoc<'_>> {
     map(
-        tuple((
-            preceded(tuple((tag("<!DOCTYPE"), multispace1)), qname),
+        (
+            preceded((tag("<!DOCTYPE"), multispace1), qname),
             terminated(opt(preceded(multispace1, external_id)), multispace0),
             terminated(
-                opt(delimited(
-                    tag("["),
-                    int_subset,
-                    tuple((tag("]"), multispace0)),
-                )),
+                opt(delimited(tag("["), int_subset, (tag("]"), multispace0))),
                 tag(">"),
             ),
-        )),
+        ),
         model::DeclarationDoc::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// PEReference | S
@@ -320,7 +324,8 @@ fn decl_sep(input: &str) -> IResult<&str, model::InternalSubset<'_>> {
     alt((
         map(pe_reference, model::InternalSubset::from),
         map(multispace1, model::InternalSubset::Whitespace),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// (markupdecl | DeclSep)*
@@ -330,7 +335,8 @@ fn int_subset(input: &str) -> IResult<&str, Vec<model::InternalSubset<'_>>> {
     many0(alt((
         map(markup_decl, model::InternalSubset::from),
         decl_sep,
-    )))(input)
+    )))
+    .parse(input)
 }
 
 /// elementdecl | AttlistDecl | EntityDecl | NotationDecl | PI | Comment
@@ -344,7 +350,8 @@ fn markup_decl(input: &str) -> IResult<&str, model::DeclarationMarkup<'_>> {
         map(notation_decl, model::DeclarationMarkup::from),
         map(pi, model::DeclarationMarkup::from),
         map(comment, model::DeclarationMarkup::from),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// S 'standalone' Eq (("'" ('yes' | 'no') "'") | ('"' ('yes' | 'no') '"'))
@@ -353,7 +360,7 @@ fn markup_decl(input: &str) -> IResult<&str, model::DeclarationMarkup<'_>> {
 fn sd_decl(input: &str) -> IResult<&str, bool> {
     map(
         preceded(
-            tuple((multispace1, tag("standalone"), eq)),
+            (multispace1, tag("standalone"), eq),
             alt((
                 delimited(tag("'"), tag("yes"), tag("'")),
                 delimited(tag("\""), tag("yes"), tag("\"")),
@@ -362,7 +369,8 @@ fn sd_decl(input: &str) -> IResult<&str, bool> {
             )),
         ),
         |v| v == "yes",
-    )(input)
+    )
+    .parse(input)
 }
 
 /// EmptyElemTag | STag content ETag
@@ -371,8 +379,9 @@ fn sd_decl(input: &str) -> IResult<&str, bool> {
 pub fn element(input: &str) -> IResult<&str, model::Element<'_>> {
     alt((
         empty_entity_tag,
-        map(tuple((stag, content, etag)), |(s, c, _)| s.set_content(c)),
-    ))(input)
+        map((stag, content, etag), |(s, c, _)| s.set_content(c)),
+    ))
+    .parse(input)
 }
 
 /// '\<' Name (S Attribute)* S? '>'
@@ -384,11 +393,12 @@ fn stag(input: &str) -> IResult<&str, model::Element<'_>> {
     map(
         delimited(
             tag("<"),
-            tuple((qname, many0(preceded(multispace1, attribute)))),
-            tuple((multispace0, tag(">"))),
+            (qname, many0(preceded(multispace1, attribute))),
+            (multispace0, tag(">")),
         ),
         model::Element::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// Name Eq AttValue
@@ -398,12 +408,13 @@ fn stag(input: &str) -> IResult<&str, model::Element<'_>> {
 /// [\[15\] Attribute](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-Attribute)
 pub fn attribute(input: &str) -> IResult<&str, model::Attribute<'_>> {
     map(
-        tuple((
+        (
             alt((ns_att_name, map(qname, model::AttributeName::from))),
             preceded(eq, att_value),
-        )),
+        ),
         model::Attribute::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '\</' Name S? '>'
@@ -412,10 +423,7 @@ pub fn attribute(input: &str) -> IResult<&str, model::Attribute<'_>> {
 ///
 /// [\[13\] ETag](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-ETag)
 fn etag(input: &str) -> IResult<&str, ()> {
-    map(
-        delimited(tag("</"), qname, tuple((multispace0, tag(">")))),
-        |_| (),
-    )(input)
+    map(delimited(tag("</"), qname, (multispace0, tag(">"))), |_| ()).parse(input)
 }
 
 /// CharData? ((element | Reference | CDSect | PI | Comment) CharData?)*
@@ -423,9 +431,9 @@ fn etag(input: &str) -> IResult<&str, ()> {
 /// [\[43\] content](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-content)
 pub fn content(input: &str) -> IResult<&str, model::Content<'_>> {
     map(
-        tuple((
+        (
             opt(char_data),
-            many0(tuple((
+            many0((
                 alt((
                     map(element, model::Contents::from),
                     map(reference, model::Contents::from),
@@ -434,15 +442,16 @@ pub fn content(input: &str) -> IResult<&str, model::Content<'_>> {
                     map(comment, model::Contents::from),
                 )),
                 opt(char_data),
-            ))),
-        )),
+            )),
+        ),
         |(head, children)| {
             model::Content::from((
                 head,
                 children.into_iter().map(model::ContentCell::from).collect(),
             ))
         },
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '\<' Name (S Attribute)* S? '/>'
@@ -454,11 +463,12 @@ fn empty_entity_tag(input: &str) -> IResult<&str, model::Element<'_>> {
     map(
         delimited(
             tag("<"),
-            tuple((qname, many0(preceded(multispace1, attribute)))),
-            tuple((multispace0, tag("/>"))),
+            (qname, many0(preceded(multispace1, attribute))),
+            (multispace0, tag("/>")),
         ),
         model::Element::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '\<!ELEMENT' S Name S contentspec S? '>'
@@ -469,12 +479,13 @@ fn empty_entity_tag(input: &str) -> IResult<&str, model::Element<'_>> {
 fn element_decl(input: &str) -> IResult<&str, model::DeclarationElement<'_>> {
     map(
         delimited(
-            tuple((tag("<!ELEMENT"), multispace1)),
-            tuple((qname, preceded(multispace1, content_spec))),
-            tuple((multispace0, tag(">"))),
+            (tag("<!ELEMENT"), multispace1),
+            (qname, preceded(multispace1, content_spec)),
+            (multispace0, tag(">")),
         ),
         model::DeclarationElement::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// 'EMPTY' | 'ANY' | Mixed | children
@@ -486,7 +497,8 @@ fn content_spec(input: &str) -> IResult<&str, model::DeclarationContent<'_>> {
         map(tag("ANY"), |_| model::DeclarationContent::Any),
         map(mixed, model::DeclarationContent::Mixed),
         map(children, model::DeclarationContent::Children),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// (choice | seq) ('?' | '*' | '+')?
@@ -494,15 +506,15 @@ fn content_spec(input: &str) -> IResult<&str, model::DeclarationContent<'_>> {
 /// [\[47\] children](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-children)
 fn children(input: &str) -> IResult<&str, model::DeclarationContentItem<'_>> {
     alt((
+        map((seq, opt(alt((tag("?"), tag("*"), tag("+"))))), |(v, q)| {
+            model::DeclarationContentItem::Seq(v, q)
+        }),
         map(
-            tuple((seq, opt(alt((tag("?"), tag("*"), tag("+")))))),
-            |(v, q)| model::DeclarationContentItem::Seq(v, q),
-        ),
-        map(
-            tuple((choice, opt(alt((tag("?"), tag("*"), tag("+")))))),
+            (choice, opt(alt((tag("?"), tag("*"), tag("+"))))),
             |(v, q)| model::DeclarationContentItem::Choice(v, q),
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// (Name | choice | seq) ('?' | '*' | '+')?
@@ -512,19 +524,19 @@ fn children(input: &str) -> IResult<&str, model::DeclarationContentItem<'_>> {
 /// [\[18\] cp](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-cp)
 fn cp(input: &str) -> IResult<&str, model::DeclarationContentItem<'_>> {
     alt((
+        map((seq, opt(alt((tag("?"), tag("*"), tag("+"))))), |(v, q)| {
+            model::DeclarationContentItem::Seq(v, q)
+        }),
         map(
-            tuple((seq, opt(alt((tag("?"), tag("*"), tag("+")))))),
-            |(v, q)| model::DeclarationContentItem::Seq(v, q),
-        ),
-        map(
-            tuple((choice, opt(alt((tag("?"), tag("*"), tag("+")))))),
+            (choice, opt(alt((tag("?"), tag("*"), tag("+"))))),
             |(v, q)| model::DeclarationContentItem::Choice(v, q),
         ),
         map(
-            tuple((qname, opt(alt((tag("?"), tag("*"), tag("+")))))),
+            (qname, opt(alt((tag("?"), tag("*"), tag("+"))))),
             |(v, q)| model::DeclarationContentItem::Name(v, q),
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// '(' S? cp ( S? '|' S? cp )+ S? ')'
@@ -533,18 +545,19 @@ fn cp(input: &str) -> IResult<&str, model::DeclarationContentItem<'_>> {
 fn choice(input: &str) -> IResult<&str, Vec<model::DeclarationContentItem<'_>>> {
     map(
         delimited(
-            tuple((tag("("), multispace0)),
-            tuple((
+            (tag("("), multispace0),
+            (
                 cp,
-                many1(preceded(tuple((multispace0, tag("|"), multispace0)), cp)),
-            )),
-            tuple((multispace0, tag(")"))),
+                many1(preceded((multispace0, tag("|"), multispace0), cp)),
+            ),
+            (multispace0, tag(")")),
         ),
         |(f, mut r)| {
             r.insert(0, f);
             r
         },
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '(' S? cp ( S? ',' S? cp )* S? ')'
@@ -553,18 +566,19 @@ fn choice(input: &str) -> IResult<&str, Vec<model::DeclarationContentItem<'_>>> 
 fn seq(input: &str) -> IResult<&str, Vec<model::DeclarationContentItem<'_>>> {
     map(
         delimited(
-            tuple((tag("("), multispace0)),
-            tuple((
+            (tag("("), multispace0),
+            (
                 cp,
-                many0(preceded(tuple((multispace0, tag(","), multispace0)), cp)),
-            )),
-            tuple((multispace0, tag(")"))),
+                many0(preceded((multispace0, tag(","), multispace0), cp)),
+            ),
+            (multispace0, tag(")")),
         ),
         |(f, mut r)| {
             r.insert(0, f);
             r
         },
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '(' S? '#PCDATA' (S? '|' S? Name)* S? ')*' | '(' S? '#PCDATA' S? ')'
@@ -576,17 +590,18 @@ fn mixed(input: &str) -> IResult<&str, Option<Vec<xml_nom::model::QName<'_>>>> {
     alt((
         map(
             delimited(
-                tuple((tag("("), multispace0, tag("#PCDATA"))),
-                many0(preceded(tuple((multispace0, tag("|"), multispace0)), qname)),
-                tuple((multispace0, tag(")*"))),
+                (tag("("), multispace0, tag("#PCDATA")),
+                many0(preceded((multispace0, tag("|"), multispace0), qname)),
+                (multispace0, tag(")*")),
             ),
             Some,
         ),
         map(
-            tuple((tag("("), multispace0, tag("#PCDATA"), multispace0, tag(")"))),
+            (tag("("), multispace0, tag("#PCDATA"), multispace0, tag(")")),
             |_| None,
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// '\<!ATTLIST' S Name AttDef* S? '>'
@@ -597,12 +612,13 @@ fn mixed(input: &str) -> IResult<&str, Option<Vec<xml_nom::model::QName<'_>>>> {
 fn attlist_decl(input: &str) -> IResult<&str, model::DeclarationAtt<'_>> {
     map(
         delimited(
-            tuple((tag("<!ATTLIST"), multispace1)),
-            tuple((qname, many0(att_def))),
-            tuple((multispace0, tag(">"))),
+            (tag("<!ATTLIST"), multispace1),
+            (qname, many0(att_def)),
+            (multispace0, tag(">")),
         ),
         model::DeclarationAtt::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// S Name S AttType S DefaultDecl
@@ -612,7 +628,7 @@ fn attlist_decl(input: &str) -> IResult<&str, model::DeclarationAtt<'_>> {
 /// [\[21\] AttDef](https://www.w3.org/TR/2009/REC-xml-names-20091208/#NT-AttDef)
 fn att_def(input: &str) -> IResult<&str, model::DeclarationAttDef<'_>> {
     map(
-        tuple((
+        (
             preceded(
                 multispace1,
                 alt((
@@ -622,9 +638,10 @@ fn att_def(input: &str) -> IResult<&str, model::DeclarationAttDef<'_>> {
             ),
             preceded(multispace1, att_type),
             preceded(multispace1, default_decl),
-        )),
+        ),
         model::DeclarationAttDef::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// StringType | TokenizedType | EnumeratedType
@@ -641,7 +658,8 @@ fn att_type(input: &str) -> IResult<&str, model::DeclarationAttType<'_>> {
         map(tag("ENTITY"), |_| model::DeclarationAttType::Entity), // [56] TokenizedType
         map(tag("NMTOKENS"), |_| model::DeclarationAttType::NmTokens), // [56] TokenizedType
         map(tag("NMTOKEN"), |_| model::DeclarationAttType::NmToken), // [56] TokenizedType
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// NotationType | Enumeration
@@ -651,7 +669,8 @@ fn enumerated_type(input: &str) -> IResult<&str, model::DeclarationAttType<'_>> 
     alt((
         map(notation_type, model::DeclarationAttType::Notation),
         map(enumeration, model::DeclarationAttType::Enumeration),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// 'NOTATION' S '(' S? Name (S? '|' S? Name)* S? ')'
@@ -660,18 +679,19 @@ fn enumerated_type(input: &str) -> IResult<&str, model::DeclarationAttType<'_>> 
 fn notation_type(input: &str) -> IResult<&str, Vec<&str>> {
     map(
         delimited(
-            tuple((tag("NOTATION"), multispace1, tag("("), multispace0)),
-            tuple((
+            (tag("NOTATION"), multispace1, tag("("), multispace0),
+            (
                 name,
-                many0(preceded(tuple((multispace0, tag("|"), multispace0)), name)),
-            )),
-            tuple((multispace0, tag(")"))),
+                many0(preceded((multispace0, tag("|"), multispace0), name)),
+            ),
+            (multispace0, tag(")")),
         ),
         |(f, mut r)| {
             r.insert(0, f);
             r
         },
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '(' S? Nmtoken (S? '|' S? Nmtoken)* S? ')'
@@ -680,21 +700,19 @@ fn notation_type(input: &str) -> IResult<&str, Vec<&str>> {
 fn enumeration(input: &str) -> IResult<&str, Vec<&str>> {
     map(
         delimited(
-            tuple((tag("("), multispace0)),
-            tuple((
+            (tag("("), multispace0),
+            (
                 nmtoken,
-                many0(preceded(
-                    tuple((multispace0, tag("|"), multispace0)),
-                    nmtoken,
-                )),
-            )),
-            tuple((multispace0, tag(")"))),
+                many0(preceded((multispace0, tag("|"), multispace0), nmtoken)),
+            ),
+            (multispace0, tag(")")),
         ),
         |(f, mut r)| {
             r.insert(0, f);
             r
         },
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '#REQUIRED' | '#IMPLIED' | (('#FIXED' S)? AttValue)
@@ -705,10 +723,11 @@ fn default_decl(input: &str) -> IResult<&str, model::DeclarationAttDefault<'_>> 
         map(tag("#REQUIRED"), |_| model::DeclarationAttDefault::Required),
         map(tag("#IMPLIED"), |_| model::DeclarationAttDefault::Implied),
         map(
-            tuple((opt(terminated(tag("#FIXED"), multispace1)), att_value)),
+            (opt(terminated(tag("#FIXED"), multispace1)), att_value),
             |(f, a)| model::DeclarationAttDefault::Value(f, a),
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// '&#' [0-9]+ ';' | '&#x' [0-9a-fA-F]+ ';'
@@ -724,14 +743,15 @@ fn char_ref(input: &str) -> IResult<&str, model::Reference<'_>> {
             delimited(tag("&#x"), hex_digit1, tag(";")),
             model::Reference::hex,
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// EntityRef | CharRef
 ///
 /// [\[67\] Reference](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-Reference)
 pub fn reference(input: &str) -> IResult<&str, model::Reference<'_>> {
-    alt((entity_ref, char_ref))(input)
+    alt((entity_ref, char_ref)).parse(input)
 }
 
 /// '&' Name ';'
@@ -741,14 +761,15 @@ fn entity_ref(input: &str) -> IResult<&str, model::Reference<'_>> {
     map(
         delimited(tag("&"), name, tag(";")),
         model::Reference::entity,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '%' Name ';'
 ///
 /// [\[69\] PEReference](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-PEReference)
 fn pe_reference(input: &str) -> IResult<&str, &str> {
-    delimited(tag("%"), name, tag(";"))(input)
+    delimited(tag("%"), name, tag(";")).parse(input)
 }
 
 /// GEDecl | PEDecl
@@ -758,7 +779,8 @@ fn entity_decl(input: &str) -> IResult<&str, model::DeclarationEntity<'_>> {
     alt((
         map(ge_decl, model::DeclarationEntity::from),
         map(pe_decl, model::DeclarationEntity::from),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// '\<!ENTITY' S Name S EntityDef S? '>'
@@ -766,12 +788,13 @@ fn entity_decl(input: &str) -> IResult<&str, model::DeclarationEntity<'_>> {
 /// [\[71\] GEDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-GEDecl)
 fn ge_decl(input: &str) -> IResult<&str, model::DeclarationGeneralEntity<'_>> {
     map(
-        tuple((
-            delimited(tuple((tag("<!ENTITY"), multispace1)), name, multispace1),
-            terminated(entity_def, tuple((multispace0, tag(">")))),
-        )),
+        (
+            delimited((tag("<!ENTITY"), multispace1), name, multispace1),
+            terminated(entity_def, (multispace0, tag(">"))),
+        ),
         model::DeclarationGeneralEntity::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '\<!ENTITY' S '%' S Name S PEDef S? '>'
@@ -779,16 +802,17 @@ fn ge_decl(input: &str) -> IResult<&str, model::DeclarationGeneralEntity<'_>> {
 /// [\[72\] PEDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-PEDecl)
 fn pe_decl(input: &str) -> IResult<&str, model::DeclarationParameterEntity<'_>> {
     map(
-        tuple((
+        (
             delimited(
-                tuple((tag("<!ENTITY"), multispace1, tag("%"), multispace1)),
+                (tag("<!ENTITY"), multispace1, tag("%"), multispace1),
                 name,
                 multispace1,
             ),
-            terminated(pe_def, tuple((multispace0, tag(">")))),
-        )),
+            terminated(pe_def, (multispace0, tag(">"))),
+        ),
         model::DeclarationParameterEntity::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// EntityValue | (ExternalID NDataDecl?)
@@ -798,10 +822,11 @@ fn entity_def(input: &str) -> IResult<&str, model::DeclarationEntityDef<'_>> {
     alt((
         map(entity_value, model::DeclarationEntityDef::from),
         map(
-            tuple((external_id, opt(ndata_decl))),
+            (external_id, opt(ndata_decl)),
             model::DeclarationEntityDef::from,
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// EntityValue | ExternalID
@@ -811,7 +836,8 @@ fn pe_def(input: &str) -> IResult<&str, model::DeclarationPeDef<'_>> {
     alt((
         map(entity_value, model::DeclarationPeDef::from),
         map(external_id, model::DeclarationPeDef::from),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// 'SYSTEM' S SystemLiteral | 'PUBLIC' S PubidLiteral S SystemLiteral
@@ -820,24 +846,25 @@ fn pe_def(input: &str) -> IResult<&str, model::DeclarationPeDef<'_>> {
 fn external_id(input: &str) -> IResult<&str, model::ExternalId<'_>> {
     alt((
         map(
-            preceded(tuple((tag("SYSTEM"), multispace1)), system_literal),
+            preceded((tag("SYSTEM"), multispace1), system_literal),
             model::ExternalId::from,
         ),
         map(
             preceded(
-                tuple((tag("PUBLIC"), multispace1)),
-                tuple((pubid_literal, preceded(multispace1, system_literal))),
+                (tag("PUBLIC"), multispace1),
+                (pubid_literal, preceded(multispace1, system_literal)),
             ),
             model::ExternalId::from,
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// S 'NDATA' S Name
 ///
 /// [[76] NDataDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-NDataDecl)
 fn ndata_decl(input: &str) -> IResult<&str, &str> {
-    preceded(tuple((multispace1, tag("NDATA"), multispace1)), name)(input)
+    preceded((multispace1, tag("NDATA"), multispace1), name).parse(input)
 }
 
 /// S 'encoding' Eq ('"' EncName '"' | "'" EncName "'" )
@@ -845,19 +872,20 @@ fn ndata_decl(input: &str) -> IResult<&str, &str> {
 /// [\[80\] EncodingDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-EncodingDecl)
 fn encoding_decl(input: &str) -> IResult<&str, &str> {
     preceded(
-        tuple((multispace1, tag("encoding"), eq)),
+        (multispace1, tag("encoding"), eq),
         alt((
             delimited(tag("'"), enc_name, tag("'")),
             delimited(tag("\""), enc_name, tag("\"")),
         )),
-    )(input)
+    )
+    .parse(input)
 }
 
 /// \[A-Za-z] (\[A-Za-z0-9._] | '-')*
 ///
 /// [\[81\] EncName](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-EncName)
 fn enc_name(input: &str) -> IResult<&str, &str> {
-    recognize(tuple((alpha1, xmlchar::enc_name0)))(input)
+    recognize((alpha1, xmlchar::enc_name0)).parse(input)
 }
 
 /// '\<!NOTATION' S Name S (ExternalID | PublicID) S? '>'
@@ -865,26 +893,27 @@ fn enc_name(input: &str) -> IResult<&str, &str> {
 /// [\[82\] NotationDecl](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-NotationDecl)
 fn notation_decl(input: &str) -> IResult<&str, model::DeclarationNotation<'_>> {
     map(
-        tuple((
-            preceded(tuple((tag("<!NOTATION"), multispace1)), name),
+        (
+            preceded((tag("<!NOTATION"), multispace1), name),
             delimited(
                 multispace1,
                 alt((
                     map(external_id, model::DeclarationNotationId::from),
                     map(public_id, model::DeclarationNotationId::from),
                 )),
-                tuple((multispace0, tag(">"))),
+                (multispace0, tag(">")),
             ),
-        )),
+        ),
         model::DeclarationNotation::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// 'PUBLIC' S PubidLiteral
 ///
 /// [\[83\] PublicID](https://www.w3.org/TR/2008/REC-xml-20081126/#NT-PublicID)
 fn public_id(input: &str) -> IResult<&str, &str> {
-    preceded(tuple((tag("PUBLIC"), multispace1)), pubid_literal)(input)
+    preceded((tag("PUBLIC"), multispace1), pubid_literal).parse(input)
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -896,7 +925,8 @@ fn ns_att_name(input: &str) -> IResult<&str, model::AttributeName<'_>> {
     alt((
         map(preceded(tag("xmlns:"), ncname), model::AttributeName::from), // [2] PrefixedAttName
         map(tag("xmlns"), |_| model::AttributeName::default()),           // [3] DefaultAttName
-    ))(input)
+    ))
+    .parse(input)
 }
 
 // -----------------------------------------------------------------------------------------------

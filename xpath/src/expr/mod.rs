@@ -1,12 +1,12 @@
 pub mod model;
 
-use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_till};
 use nom::character::complete::{char, digit0, digit1, multispace0};
 use nom::combinator::{map, opt, recognize};
 use nom::multi::{many0, separated_list0, separated_list1};
-use nom::sequence::{delimited, preceded, terminated, tuple};
+use nom::sequence::{delimited, preceded, terminated};
+use nom::{IResult, Parser};
 use xml_nom::model::QName;
 use xml_nom::{ncname, qname};
 
@@ -25,9 +25,9 @@ pub fn parse(input: &str) -> IResult<&str, model::Expr> {
 /// [\[11\] AbbreviatedRelativeLocationPath](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-AbbreviatedRelativeLocationPath)
 fn relative_location_path(input: &str) -> IResult<&str, model::RelativeLocationPath> {
     map(
-        tuple((
+        (
             step,
-            many0(tuple((
+            many0((
                 delimited(
                     multispace0,
                     map(
@@ -37,10 +37,11 @@ fn relative_location_path(input: &str) -> IResult<&str, model::RelativeLocationP
                     multispace0,
                 ),
                 step,
-            ))),
-        )),
+            )),
+        ),
         model::RelativeLocationPath::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// AxisSpecifier NodeTest Predicate* | '.' | '..'
@@ -53,14 +54,15 @@ fn step(input: &str) -> IResult<&str, model::Step> {
         map(tag(".."), |_| model::Step::Parent),
         map(char('.'), |_| model::Step::Current),
         map(
-            tuple((
+            (
                 axis_specifier,
                 preceded(multispace0, node_test),
                 many0(preceded(multispace0, predicate)),
-            )),
+            ),
             model::Step::from,
         ),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// AxisName '::' | '@'?
@@ -71,7 +73,7 @@ fn step(input: &str) -> IResult<&str, model::Step> {
 fn axis_specifier(input: &str) -> IResult<&str, model::AxisSpecifier> {
     alt((
         map(
-            terminated(axis_name, tuple((multispace0, tag("::")))),
+            terminated(axis_name, (multispace0, tag("::"))),
             model::AxisSpecifier::from,
         ),
         map(opt(char('@')), |v| {
@@ -81,7 +83,8 @@ fn axis_specifier(input: &str) -> IResult<&str, model::AxisSpecifier> {
                 model::AxisSpecifier::Abbreviated("".to_string())
             }
         }),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// 'ancestor' | 'ancestor-or-self' | 'attribute' | 'child' | 'descendant' | 'descendant-or-self' |
@@ -107,7 +110,8 @@ fn axis_name(input: &str) -> IResult<&str, model::AxisName> {
             tag("self"),
         )),
         model::AxisName::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// NameTest | NodeType '(' ')' | 'processing-instruction' '(' Literal ')'
@@ -117,26 +121,24 @@ fn node_test(input: &str) -> IResult<&str, model::NodeTest> {
     alt((
         map(
             delimited(
-                tuple((
+                (
                     tag("processing-instruction"),
                     multispace0,
                     char('('),
                     multispace0,
-                )),
+                ),
                 literal,
-                tuple((multispace0, char(')'))),
+                (multispace0, char(')')),
             ),
             model::NodeTest::from,
         ),
         map(
-            terminated(
-                node_type,
-                tuple((multispace0, char('('), multispace0, char(')'))),
-            ),
+            terminated(node_type, (multispace0, char('('), multispace0, char(')'))),
             model::NodeTest::from,
         ),
         map(name_test, model::NodeTest::from),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// '[' PredicateExpr ']'
@@ -144,10 +146,11 @@ fn node_test(input: &str) -> IResult<&str, model::NodeTest> {
 /// [\[8\] Predicate](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-Predicate)
 fn predicate(input: &str) -> IResult<&str, model::PredicateExpr> {
     delimited(
-        tuple((char('['), multispace0)),
+        (char('['), multispace0),
         predicate_expr,
-        tuple((multispace0, char(']'))),
-    )(input)
+        (multispace0, char(']')),
+    )
+    .parse(input)
 }
 
 /// Expr
@@ -171,17 +174,14 @@ fn primary_expr(input: &str) -> IResult<&str, model::PrimaryExpr> {
     alt((
         map(variable_reference, model::PrimaryExpr::from),
         map(
-            delimited(
-                tuple((char('('), multispace0)),
-                expr,
-                tuple((multispace0, char(')'))),
-            ),
+            delimited((char('('), multispace0), expr, (multispace0, char(')'))),
             model::PrimaryExpr::from,
         ),
         map(literal, model::PrimaryExpr::from),
         map(number, model::PrimaryExpr::number),
         map(function_call, model::PrimaryExpr::from),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// FunctionName '(' ( Argument ( ',' Argument )* )? ')'
@@ -189,16 +189,17 @@ fn primary_expr(input: &str) -> IResult<&str, model::PrimaryExpr> {
 /// [\[16\] FunctionCall](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-FunctionCall)
 fn function_call(input: &str) -> IResult<&str, model::FunctionCall> {
     map(
-        tuple((
+        (
             function_name,
             delimited(
-                tuple((multispace0, char('('), multispace0)),
-                separated_list0(tuple((multispace0, char(','), multispace0)), argument),
-                tuple((multispace0, char(')'))),
+                (multispace0, char('('), multispace0),
+                separated_list0((multispace0, char(','), multispace0), argument),
+                (multispace0, char(')')),
             ),
-        )),
+        ),
         model::FunctionCall::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// Expr
@@ -213,9 +214,10 @@ fn argument(input: &str) -> IResult<&str, model::Argument> {
 /// [\[18\] UnionExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-UnionExpr)
 fn union_expr(input: &str) -> IResult<&str, model::UnionExpr> {
     map(
-        separated_list1(tuple((multispace0, tag("|"), multispace0)), path_expr),
+        separated_list1((multispace0, tag("|"), multispace0), path_expr),
         model::UnionExpr::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// RelativeLocationPath |
@@ -235,7 +237,7 @@ fn union_expr(input: &str) -> IResult<&str, model::UnionExpr> {
 fn path_expr(input: &str) -> IResult<&str, model::PathExpr> {
     alt((
         map(
-            tuple((
+            (
                 filter_expr,
                 delimited(
                     multispace0,
@@ -246,12 +248,12 @@ fn path_expr(input: &str) -> IResult<&str, model::PathExpr> {
                     multispace0,
                 ),
                 relative_location_path,
-            )),
+            ),
             |(filter, op, path)| model::PathExpr::from((Some((Some(filter), op)), path)),
         ),
         map(filter_expr, model::PathExpr::from),
         map(
-            tuple((
+            (
                 terminated(
                     map(
                         alt((tag("//"), tag("/"))),
@@ -260,13 +262,14 @@ fn path_expr(input: &str) -> IResult<&str, model::PathExpr> {
                     multispace0,
                 ),
                 relative_location_path,
-            )),
+            ),
             |(op, path)| model::PathExpr::from((Some((None, op)), path)),
         ),
         map(filter_expr, model::PathExpr::from),
         map(relative_location_path, model::PathExpr::from),
         map(char('/'), |_| model::PathExpr::Root),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// PrimaryExpr | FilterExpr Predicate
@@ -274,9 +277,10 @@ fn path_expr(input: &str) -> IResult<&str, model::PathExpr> {
 /// [\[20\] FilterExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-FilterExpr)
 fn filter_expr(input: &str) -> IResult<&str, model::FilterExpr> {
     map(
-        tuple((primary_expr, many0(preceded(multispace0, predicate)))),
+        (primary_expr, many0(preceded(multispace0, predicate))),
         model::FilterExpr::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// AndExpr | OrExpr 'or' AndExpr
@@ -284,9 +288,10 @@ fn filter_expr(input: &str) -> IResult<&str, model::FilterExpr> {
 /// [\[21\] OrExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-OrExpr)
 fn or_expr(input: &str) -> IResult<&str, model::OrExpr> {
     map(
-        separated_list1(tuple((multispace0, tag("or"), multispace0)), and_expr),
+        separated_list1((multispace0, tag("or"), multispace0), and_expr),
         model::OrExpr::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// EqualityExpr | AndExpr 'and' EqualityExpr
@@ -294,9 +299,10 @@ fn or_expr(input: &str) -> IResult<&str, model::OrExpr> {
 /// [\[22\] AndExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-AndExpr)
 fn and_expr(input: &str) -> IResult<&str, model::AndExpr> {
     map(
-        separated_list1(tuple((multispace0, tag("and"), multispace0)), equality_expr),
+        separated_list1((multispace0, tag("and"), multispace0), equality_expr),
         model::AndExpr::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// RelationalExpr | EqualityExpr '=' RelationalExpr | EqualityExpr '!=' RelationalExpr
@@ -304,19 +310,20 @@ fn and_expr(input: &str) -> IResult<&str, model::AndExpr> {
 /// [\[23\] EqualityExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-EqualityExpr)
 fn equality_expr(input: &str) -> IResult<&str, model::EqualityExpr> {
     map(
-        tuple((
+        (
             relation_expr,
-            many0(tuple((
+            many0((
                 delimited(
                     multispace0,
                     map(alt((tag("="), tag("!="))), model::EqualityOperator::from),
                     multispace0,
                 ),
                 relation_expr,
-            ))),
-        )),
+            )),
+        ),
         model::EqualityExpr::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// AdditiveExpr |
@@ -326,9 +333,9 @@ fn equality_expr(input: &str) -> IResult<&str, model::EqualityExpr> {
 /// [\[24\] RelationalExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-RelationalExpr)
 fn relation_expr(input: &str) -> IResult<&str, model::RelationalExpr> {
     map(
-        tuple((
+        (
             additive_expr,
-            many0(tuple((
+            many0((
                 delimited(
                     multispace0,
                     map(
@@ -338,10 +345,11 @@ fn relation_expr(input: &str) -> IResult<&str, model::RelationalExpr> {
                     multispace0,
                 ),
                 additive_expr,
-            ))),
-        )),
+            )),
+        ),
         model::RelationalExpr::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// MultiplicativeExpr | AdditiveExpr '+' MultiplicativeExpr | AdditiveExpr '-' MultiplicativeExpr
@@ -349,19 +357,20 @@ fn relation_expr(input: &str) -> IResult<&str, model::RelationalExpr> {
 /// [\[25\] AdditiveExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-AdditiveExpr)
 fn additive_expr(input: &str) -> IResult<&str, model::AdditiveExpr> {
     map(
-        tuple((
+        (
             multiplicative_expr,
-            many0(tuple((
+            many0((
                 delimited(
                     multispace0,
                     map(alt((tag("+"), tag("-"))), model::AdditiveOperator::from),
                     multispace0,
                 ),
                 multiplicative_expr,
-            ))),
-        )),
+            )),
+        ),
         model::AdditiveExpr::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// UnaryExpr |
@@ -372,9 +381,9 @@ fn additive_expr(input: &str) -> IResult<&str, model::AdditiveExpr> {
 /// [\[26\] MultiplicativeExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-MultiplicativeExpr)
 fn multiplicative_expr(input: &str) -> IResult<&str, model::MultiplicativeExpr> {
     map(
-        tuple((
+        (
             unary_expr,
-            many0(tuple((
+            many0((
                 delimited(
                     multispace0,
                     map(
@@ -384,10 +393,11 @@ fn multiplicative_expr(input: &str) -> IResult<&str, model::MultiplicativeExpr> 
                     multispace0,
                 ),
                 unary_expr,
-            ))),
-        )),
+            )),
+        ),
         model::MultiplicativeExpr::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// UnionExpr | '-' UnaryExpr
@@ -395,9 +405,10 @@ fn multiplicative_expr(input: &str) -> IResult<&str, model::MultiplicativeExpr> 
 /// [\[27\] UnaryExpr](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-MultiplicativeExpr)
 fn unary_expr(input: &str) -> IResult<&str, model::UnaryExpr> {
     map(
-        tuple((many0(terminated(tag("-"), multispace0)), union_expr)),
+        (many0(terminated(tag("-"), multispace0)), union_expr),
         model::UnaryExpr::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 /// '"' [^"]* '"' | "'" [^']* "'"
@@ -407,7 +418,8 @@ fn literal(input: &str) -> IResult<&str, &str> {
     alt((
         delimited(char('"'), take_till(|c| c == '"'), char('"')),
         delimited(char('\''), take_till(|c| c == '\''), char('\'')),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// [0-9]+ ('.' ([0-9]+)?)? | '.' [0-9]+
@@ -417,9 +429,10 @@ fn literal(input: &str) -> IResult<&str, &str> {
 /// [\[31\] Digits](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-Digits)
 fn number(input: &str) -> IResult<&str, &str> {
     alt((
-        recognize(tuple((digit1, opt(tuple((char('.'), digit0)))))),
-        recognize(tuple((char('.'), digit1))),
-    ))(input)
+        recognize((digit1, opt((char('.'), digit0)))),
+        recognize((char('.'), digit1)),
+    ))
+    .parse(input)
 }
 
 /// QName - NodeType
@@ -434,7 +447,7 @@ fn function_name(input: &str) -> IResult<&str, QName> {
 ///
 /// [\[36\] VariableReference](https://triple-underscore.github.io/XML/xpath10-ja.html#NT-VariableReference)
 fn variable_reference(input: &str) -> IResult<&str, QName> {
-    preceded(char('$'), qname)(input)
+    preceded(char('$'), qname).parse(input)
 }
 
 /// '*' | NCName ':' '*' | QName
@@ -445,7 +458,8 @@ fn name_test(input: &str) -> IResult<&str, model::NameTest> {
         map(char('*'), |_| model::NameTest::All),
         map(terminated(ncname, tag(":*")), model::NameTest::from),
         map(qname, model::NameTest::from),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// 'comment' | 'text' | 'processing-instruction' | 'node'
@@ -460,7 +474,8 @@ fn node_type(input: &str) -> IResult<&str, model::NodeType> {
             tag("node"),
         )),
         model::NodeType::from,
-    )(input)
+    )
+    .parse(input)
 }
 
 // -----------------------------------------------------------------------------------------------

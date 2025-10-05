@@ -1,6 +1,5 @@
 use nom::error::{ErrorKind, ParseError};
-use nom::{Compare, CompareResult, Err, FindSubstring, IResult, InputLength, Parser, Slice};
-use std::ops::{RangeFrom, RangeTo};
+use nom::{Compare, CompareResult, Err, FindSubstring, IResult, Parser};
 
 // -----------------------------------------------------------------------------------------------
 
@@ -9,17 +8,16 @@ pub fn take_except<F, T, Input, Error: ParseError<Input>>(
     except: T,
 ) -> impl FnMut(Input) -> IResult<Input, Input, Error>
 where
-    F: Parser<Input, Input, Error>,
+    F: Parser<Input, Output = Input, Error = Error>,
     Input: Clone,
-    T: Clone + Compare<Input>,
+    T: Compare<Input>,
 {
     move |input: Input| {
         let i = input.clone();
-        let e = except.clone();
         match parser.parse(i) {
-            Ok((rest, value)) => match e.compare_no_case(value.clone()) {
+            Ok((rest, value)) => match except.compare_no_case(value.clone()) {
                 CompareResult::Ok => Err(Err::Error(Error::from_error_kind(
-                    input,
+                    value,
                     ErrorKind::TakeUntil,
                 ))),
                 _ => Ok((rest, value)),
@@ -34,8 +32,8 @@ pub fn take_until<F, T, Input, Error: ParseError<Input>>(
     except: T,
 ) -> impl FnMut(Input) -> IResult<Input, Input, Error>
 where
-    F: Parser<Input, Input, Error>,
-    Input: Clone + FindSubstring<T> + InputLength + Slice<RangeFrom<usize>> + Slice<RangeTo<usize>>,
+    F: Parser<Input, Output = Input, Error = Error>,
+    Input: Clone + FindSubstring<T> + nom::Input,
     T: Clone,
 {
     move |input: Input| {
@@ -43,7 +41,7 @@ where
         let e = except.clone();
         match parser.parse(i) {
             Ok((rest, value)) => match value.find_substring(e) {
-                Some(index) => Ok((input.slice(index..), input.slice(..index))),
+                Some(index) => Ok(input.take_split(index)),
                 None => Ok((rest, value)),
             },
             Err(e) => Err(e),

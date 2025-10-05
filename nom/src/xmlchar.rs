@@ -1,5 +1,5 @@
 use nom::error::{ErrorKind, ParseError};
-use nom::{AsChar, IResult, InputTakeAtPosition};
+use nom::{AsChar, IResult, Input};
 
 // -----------------------------------------------------------------------------------------------
 
@@ -108,40 +108,40 @@ pub fn is_enc_name(value: char) -> bool {
 
 pub fn char_except0<T, E: ParseError<T>>(except: &str) -> impl Fn(T) -> IResult<T, T, E> + '_
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     move |i| char_except0_priv(i, except)
 }
 
 pub fn char_except1<T, E: ParseError<T>>(except: &str) -> impl Fn(T) -> IResult<T, T, E> + '_
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     move |i| char_except1_priv(i, except)
 }
 
 pub fn enc_name0<T, E: ParseError<T>>(input: T) -> IResult<T, T, E>
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     input.split_at_position_complete(|i| !is_enc_name(i.as_char()))
 }
 
 pub fn name_char_except1<T, E: ParseError<T>>(except: &str) -> impl Fn(T) -> IResult<T, T, E> + '_
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     move |i| name_char_except1_priv(i, except)
 }
 
 pub fn pubid_char_except0<T, E: ParseError<T>>(except: &str) -> impl Fn(T) -> IResult<T, T, E> + '_
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     move |i| pubid_char_except0_priv(i, except)
 }
@@ -150,16 +150,16 @@ where
 
 fn char_except0_priv<T, E: ParseError<T>>(input: T, except: &str) -> IResult<T, T, E>
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     input.split_at_position_complete(|i| !is_char_except(i.as_char(), except))
 }
 
 fn char_except1_priv<T, E: ParseError<T>>(input: T, except: &str) -> IResult<T, T, E>
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     input.split_at_position1_complete(|i| !is_char_except(i.as_char(), except), ErrorKind::Fail)
 }
@@ -178,8 +178,8 @@ fn is_pubid_char_except(value: char, excepts: &str) -> bool {
 
 fn name_char_except1_priv<T, E: ParseError<T>>(input: T, except: &str) -> IResult<T, T, E>
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     input.split_at_position1_complete(
         |i| !is_name_char_except(i.as_char(), except),
@@ -189,8 +189,8 @@ where
 
 fn pubid_char_except0_priv<T, E: ParseError<T>>(input: T, except: &str) -> IResult<T, T, E>
 where
-    T: InputTakeAtPosition,
-    <T as InputTakeAtPosition>::Item: AsChar,
+    T: Input,
+    <T as Input>::Item: AsChar,
 {
     input.split_at_position_complete(|i| !is_pubid_char_except(i.as_char(), except))
 }
